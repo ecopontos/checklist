@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Disparo WhatsApp</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f1410;
+    --surface: #181f19;
+    --surface2: #1e2820;
+    --border: #2a3a2c;
+    --green: #4ade80;
+    --green-dim: #1a3a22;
+    --green-mid: #22c55e;
+    --text: #e8f0e9;
+    --text-dim: #7a9a7e;
+    --sent: #166534;
+    --skip: #3a2a1a;
+    --skip-text: #f59e0b;
+    --radius: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px 64px;
+  }
+
+  header {
+    width: 100%;
+    max-width: 680px;
+    margin-bottom: 40px;
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+  }
+
+  .logo {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--green);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    opacity: 0.7;
+    white-space: nowrap;
+  }
+
+  h1 {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+
+  .subtitle {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  /* ── STEPS ── */
+  .step {
+    width: 100%;
+    max-width: 680px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px;
+    margin-bottom: 20px;
+    display: none;
+  }
+  .step.active { display: block; }
+
+  .step-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--green);
+    margin-bottom: 14px;
+  }
+
+  .step h2 {
+    font-size: 17px;
+    font-weight: 500;
+    margin-bottom: 18px;
+    color: var(--text);
+  }
+
+  /* ── UPLOAD ZONE ── */
+  .upload-zone {
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    padding: 40px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+  }
+  .upload-zone:hover, .upload-zone.drag { 
+    border-color: var(--green); 
+    background: var(--green-dim);
+  }
+  .upload-zone input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .upload-icon { font-size: 32px; margin-bottom: 12px; }
+  .upload-zone p { color: var(--text-dim); font-size: 14px; }
+  .upload-zone strong { color: var(--green); }
+
+  .hint {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 14px;
+    line-height: 1.6;
+    font-family: 'DM Mono', monospace;
+  }
+
+  /* ── PREVIEW TABLE ── */
+  .preview-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-top: 16px;
+  }
+  .preview-table th {
+    text-align: left;
+    padding: 8px 12px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+  }
+  .preview-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #1a2a1c;
+    color: var(--text);
+  }
+  .preview-table tr:last-child td { border-bottom: none; }
+
+  /* ── TEXTAREA ── */
+  textarea {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 14px;
+    resize: vertical;
+    min-height: 240px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  textarea:focus { border-color: var(--green); }
+
+  .tag-hint {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 8px;
+    font-family: 'DM Mono', monospace;
+  }
+  .tag-hint code {
+    background: var(--green-dim);
+    color: var(--green);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+
+  /* ── BUTTONS ── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 22px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .btn-primary {
+    background: var(--green);
+    color: #0a1a0c;
+  }
+  .btn-primary:hover { background: var(--green-mid); }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn-outline {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+  }
+  .btn-outline:hover { border-color: var(--text-dim); color: var(--text); }
+
+  .btn-whatsapp {
+    background: #25d366;
+    color: #000;
+    font-size: 16px;
+    padding: 14px 32px;
+    border-radius: 10px;
+    width: 100%;
+    justify-content: center;
+    font-weight: 600;
+  }
+  .btn-whatsapp:hover { background: #1ebe5a; }
+
+  .actions { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+
+  /* ── PROGRESS ── */
+  .progress-wrap {
+    width: 100%;
+    max-width: 680px;
+    margin-bottom: 20px;
+    display: none;
+  }
+  .progress-wrap.active { display: block; }
+  .progress-info {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+    font-family: 'DM Mono', monospace;
+  }
+  .progress-bar {
+    height: 4px;
+    background: var(--border);
+    border-radius: 99px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--green);
+    border-radius: 99px;
+    transition: width 0.4s ease;
+  }
+
+  /* ── CONTACT CARD ── */
+  .contact-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .contact-name { font-weight: 500; font-size: 16px; }
+  .contact-phone { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--text-dim); margin-top: 2px; }
+  .contact-status {
+    font-size: 11px;
+    font-family: 'DM Mono', monospace;
+    padding: 4px 10px;
+    border-radius: 99px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .status-pending { background: var(--surface); color: var(--text-dim); border: 1px solid var(--border); }
+  .status-sent { background: var(--sent); color: #4ade80; }
+  .status-skip { background: var(--skip); color: var(--skip-text); }
+
+  /* ── MSG PREVIEW ── */
+  .msg-preview {
+    background: var(--green-dim);
+    border-left: 3px solid var(--green);
+    border-radius: 0 8px 8px 0;
+    padding: 14px 16px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin-bottom: 16px;
+    max-height: 180px;
+    overflow-y: auto;
+  }
+
+  /* ── SUMMARY ── */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .summary-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    text-align: center;
+  }
+  .summary-number { font-size: 32px; font-weight: 600; font-family: 'DM Mono', monospace; }
+  .summary-label { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+  .n-sent { color: var(--green); }
+  .n-skip { color: var(--skip-text); }
+  .n-total { color: var(--text-dim); }
+
+  .col-list {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+  }
+  .col-chip {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-family: 'DM Mono', monospace;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: var(--text-dim);
+  }
+  .col-chip:hover { border-color: var(--green); color: var(--green); }
+  .col-chip.selected { background: var(--green-dim); border-color: var(--green); color: var(--green); }
+
+  select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    padding: 8px 12px;
+    outline: none;
+    cursor: pointer;
+    margin-right: 8px;
+  }
+  select:focus { border-color: var(--green); }
+
+  label.field-label {
+    font-size: 12px;
+    color: var(--text-dim);
+    font-family: 'DM Mono', monospace;
+    display: block;
+    margin-bottom: 6px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .field { margin-bottom: 18px; }
+
+  .nav-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .nav-counter {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">♻️ Floripa · Lixo Zero</div>
+    <h1>Disparo WhatsApp</h1>
+    <p class="subtitle">Envio manual assistido — um contato por vez</p>
+  </div>
+</header>
+
+<!-- PROGRESS BAR -->
+<div class="progress-wrap" id="progressWrap">
+  <div class="progress-info">
+    <span id="progressLabel">0 / 0 enviados</span>
+    <span id="progressPct">0%</span>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+</div>
+
+<!-- STEP 1: UPLOAD -->
+<div class="step active" id="step1">
+  <div class="step-label">Passo 01</div>
+  <h2>Importar planilha</h2>
+
+  <div class="upload-zone" id="uploadZone">
+    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
+    <div class="upload-icon">📄</div>
+    <p>Arraste o arquivo ou <strong>clique para selecionar</strong></p>
+    <p style="margin-top:6px; font-size:12px;">CSV ou Excel (.xlsx)</p>
+  </div>
+
+  <div class="hint">
+    Exporte a planilha como CSV (Arquivo → Download → CSV) ou use o .xlsx diretamente.<br>
+    A primeira linha deve ser o cabeçalho com os nomes das colunas.
+  </div>
+</div>
+
+<!-- STEP 2: MAP COLUMNS -->
+<div class="step" id="step2">
+  <div class="step-label">Passo 02</div>
+  <h2>Mapear colunas</h2>
+
+  <div class="field">
+    <label class="field-label">Coluna com o número de telefone</label>
+    <select id="colPhone"></select>
+  </div>
+
+  <div class="field">
+    <label class="field-label">Coluna com o nome (opcional)</label>
+    <select id="colName"></select>
+  </div>
+
+  <div id="previewWrap"></div>
+
+  <div class="actions">
+    <button class="btn btn-primary" id="btnToMsg">Próximo →</button>
+    <button class="btn btn-outline" onclick="goTo(1)">← Voltar</button>
+  </div>
+</div>
+
+<!-- STEP 3: MESSAGE -->
+<div class="step" id="step3">
+  <div class="step-label">Passo 03</div>
+  <h2>Mensagem</h2>
+
+  <div class="field">
+    <label class="field-label">Texto da mensagem</label>
+    <textarea id="msgText" placeholder="Digite ou cole a mensagem aqui..."></textarea>
+    <div class="tag-hint">Use <code>{nome}</code> para personalizar com o nome do estabelecimento.</div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" id="btnStart">Iniciar disparos →</button>
+    <button class="btn btn-outline" onclick="goTo(2)">← Voltar</button>
+  </div>
+</div>
+
+<!-- STEP 4: SEND -->
+<div class="step" id="step4">
+  <div class="step-label">Passo 04</div>
+
+  <div class="nav-row">
+    <span class="nav-counter" id="navCounter"></span>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-outline" id="btnPrev" onclick="navigate(-1)">←</button>
+      <button class="btn btn-outline" id="btnNext" onclick="navigate(1)">→</button>
+    </div>
+  </div>
+
+  <div class="contact-card" id="contactCard">
+    <div>
+      <div class="contact-name" id="curName">—</div>
+      <div class="contact-phone" id="curPhone">—</div>
+    </div>
+    <span class="contact-status status-pending" id="curStatus">Pendente</span>
+  </div>
+
+  <div class="msg-preview" id="msgPreview"></div>
+
+  <button class="btn btn-whatsapp" id="btnWA" onclick="openWA()">
+    📲 Abrir no WhatsApp
+  </button>
+
+  <div class="actions" style="margin-top:14px; justify-content:space-between;">
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-outline" onclick="markSkip()">Pular ↷</button>
+      <button class="btn btn-outline" onclick="markSent()" style="color:var(--green);border-color:var(--green);">✓ Marcar enviado</button>
+    </div>
+    <button class="btn btn-outline" onclick="goTo(3)" style="font-size:12px;">Editar mensagem</button>
+  </div>
+
+  <div id="historySection" style="margin-top:28px;">
+    <div class="step-label" style="margin-bottom:12px;">Todos os contatos</div>
+    <div id="historyList"></div>
+  </div>
+</div>
+
+<!-- STEP 5: DONE -->
+<div class="step" id="step5">
+  <div class="step-label">Concluído ✓</div>
+  <h2>Disparo finalizado!</h2>
+  <div class="summary-grid">
+    <div class="summary-card"><div class="summary-number n-sent" id="sumSent">0</div><div class="summary-label">Enviados</div></div>
+    <div class="summary-card"><div class="summary-number n-skip" id="sumSkip">0</div><div class="summary-label">Pulados</div></div>
+    <div class="summary-card"><div class="summary-number n-total" id="sumTotal">0</div><div class="summary-label">Total</div></div>
+  </div>
+  <div class="actions" style="margin-top:24px;">
+    <button class="btn btn-primary" onclick="restart()">Novo disparo</button>
+    <button class="btn btn-outline" onclick="exportCSV()">Exportar resultado CSV</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+// ── STATE ──
+let rows = [];          // array of objects (all columns)
+let headers = [];       // column names
+let colPhone = '';
+let colName  = '';
+let message  = '';
+let statuses = [];      // 'pending' | 'sent' | 'skip'
+let current  = 0;
+
+// ── NAVIGATION ──
+function goTo(n) {
+  document.querySelectorAll('.step').forEach((s,i) => s.classList.toggle('active', i === n-1));
+}
+
+// ── FILE UPLOAD ──
+const fileInput = document.getElementById('fileInput');
+const uploadZone = document.getElementById('uploadZone');
+
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag'));
+uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('drag'); handleFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+
+function handleFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const data = new Uint8Array(e.target.result);
+    const wb = XLSX.read(data, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    if (!json.length) { alert('Planilha vazia ou formato inválido.'); return; }
+    rows = json;
+    headers = Object.keys(json[0]);
+    statuses = new Array(rows.length).fill('pending');
+    populateMappingStep();
+    goTo(2);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ── STEP 2: COLUMN MAPPING ──
+function populateMappingStep() {
+  const pSel = document.getElementById('colPhone');
+  const nSel = document.getElementById('colName');
+  pSel.innerHTML = '';
+  nSel.innerHTML = '<option value="">— nenhuma —</option>';
+
+  headers.forEach(h => {
+    pSel.innerHTML += `<option value="${h}">${h}</option>`;
+    nSel.innerHTML += `<option value="${h}">${h}</option>`;
+  });
+
+  // auto-detect common column names
+  const phoneGuess = headers.find(h => /tel|fone|celular|whatsapp|numero|número/i.test(h));
+  const nameGuess  = headers.find(h => /nome|name|estabelecimento|empresa/i.test(h));
+  if (phoneGuess) pSel.value = phoneGuess;
+  if (nameGuess)  nSel.value = nameGuess;
+
+  renderPreview();
+  pSel.onchange = nSel.onchange = renderPreview;
+}
+
+function renderPreview() {
+  const pSel = document.getElementById('colPhone').value;
+  const nSel = document.getElementById('colName').value;
+  const sample = rows.slice(0, 4);
+
+  let html = `<table class="preview-table"><thead><tr>`;
+  if (nSel) html += `<th>${nSel}</th>`;
+  html += `<th>${pSel}</th></tr></thead><tbody>`;
+  sample.forEach(r => {
+    html += '<tr>';
+    if (nSel) html += `<td>${r[nSel] || '—'}</td>`;
+    html += `<td style="font-family:'DM Mono',monospace">${r[pSel] || '—'}</td>`;
+    html += '</tr>';
+  });
+  if (rows.length > 4) html += `<tr><td colspan="2" style="color:var(--text-dim);font-size:12px;padding:8px 12px">... e mais ${rows.length - 4} contatos</td></tr>`;
+  html += '</tbody></table>';
+  document.getElementById('previewWrap').innerHTML = html;
+}
+
+document.getElementById('btnToMsg').onclick = () => {
+  colPhone = document.getElementById('colPhone').value;
+  colName  = document.getElementById('colName').value;
+  if (!colPhone) { alert('Selecione a coluna de telefone.'); return; }
+  goTo(3);
+};
+
+// ── STEP 3: MESSAGE ──
+const DEFAULT_MSG = `Boa tarde! 📢
+A partir do dia 07 de abril, iniciaremos a coleta seletiva de orgânicos no Centro Leste, nos períodos vespertino e noturno. Essa iniciativa faz parte do programa Florianópolis Capital Lixo Zero.
+
+Como participar:
+O estabelecimento deve adquirir bombonas plásticas de 50L para o descarte dos restos alimentares.
+É necessário comprar o dobro da sua necessidade diária (um jogo titular e um reserva), pois nossa equipe levará as cheias e deixará bombonas vazias e higienizadas no local.
+
+Nesta e na próxima semana, a equipe de Educação Ambiental visitará a região para realizar a capacitação. Contamos com a sua colaboração para tornarmos nossa cidade mais sustentável!
+
+Em breve, enviaremos mais detalhes. ♻️`;
+
+document.getElementById('msgText').value = DEFAULT_MSG;
+
+document.getElementById('btnStart').onclick = () => {
+  message = document.getElementById('msgText').value.trim();
+  if (!message) { alert('Digite a mensagem.'); return; }
+  current = 0;
+  renderSendStep();
+  document.getElementById('progressWrap').classList.add('active');
+  goTo(4);
+  updateProgress();
+};
+
+// ── STEP 4: SEND ──
+function renderSendStep() {
+  renderCurrentContact();
+  renderHistory();
+}
+
+function getPhone(row) {
+  let p = String(row[colPhone] || '').replace(/\D/g, '');
+  // add country code if missing
+  if (p.length <= 11 && !p.startsWith('55')) p = '55' + p;
+  return p;
+}
+
+function getName(row) {
+  if (colName && row[colName]) return String(row[colName]);
+  return '';
+}
+
+function buildMsg(row) {
+  const nome = getName(row) || 'estabelecimento';
+  return message.replace(/\{nome\}/gi, nome);
+}
+
+function renderCurrentContact() {
+  if (current >= rows.length) { finishAll(); return; }
+  const row = rows[current];
+  document.getElementById('curName').textContent  = getName(row) || '—';
+  document.getElementById('curPhone').textContent = row[colPhone] || '—';
+  document.getElementById('navCounter').textContent = `${current + 1} / ${rows.length}`;
+
+  const s = statuses[current];
+  const statusEl = document.getElementById('curStatus');
+  statusEl.textContent = s === 'sent' ? 'Enviado ✓' : s === 'skip' ? 'Pulado' : 'Pendente';
+  statusEl.className = `contact-status status-${s === 'pending' ? 'pending' : s === 'sent' ? 'sent' : 'skip'}`;
+
+  document.getElementById('msgPreview').textContent = buildMsg(row);
+  document.getElementById('btnPrev').disabled = current === 0;
+  document.getElementById('btnNext').disabled = current === rows.length - 1;
+}
+
+function navigate(dir) {
+  current = Math.max(0, Math.min(rows.length - 1, current + dir));
+  renderCurrentContact();
+}
+
+function openWA() {
+  const row = rows[current];
+  const phone = getPhone(row);
+  const text  = encodeURIComponent(buildMsg(row));
+  window.open(`https://wa.me/${phone}?text=${text}`, '_blank');
+  // auto-mark sent after opening
+  setTimeout(() => { if (statuses[current] === 'pending') markSent(); }, 1200);
+}
+
+function markSent() {
+  statuses[current] = 'sent';
+  renderCurrentContact();
+  renderHistory();
+  updateProgress();
+  if (current < rows.length - 1) setTimeout(() => { current++; renderCurrentContact(); }, 400);
+  else finishAll();
+}
+
+function markSkip() {
+  statuses[current] = 'skip';
+  renderCurrentContact();
+  renderHistory();
+  updateProgress();
+  if (current < rows.length - 1) { current++; renderCurrentContact(); }
+  else finishAll();
+}
+
+function updateProgress() {
+  const sent  = statuses.filter(s => s === 'sent').length;
+  const done  = statuses.filter(s => s !== 'pending').length;
+  const total = rows.length;
+  const pct   = total ? Math.round(done / total * 100) : 0;
+  document.getElementById('progressLabel').textContent = `${sent} enviados · ${done} / ${total} processados`;
+  document.getElementById('progressPct').textContent   = pct + '%';
+  document.getElementById('progressFill').style.width  = pct + '%';
+}
+
+function renderHistory() {
+  const list = document.getElementById('historyList');
+  list.innerHTML = rows.map((row, i) => {
+    const s = statuses[i];
+    const active = i === current ? 'border-color:var(--green);' : '';
+    return `<div class="contact-card" style="cursor:pointer;${active}" onclick="jumpTo(${i})">
+      <div>
+        <div class="contact-name" style="font-size:14px">${getName(row) || '—'}</div>
+        <div class="contact-phone">${row[colPhone] || '—'}</div>
+      </div>
+      <span class="contact-status status-${s === 'pending' ? 'pending' : s === 'sent' ? 'sent' : 'skip'}">
+        ${s === 'sent' ? '✓ Enviado' : s === 'skip' ? 'Pulado' : 'Pendente'}
+      </span>
+    </div>`;
+  }).join('');
+}
+
+function jumpTo(i) { current = i; renderCurrentContact(); }
+
+function finishAll() {
+  const allDone = statuses.every(s => s !== 'pending');
+  if (allDone) {
+    document.getElementById('sumSent').textContent  = statuses.filter(s => s === 'sent').length;
+    document.getElementById('sumSkip').textContent  = statuses.filter(s => s === 'skip').length;
+    document.getElementById('sumTotal').textContent = rows.length;
+    setTimeout(() => goTo(5), 600);
+  }
+}
+
+// ── EXPORT ──
+function exportCSV() {
+  const out = rows.map((row, i) => ({
+    ...row,
+    status: statuses[i]
+  }));
+  const ws = XLSX.utils.json_to_sheet(out);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Resultado');
+  XLSX.writeFile(wb, 'disparo_resultado.xlsx');
+}
+
+function restart() {
+  rows = []; headers = []; statuses = []; current = 0;
+  document.getElementById('progressWrap').classList.remove('active');
+  document.getElementById('progressFill').style.width = '0%';
+  fileInput.value = '';
+  goTo(1);
+}
+</script>
+</body>
+</html>
