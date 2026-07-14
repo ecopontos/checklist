@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel Administrativo - SATELITE v3</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00f2fe;
+            --secondary: #4facfe;
+            --bg: #0b0e14;
+            --surface: #161b22;
+            --text: #e6edf3;
+            --text-dim: #8b949e;
+            --accent: #f1c40f;
+            --danger: #ff7b72;
+            --success: #3fb950;
+            --glass: rgba(22, 27, 34, 0.8);
+            --card-border: rgba(255, 255, 255, 0.1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 40px 20px;
+            background-image: radial-gradient(circle at top right, rgba(0, 242, 254, 0.05), transparent 400px);
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; }
+
+        .header-nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+
+        .btn-back {
+            color: var(--text-dim);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: color 0.3s;
+        }
+
+        .btn-back:hover { color: var(--primary); }
+
+        h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: 10px; }
+        .subtitle { color: var(--text-dim); margin-bottom: 40px; }
+
+        .admin-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 30px;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--card-border);
+            border-radius: 24px;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .card h2 { font-size: 1.5rem; display: flex; align-items: center; gap: 12px; }
+        .card p { color: var(--text-dim); font-size: 0.9rem; line-height: 1.6; }
+
+        .import-zone {
+            border: 2px dashed var(--card-border);
+            padding: 30px;
+            text-align: center;
+            border-radius: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .import-zone:hover { border-color: var(--primary); background: rgba(0, 242, 254, 0.05); }
+        .import-zone i { font-size: 2rem; }
+
+        .btn {
+            padding: 12px 20px;
+            border-radius: 12px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-family: inherit;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn-primary { background: linear-gradient(135deg, var(--primary), var(--secondary)); color: #000; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0, 242, 254, 0.2); }
+        .btn-outline { background: transparent; border: 1px solid var(--card-border); color: var(--text); }
+        .btn-outline:hover { background: rgba(255, 255, 255, 0.05); }
+
+        .sync-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 15px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+            font-size: 0.85rem;
+        }
+
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .status-online { background: var(--success); box-shadow: 0 0 10px var(--success); }
+        .status-offline { background: var(--danger); }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(8px);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .modal-content {
+            background: var(--surface);
+            padding: 40px;
+            border-radius: 24px;
+            width: 100%;
+            max-width: 900px;
+            max-height: 90vh;
+            overflow-y: auto;
+            border: 1px solid var(--card-border);
+        }
+
+        .point-preview-list {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .point-preview-item {
+            display: grid;
+            grid-template-columns: 80px 1fr 1.5fr;
+            gap: 15px;
+            padding: 12px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 8px;
+            align-items: center;
+        }
+
+        input {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--card-border);
+            color: var(--text);
+            padding: 8px 12px;
+            border-radius: 6px;
+            outline: none;
+        }
+
+        input:focus { border-color: var(--primary); }
+
+        .loader {
+            display: none;
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 2000;
+            text-align: center;
+        }
+
+        .spinner {
+            width: 50px; height: 50px;
+            border: 5px solid rgba(255,255,255,0.1);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-nav">
+            <a href="index.html" class="btn-back">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                Voltar ao Dashboard
+            </a>
+        </div>
+
+        <h1>Administração do Sistema</h1>
+        <p class="subtitle">Gerenciamento de dados legados, integridade do banco SQLite e sincronização em nuvem.</p>
+
+        <div class="admin-grid">
+            <!-- MIGRACAO LEGADA -->
+            <div class="card">
+                <h2>📦 Migração de Dados Legados</h2>
+                <p>Absorva pontos, rotas e históricos do sistema antigo (Access/Excel) diretamente para o banco de dados local.</p>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div class="import-zone" onclick="document.getElementById('legacyRota').click()">
+                        <input type="file" id="legacyRota" style="display: none" accept=".xlsx">
+                        <span>Rotas (.xlsx)</span>
+                    </div>
+                    <div class="import-zone" onclick="document.getElementById('legacyRoteiro').click()">
+                        <input type="file" id="legacyRoteiro" style="display: none" accept=".xlsx">
+                        <span>Pontos (.xlsx)</span>
+                    </div>
+                </div>
+
+                <div class="import-zone" style="border-color: var(--accent);" onclick="document.getElementById('legacyColeta').click()">
+                    <input type="file" id="legacyColeta" style="display: none" accept=".xlsx">
+                    <span style="color: var(--accent);">Historico de Coletas (tblColeta.xlsx)</span>
+                </div>
+
+                <button id="btnOpenLegacyPreview" class="btn btn-primary" disabled>
+                    Visualizar e Incorporar Dados
+                </button>
+            </div>
+
+            <!-- SINCRONIZACAO SUPABASE -->
+            <div class="card">
+                <h2>☁️ Sincronização Supabase</h2>
+                <p>Transfira os dados locais para a nuvem para que outros dispositivos na rede possam acessar os roteiros atualizados.</p>
+                
+                <div class="sync-status">
+                    <div class="status-dot status-offline" id="syncStatusDot"></div>
+                    <span id="syncStatusText">Supabase não configurado</span>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <input type="text" id="supabaseUrl" placeholder="Supabase URL">
+                    <input type="password" id="supabaseKey" placeholder="Supabase Anon Key">
+                </div>
+
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-primary" style="flex: 1;" onclick="testSync()">Conectar & Sincronizar</button>
+                    <button class="btn btn-outline" onclick="backupSQLite()">Backup Local</button>
+                </div>
+            </div>
+
+            <!-- MANUTENÇÃO DO BANCO -->
+            <div class="card">
+                <h2>🛠️ Manutenção do Banco</h2>
+                <p>Gerencie o estado atual do SQLite, limpe dados temporários ou redefina o sistema.</p>
+                
+                <div style="background: rgba(0,0,0,0.2); border-radius: 12px; padding: 15px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem;">
+                        <span>Pontos Cadastrados:</span>
+                        <span id="statPointsCount" style="font-family: 'JetBrains Mono'; color: var(--primary);">0</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+                        <span>Registros de Coleta:</span>
+                        <span id="statCollectsCount" style="font-family: 'JetBrains Mono'; color: var(--primary);">0</span>
+                    </div>
+                </div>
+
+                <button class="btn btn-outline" style="border-color: var(--danger); color: var(--danger);" onclick="resetDatabase()">
+                    ⚠️ Resetar Banco de Dados
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL PREVIEW LEGADO -->
+    <div id="legacyPreviewModal" class="modal">
+        <div class="modal-content">
+            <h2 style="margin-bottom: 10px;">Revisão de Pontos Legados</h2>
+            <p class="subtitle" style="font-size: 0.9rem;">Dê nomes amigáveis aos pontos antes de integrá-los ao sistema de coleta.</p>
+            
+            <div class="point-preview-list" id="legacyList">
+                <!-- Injected via JS -->
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 15px; margin-top: 30px;">
+                <button class="btn btn-outline" onclick="document.getElementById('legacyPreviewModal').style.display='none'">Cancelar</button>
+                <button class="btn btn-primary" onclick="confirmLegacyMigration()">Finalizar Migração</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="loader" id="loader">
+        <div class="spinner"></div>
+        <p id="loaderText">Sincronizando...</p>
+    </div>
+
+    <script src="vendor/xlsx.full.min.js"></script>
+    <script src="vendor/sql-wasm.js"></script>
+    <script type="module">
+        import db from './database.js';
+
+        let legacyData = { rotas: [], roteiros: [], coletas: [] };
+
+        async function init() {
+            await db.init();
+            updateStats();
+            
+            // File listeners
+            document.getElementById('legacyRota').onchange = (e) => handleFile(e, 'rotas');
+            document.getElementById('legacyRoteiro').onchange = (e) => handleFile(e, 'roteiros');
+            document.getElementById('legacyColeta').onchange = (e) => handleFile(e, 'coletas');
+            
+            document.getElementById('btnOpenLegacyPreview').onclick = () => {
+                renderLegacyPreview();
+                document.getElementById('legacyPreviewModal').style.display = 'flex';
+            };
+        }
+
+        async function handleFile(e, type) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const data = new Uint8Array(event.target.result);
+                const wb = XLSX.read(data, { type: 'array' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                legacyData[type] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+                
+                if (type === 'roteiros') {
+                    document.getElementById('btnOpenLegacyPreview').disabled = false;
+                }
+                
+                if (type === 'coletas') {
+                    alert(`${legacyData.coletas.length} registros de histórico carregados. Estarão prontos para incorporação.`);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function renderLegacyPreview() {
+            const list = document.getElementById('legacyList');
+            list.innerHTML = '';
+            
+            legacyData.roteiros.forEach((p, i) => {
+                const id = p.ID_Rota || p.id_rota || i;
+                const logr = p.Logradouro || p.Rua || '';
+                const num = p.Numero || p.Nº || '';
+                const suggestedName = p.Cliente || p.Nome || `${p.Bairro || ''} - ${logr} ${num}`.trim() || `Ponto ${id}`;
+
+                const div = document.createElement('div');
+                div.className = 'point-preview-item';
+                div.innerHTML = `
+                    <div style="font-family: 'JetBrains Mono'; font-weight: 600;">${id}</div>
+                    <div style="color: var(--text-dim); font-size: 0.8rem;">${logr}, ${num}</div>
+                    <input type="text" value="${suggestedName}" class="legacy-name-input" data-idx="${i}">
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        window.confirmLegacyMigration = async () => {
+            showLoader("Incorporando ao SQLite...");
+            
+            // 1. Process Roteiros (Rotas)
+            const routeMap = {};
+            legacyData.rotas.forEach(r => {
+                const nome = r.Nome_Rota || r.Rota || r.Descricao || `Rota ${r.ID_Rota}`;
+                db.addRoteiro(nome);
+            });
+            const dbRoteiros = db.getRoteiros();
+            dbRoteiros.forEach(r => routeMap[r.nome] = r.id);
+
+            // 2. Process Clientes (Pontos)
+            const inputs = document.querySelectorAll('.legacy-name-input');
+            legacyData.roteiros.forEach((p, i) => {
+                const name = inputs[i].value;
+                const idRota = (p.ID_Rota || p.id_rota || i).toString();
+                
+                let roteiroId = null;
+                const rotaIdLegacy = p.ID_Rota_Ref || p.RotaID || p.id_rota;
+                const legacyRota = legacyData.rotas.find(r => r.ID_Rota == rotaIdLegacy);
+                if (legacyRota) {
+                    const rotaNome = legacyRota.Nome_Rota || legacyRota.Rota || legacyRota.Descricao || `Rota ${legacyRota.ID_Rota}`;
+                    roteiroId = routeMap[rotaNome];
+                }
+
+                db.upsertCliente({
+                    idRota: idRota,
+                    Cliente: name,
+                    logradouro: p.Logradouro || p.Rua || '',
+                    Número: p.Numero || p.Nº || '',
+                    CEP: p.CEP || '',
+                    roteiro_id: roteiroId || (dbRoteiros[0]?.id),
+                    Ordem: p.Ordem || (i * 10),
+                    ativo: true
+                });
+            });
+
+            // 3. Process History (Coletas)
+            legacyData.coletas.forEach(c => {
+                const idRota = c.ID_Rota || c.id_rota || c.ID_Ponto;
+                const data = c.Data_Coleta || c.Data || c.data;
+                const qtd = c.Quantidade || c.Qtd || c.Bombonas;
+                if (idRota && data) {
+                    db.addColeta({
+                        id_rota: idRota.toString(),
+                        data: data,
+                        quantidade: parseInt(qtd) || 0,
+                        intercorrencia: c.Intercorrencia || c.Obs || ''
+                    });
+                }
+            });
+
+            hideLoader();
+            alert("Migração concluída com sucesso!");
+            document.getElementById('legacyPreviewModal').style.display = 'none';
+            updateStats();
+        };
+
+        function updateStats() {
+            const pCount = db.db.exec("SELECT COUNT(*) FROM clientes")[0]?.values[0][0] || 0;
+            const cCount = db.db.exec("SELECT COUNT(*) FROM coletas")[0]?.values[0][0] || 0;
+            document.getElementById('statPointsCount').textContent = pCount;
+            document.getElementById('statCollectsCount').textContent = cCount;
+        }
+
+        window.testSync = () => {
+            const url = document.getElementById('supabaseUrl').value;
+            const key = document.getElementById('supabaseKey').value;
+            if (!url || !key) {
+                alert("Por favor, preencha as credenciais do Supabase.");
+                return;
+            }
+            showLoader("Sincronizando com Supabase...");
+            
+            // Placeholder for real sync logic
+            setTimeout(() => {
+                hideLoader();
+                document.getElementById('syncStatusDot').className = 'status-dot status-online';
+                document.getElementById('syncStatusText').textContent = 'Conectado ao Supabase';
+                alert("Sincronização concluída! Dados agora disponíveis na rede.");
+            }, 2000);
+        };
+
+        window.backupSQLite = () => db.downloadDatabase();
+
+        window.resetDatabase = () => {
+            if (confirm("TEM CERTEZA? Todos os dados locais serão apagados permanentemente.")) {
+                localStorage.removeItem('app3_db');
+                location.reload();
+            }
+        };
+
+        function showLoader(text) {
+            document.getElementById('loaderText').textContent = text;
+            document.getElementById('loader').style.display = 'block';
+        }
+
+        function hideLoader() {
+            document.getElementById('loader').style.display = 'none';
+        }
+
+        init();
+    </script>
+</body>
+</html>

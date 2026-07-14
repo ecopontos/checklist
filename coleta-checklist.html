@@ -1,1777 +1,486 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Coleta de Bombonas</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap');
-
-  :root {
-    --bg: #0e1117;
-    --surface: #161b26;
-    --surface2: #1e2535;
-    --border: #2a3347;
-    --accent: #00e5a0;
-    --accent2: #005f42;
-    --warn: #f59e0b;
-    --danger: #ef4444;
-    --text: #e8edf5;
-    --muted: #6b7a99;
-    --input-bg: #0e1117;
-  }
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
-    font-family: 'Syne', sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100vh;
-  }
-
-  /* ── HEADER ─────────────────────────────── */
-  header {
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    padding: 0 20px;
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    box-shadow: 0 4px 24px rgba(0,0,0,.4);
-  }
-
-  .header-top {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 14px 0 10px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .logo-icon {
-    width: 34px; height: 34px;
-    background: var(--accent);
-    border-radius: 8px;
-    display: grid; place-items: center;
-    flex-shrink: 0;
-  }
-  .logo-icon svg { width: 20px; height: 20px; }
-
-  .logo-text { font-size: 1.15rem; font-weight: 800; letter-spacing: -.3px; }
-  .logo-text span { color: var(--accent); }
-
-  .header-controls {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    padding: 12px 0;
-    align-items: flex-end;
-  }
-
-  .ctrl-group { display: flex; flex-direction: column; gap: 4px; }
-  .ctrl-label {
-    font-size: .68rem;
-    font-weight: 600;
-    color: var(--muted);
-    letter-spacing: .08em;
-    text-transform: uppercase;
-  }
-
-  select, input[type="date"] {
-    font-family: 'DM Mono', monospace;
-    font-size: .85rem;
-    background: var(--input-bg);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 7px 12px;
-    outline: none;
-    transition: border-color .2s;
-    cursor: pointer;
-  }
-  select:focus, input[type="date"]:focus { border-color: var(--accent); }
-  select { min-width: 160px; }
-
-  .btn {
-    font-family: 'Syne', sans-serif;
-    font-size: .8rem;
-    font-weight: 700;
-    letter-spacing: .05em;
-    border: none; border-radius: 8px;
-    padding: 8px 14px;
-    cursor: pointer;
-    transition: all .15s;
-    display: flex; align-items: center; gap: 6px;
-    white-space: nowrap;
-  }
-  .btn-primary { background: var(--accent); color: #000; }
-  .btn-primary:hover { filter: brightness(1.1); }
-  .btn-outline { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
-  .btn-outline:hover { background: rgba(0,229,160,.08); }
-  .btn-danger { background: var(--danger); color: #fff; }
-  .btn-danger:hover { filter: brightness(1.1); }
-  .btn-print { background: #6366f1; color: #fff; }
-  .btn-print:hover { filter: brightness(1.15); }
-
-  .header-right { margin-left: auto; display: flex; gap: 8px; align-items: flex-end; padding-bottom: 12px; }
-
-  /* ── STATS BAR ───────────────────────────── */
-  .stats-bar {
-    display: flex; flex-wrap: wrap; gap: 8px;
-    padding: 10px 20px;
-    background: var(--surface2);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .stat-pill {
-    display: flex; align-items: center; gap: 6px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    padding: 4px 12px;
-    font-size: .78rem;
-  }
-  .stat-dot { width: 7px; height: 7px; border-radius: 50%; }
-  .dot-green { background: var(--accent); }
-  .dot-yellow { background: var(--warn); }
-  .dot-gray { background: var(--muted); }
-  .stat-num { font-family: 'DM Mono', monospace; font-weight: 500; color: var(--accent); }
-
-  /* ── MAIN LIST ───────────────────────────── */
-  main { padding: 16px 20px; max-width: 800px; margin: 0 auto; }
-
-  #empty-state {
-    display: flex; flex-direction: column; align-items: center;
-    gap: 12px; padding: 80px 20px; text-align: center;
-    color: var(--muted);
-  }
-  #empty-state svg { opacity: .3; }
-  #empty-state p { font-size: .95rem; }
-  #empty-state small { font-size: .8rem; opacity: .7; }
-
-  /* ── ROW CARD ────────────────────────────── */
-  .row-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 12px 14px;
-    margin-bottom: 8px;
-    display: grid;
-    grid-template-columns: 28px 1fr auto;
-    gap: 0 12px;
-    align-items: start;
-    transition: border-color .15s, box-shadow .15s;
-    animation: fadeIn .2s ease;
-  }
-  @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
-
-  .row-card:hover { border-color: rgba(0,229,160,.35); box-shadow: 0 0 0 1px rgba(0,229,160,.1); }
-  .row-card.has-data { border-left: 3px solid var(--accent); }
-  .row-card.has-problem { border-left: 3px solid var(--warn); }
-  .row-card.inactive { opacity: .45; }
-
-  .row-num {
-    font-family: 'DM Mono', monospace;
-    font-size: .75rem;
-    color: var(--muted);
-    padding-top: 2px;
-    text-align: right;
-  }
-
-  .row-info { min-width: 0; }
-  .row-name {
-    font-size: .92rem;
-    font-weight: 700;
-    line-height: 1.3;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .row-addr {
-    font-size: .73rem;
-    color: var(--muted);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    margin-top: 2px;
-  }
-
-  .row-inputs { display: flex; gap: 8px; align-items: center; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
-
-  .num-input-wrap { display: flex; align-items: center; gap: 4px; }
-  .num-label { font-size: .68rem; color: var(--muted); font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
-
-  input[type="number"] {
-    font-family: 'DM Mono', monospace;
-    font-size: .9rem;
-    font-weight: 500;
-    width: 64px;
-    text-align: center;
-    background: var(--input-bg);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 5px 8px;
-    outline: none;
-    transition: border-color .2s;
-    -moz-appearance: textfield;
-  }
-  input[type="number"]::-webkit-outer-spin-button,
-  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
-  input[type="number"]:focus { border-color: var(--accent); }
-  input[type="number"].has-value { border-color: var(--accent); color: var(--accent); }
-
-  .prob-btn {
-    font-family: 'Syne', sans-serif;
-    font-size: .72rem;
-    font-weight: 700;
-    letter-spacing: .04em;
-    background: transparent;
-    color: var(--muted);
-    border: 1px dashed var(--border);
-    border-radius: 8px;
-    padding: 5px 10px;
-    cursor: pointer;
-    transition: all .15s;
-    white-space: nowrap;
-  }
-  .prob-btn:hover { border-color: var(--warn); color: var(--warn); }
-  .prob-btn.active { border-style: solid; border-color: var(--warn); color: var(--warn); background: rgba(245,158,11,.08); }
-
-  /* ── PROBLEM INLINE ──────────────────────── */
-  .prob-row {
-    grid-column: 2 / 4;
-    display: none;
-    margin-top: 8px;
-  }
-  .prob-row.open { display: block; }
-  .prob-row input[type="text"] {
-    width: 100%;
-    font-family: 'DM Mono', monospace;
-    font-size: .82rem;
-    background: var(--input-bg);
-    color: var(--warn);
-    border: 1px solid var(--warn);
-    border-radius: 8px;
-    padding: 7px 12px;
-    outline: none;
-  }
-  .prob-row input[type="text"]::placeholder { color: rgba(245,158,11,.4); }
-
-  /* ── IMPORT OVERLAY ──────────────────────── */
-  #import-overlay {
-    display: none;
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,.7);
-    z-index: 200;
-    justify-content: center; align-items: center;
-    padding: 20px;
-  }
-  #import-overlay.open { display: flex; }
-
-  /* ── SETTINGS OVERLAY ──────────────────────── */
-  #settings-overlay {
-    display: none;
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,.7);
-    z-index: 200;
-    justify-content: center; align-items: center;
-    padding: 20px;
-  }
-  #settings-overlay.open { display: flex; }
-
-  .import-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 28px;
-    max-width: 420px; width: 100%;
-  }
-  .import-card h2 { font-size: 1.1rem; margin-bottom: 6px; }
-  .import-card p { font-size: .82rem; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
-
-  .drop-zone {
-    border: 2px dashed var(--border);
-    border-radius: 12px;
-    padding: 32px;
-    text-align: center;
-    cursor: pointer;
-    transition: all .2s;
-    position: relative;
-  }
-  .drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: rgba(0,229,160,.04); }
-  .drop-zone input[type="file"] { position: absolute; inset:0; opacity:0; cursor:pointer; width:100%; }
-  .drop-zone p { font-size: .85rem; color: var(--muted); margin-top: 8px; }
-  .drop-zone strong { color: var(--accent); font-size: 1rem; }
-
-  .import-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
-
-  /* ── CHECKLIST MODAL ─────────────────────── */
-  #checklist-overlay {
-    display: none;
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,.7);
-    z-index: 200;
-    justify-content: center; align-items: center;
-    padding: 20px;
-  }
-  #checklist-overlay.open { display: flex; }
-
-  .checklist-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 28px;
-    max-width: 520px; width: 100%;
-  }
-  .checklist-card h2 { font-size: 1.1rem; margin-bottom: 6px; }
-  .checklist-card p { font-size: .82rem; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
-
-  .checklist-field {
-    display: flex; flex-direction: column; gap: 4px;
-    margin-bottom: 14px;
-  }
-  .checklist-field label {
-    font-size: .72rem;
-    font-weight: 600;
-    color: var(--muted);
-    letter-spacing: .06em;
-    text-transform: uppercase;
-  }
-  .checklist-field input, .checklist-field select {
-    font-family: 'DM Mono', monospace;
-    font-size: .85rem;
-    background: var(--input-bg);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px 12px;
-    outline: none;
-    transition: border-color .2s;
-  }
-  .checklist-field input:focus, .checklist-field select:focus {
-    border-color: var(--accent);
-  }
-
-  .checklist-actions {
-    display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px;
-  }
-
-  /* ── TOAST ───────────────────────────────── */
-  #toast {
-    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
-    background: var(--surface2); border: 1px solid var(--border);
-    border-radius: 10px; padding: 10px 20px;
-    font-size: .85rem; font-weight: 600;
-    opacity: 0; transition: all .3s;
-    z-index: 300; white-space: nowrap;
-    pointer-events: none;
-  }
-  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-  #toast.success { border-color: var(--accent); color: var(--accent); }
-  #toast.error { border-color: var(--danger); color: var(--danger); }
-
-  /* ── SEARCH ──────────────────────────────── */
-  .search-wrap { position: relative; flex: 1; min-width: 160px; }
-  .search-wrap svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); opacity: .4; pointer-events: none; }
-  input[type="search"] {
-    width: 100%;
-    font-family: 'Syne', sans-serif;
-    font-size: .82rem;
-    background: var(--input-bg);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 7px 10px 7px 32px;
-    outline: none;
-    transition: border-color .2s;
-  }
-  input[type="search"]:focus { border-color: var(--accent); }
-
-  @media (max-width: 560px) {
-    .header-controls { flex-direction: column; }
-    .header-right { margin-left: 0; width: 100%; flex-wrap: wrap; }
-    .row-card { grid-template-columns: 24px 1fr; }
-    .row-inputs { grid-column: 1 / 3; justify-content: flex-start; }
-    .prob-row { grid-column: 1 / 3; }
-  }
-</style>
-</head>
-<body>
-
-<!-- IMPORT OVERLAY -->
-<div id="import-overlay">
-  <div class="import-card">
-    <h2>Importar Planilha CSV</h2>
-    <p>Importe do <strong>Google Drive</strong> ou selecione um arquivo local.</p>
-    
-    <div style="margin-bottom:16px">
-      <label class="ctrl-label" style="display:block;margin-bottom:6px">URL do Google Drive</label>
-      <div style="display:flex;gap:8px">
-        <input type="url" id="gdrive-url" placeholder="https://drive.google.com/file/d/..." 
-          style="flex:1;font-family:'DM Mono',monospace;font-size:.82rem;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 12px;outline:none">
-        <button class="btn btn-primary" onclick="importFromDrive()" id="btn-import-drive">
-          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"/></svg>
-          Importar
-        </button>
-      </div>
-      <div id="drive-status" style="font-size:.75rem;margin-top:6px;color:var(--muted);display:none"></div>
-      <div style="font-size:.7rem;color:var(--muted);margin-top:8px;line-height:1.5">
-        <strong style="color:var(--accent)">Como obter a URL:</strong><br>
-        1. Envie o arquivo para o Google Drive<br>
-        2. Clique com botão direito → <em>Compartilhar</em><br>
-        3. Em "Acesso geral", selecione <em>"Qualquer pessoa com o link"</em><br>
-        4. Copie o link e cole acima
-      </div>
-    </div>
-
-    <div style="position:relative;text-align:center;margin:16px 0">
-      <span style="background:var(--surface);padding:0 12px;font-size:.75rem;color:var(--muted);position:relative;z-index:1">ou importe manualmente</span>
-      <div style="position:absolute;top:50%;left:0;right:0;height:1px;background:var(--border)"></div>
-    </div>
-
-    <div class="drop-zone" id="drop-zone">
-      <input type="file" id="file-input" accept=".csv">
-      <svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="color:var(--accent);margin:0 auto"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"/></svg>
-      <strong>Clique ou arraste o arquivo</strong>
-      <p>Formato: CSV UTF-16, separador ;</p>
-    </div>
-    <div class="import-actions">
-      <button class="btn btn-outline" onclick="closeImport()">Cancelar</button>
-    </div>
-  </div>
-</div>
-
-<!-- CHECKLIST PRINT MODAL -->
-<div id="checklist-overlay">
-  <div class="checklist-card">
-    <h2>Imprimir Checklist do Roteiro</h2>
-    <p>Configure os dados abaixo e clique em gerar. O checklist sera aberto em uma nova aba formatado para impressao A4 paisagem.</p>
-    <div class="checklist-field">
-      <label>Data da Proxima Coleta</label>
-      <input type="date" id="prox-data-coleta">
-    </div>
-    <div class="checklist-field">
-      <label>Tipo de Residuo</label>
-      <select id="checklist-tipo-residuo">
-        <option value="Organicos">Organicos</option>
-		<option value="Vidros">Vidros</option>
-        <option value="Plasticos">Plasticos</option>
-        <option value="Papel e Papelao">Papel e Papelao</option>
-        <option value="Oleo de Cozinha">Oleo de Cozinha</option>
-        <option value="Bombonas">Bombonas</option>
-        <option value="Residuos Solidos">Residuos Solidos</option>
-      </select>
-    </div>
-    <div class="checklist-field">
-      <label>Motorista</label>
-      <input type="text" id="checklist-motorista" placeholder="Nome do motorista (opcional)">
-    </div>
-    <div class="checklist-field">
-      <label>Veiculo</label>
-      <input type="text" id="checklist-veiculo" placeholder="Placa ou identificacao (opcional)">
-    </div>
-    <div class="checklist-actions">
-      <button class="btn btn-outline" onclick="closeChecklist()">Cancelar</button>
-      <button class="btn btn-print" onclick="generateChecklist()">
-        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h2m2 4h6a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2zm8-12V5a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4h10z"/></svg>
-        Gerar Checklist
-      </button>
-    </div>
-  </div>
-</div>
-
-<!-- SETTINGS OVERLAY -->
-<div id="settings-overlay">
-  <div class="import-card" style="max-width:480px">
-    <h2>Configuracoes de Envio</h2>
-    <p>Configure a URL do Google Apps Script para enviar registros diretamente ao Google Sheets.</p>
-    
-    <div class="checklist-field">
-      <label>URL do Google Apps Script</label>
-      <input type="url" id="appscript-url" placeholder="https://script.google.com/macros/s/.../exec"
-        style="width:100%">
-    </div>
-
-    <div style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:16px">
-      <div style="font-size:.72rem;color:var(--muted);line-height:1.6">
-        <strong style="color:var(--accent)">Como configurar:</strong><br>
-        1. Abra <a href="https://script.google.com" target="_blank" style="color:var(--accent)">script.google.com</a><br>
-        2. Crie um novo projeto e cole o codigo abaixo<br>
-        3. Deploy → Nova implantacao → Web app<br>
-        4. Execute como: <em>Eu</em>, Acesso: <em>Qualquer pessoa</em><br>
-        5. Copie a URL e cole acima
-      </div>
-      <div style="margin-top:10px">
-        <button class="btn btn-outline" onclick="copyAppsScriptCode()" style="font-size:.72rem;padding:5px 10px">
-          <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          Copiar codigo Apps Script
-        </button>
-      </div>
-    </div>
-
-    <div class="import-actions">
-      <button class="btn btn-outline" onclick="closeSettings()">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveSettings()">Salvar</button>
-    </div>
-  </div>
-</div>
-
-<!-- HEADER -->
-<header>
-  <div class="header-top">
-    <div class="logo-icon">
-      <svg fill="none" stroke="#000" stroke-width="2" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M20 7H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1zM16 3H8M12 12v4M10 14h4"/>
-      </svg>
-    </div>
-    <span class="logo-text">Coleta <span>Bombonas</span></span>
-  </div>
-  <div class="header-controls">
-    <div class="ctrl-group">
-      <span class="ctrl-label">Roteiro</span>
-      <select id="roteiro-select" onchange="applyFilters()">
-        <option value="">— selecione —</option>
-      </select>
-    </div>
-    <div class="ctrl-group">
-      <span class="ctrl-label">Data da Coleta</span>
-      <input type="date" id="data-coleta">
-    </div>
-    <div class="ctrl-group" style="flex:1">
-      <span class="ctrl-label">Buscar</span>
-      <div class="search-wrap">
-        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-        <input type="search" id="search-input" placeholder="Nome do cliente..." oninput="applyFilters()">
-      </div>
-    </div>
-    <div class="header-right">
-      <div class="ctrl-group">
-        <span class="ctrl-label">Banco de Dados</span>
-        <div style="display:flex; gap:6px">
-          <button class="btn btn-outline" onclick="exportBackup()" title="Baixar backup dos dados local">
-            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M7.5 12 12 16.5m0 0 4.5-4.5M12 16.5V3"/></svg>
-            Exportar
-          </button>
-          <button class="btn btn-outline" onclick="triggerImportDb()" title="Restaurar backup de outra máquina">
-             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"/></svg>
-            Importar
-          </button>
-          <input type="file" id="db-import-input" style="display:none" accept=".json" onchange="importBackup(this)">
-        </div>
-      </div>
-      <button class="btn btn-outline" onclick="openImport()">
-        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M7.5 7.5 12 3m0 0 4.5 4.5M12 3v13.5"/></svg>
-        Sinc. CSV
-      </button>
-      <button class="btn btn-print" onclick="openChecklist()">
-        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h2m2 4h6a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2zm8-12V5a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4h10z"/></svg>
-        Imprimir
-      </button>
-      <div style="display:flex;gap:4px">
-        <button class="btn btn-primary" onclick="handleSave()" id="btn-save">
-          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"/></svg>
-          Salvar
-        </button>
-        <button class="btn btn-outline" onclick="openSettings()" title="Configurar envio para Google Sheets" style="padding:8px">
-          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        </button>
-      </div>
-    </div>
-  </div>
-</header>
-
-<!-- STATS BAR -->
-<div class="stats-bar" id="stats-bar" style="display:none">
-  <div class="stat-pill">
-    <div class="stat-dot dot-gray"></div>
-    <span id="stat-total">0</span>&nbsp;pontos
-  </div>
-  <div class="stat-pill">
-    <div class="stat-dot dot-green"></div>
-    <span class="stat-num" id="stat-coletados">0</span>&nbsp;coletados
-  </div>
-  <div class="stat-pill">
-    <div class="stat-dot dot-green"></div>
-    <span class="stat-num" id="stat-bombonas">0</span>&nbsp;bombonas
-  </div>
-  <div class="stat-pill">
-    <div class="stat-dot dot-yellow"></div>
-    <span id="stat-problemas">0</span>&nbsp;com problema
-  </div>
-</div>
-
-<!-- MAIN -->
-<main>
-  <div id="empty-state">
-    <svg width="64" height="64" fill="none" stroke="currentColor" stroke-width="1.2" viewBox="0 0 24 24" style="color:var(--accent)">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25Z"/>
-    </svg>
-    <p>Nenhum dado carregado</p>
-    <small>Importe o arquivo CSV e selecione um roteiro para começar</small>
-  </div>
-  <div id="list-container"></div>
-</main>
-
-<div id="toast"></div>
-
-<script>
-// ── STATE ──────────────────────────────────────────────────────────────────
-let allRows = [];   // parsed CSV rows (active points for the current session)
-let currentEntries = {}; // { idRota: { bombonas: n, problema: '' } } - current session
-let db = {
-  clients: {},  // { idRota: { name, address, roteiro, active, order } }
-  history: {},  // { idRota: { lastBombonas: n, lastDate: '...' } }
-  lastSync: null
-};
-let currentRoteiro = '';
-
-function loadDb() {
-  const saved = localStorage.getItem('coleta_bombonas_db');
-  if(saved) {
-    try {
-      const parsed = JSON.parse(saved);
-      db = { ...db, ...parsed };
-    } catch(e) { console.error('Error loading DB', e); }
-  }
-}
-
-function saveDb() {
-  localStorage.setItem('coleta_bombonas_db', JSON.stringify(db));
-}
-
-// ── INIT ───────────────────────────────────────────────────────────────────
-(async function init() {
-  loadDb();
-
-  // default date = today
-  const today = new Date();
-  const yyyy = today.getFullYear();
-  const mm = String(today.getMonth()+1).padStart(2,'0');
-  const dd = String(today.getDate()).padStart(2,'0');
-  document.getElementById('data-coleta').value = `${yyyy}-${mm}-${dd}`;
-
-  // next collection: 7 days from now
-  const prox = new Date(today);
-  prox.setDate(prox.getDate() + 7);
-  const py = prox.getFullYear();
-  const pm = String(prox.getMonth()+1).padStart(2,'0');
-  const pd = String(prox.getDate()).padStart(2,'0');
-  document.getElementById('prox-data-coleta').value = `${py}-${pm}-${pd}`;
-
-  // drag-over visual
-  const dz = document.getElementById('drop-zone');
-  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
-  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
-  dz.addEventListener('drop', e => {
-    e.preventDefault(); dz.classList.remove('drag-over');
-    const file = e.dataTransfer.files[0];
-    if(file) parseCSVFile(file);
-  });
-
-  document.getElementById('file-input').addEventListener('change', e => {
-    if(e.target.files[0]) parseCSVFile(e.target.files[0]);
-  });
-
-  // Load saved Google Drive URL into input
-  loadSavedDriveUrl();
-
-  // If we have clients in memory, build the selector
-  if(Object.keys(db.clients).length > 0) {
-    syncAllRowsFromDb();
-    buildRouteSelector();
-  }
-
-  // Auto-import from Google Drive on app open (if URL was previously saved)
-  const savedFileId = localStorage.getItem('coleta_gdrive_fileid');
-  if (savedFileId && Object.keys(db.clients).length === 0) {
-    showToast('Atualizando dados do Google Drive...', 'success');
-    const ok = await autoImportFromDrive();
-    if (ok) {
-      showToast('Dados atualizados automaticamente!', 'success');
-      buildRouteSelector();
-      applyFilters();
-    }
-  }
-
-  // Update save button hint based on Apps Script config
-  updateSaveButtonHint();
-})();
-
-function updateSaveButtonHint() {
-  const btn = document.getElementById('btn-save');
-  const appScriptUrl = localStorage.getItem('coleta_appscript_url');
-  if (appScriptUrl) {
-    btn.title = 'Enviar para Google Sheets + backup local';
-  } else {
-    btn.title = 'Baixar arquivo CSV (configure Apps Script para enviar ao Sheets)';
-  }
-}
-
-function syncAllRowsFromDb() {
-  allRows = Object.values(db.clients).filter(c => c.active);
-}
-
-// ── IMPORT ─────────────────────────────────────────────────────────────────
-function openImport() { document.getElementById('import-overlay').classList.add('open'); }
-function closeImport() { document.getElementById('import-overlay').classList.remove('open'); }
-
-function parseCSVFile(file) {
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    try {
-      const text = e.target.result;
-      processCSVText(text);
-      closeImport();
-    } catch(err) {
-      showToast('Erro ao ler arquivo: ' + err.message, 'error');
-    }
-  };
-  reader.readAsText(file, 'UTF-16');
-}
-
-function buildRouteSelector() {
-  const roteiros = [...new Set(allRows.map(r => r['Roteiro']))].sort();
-  const sel = document.getElementById('roteiro-select');
-  sel.innerHTML = '<option value="">— selecione —</option>';
-  roteiros.forEach(r => {
-    const opt = document.createElement('option');
-    opt.value = r; opt.textContent = r;
-    sel.appendChild(opt);
-  });
-}
-
-// ── FILTER + RENDER ────────────────────────────────────────────────────────
-function applyFilters() {
-  currentRoteiro = document.getElementById('roteiro-select').value;
-  const q = document.getElementById('search-input').value.toLowerCase();
-
-  if(!currentRoteiro) { renderEmpty(); return; }
-
-  let filtered = allRows.filter(r => r['Roteiro'] === currentRoteiro);
-  if(q) filtered = filtered.filter(r => r['Cliente'].toLowerCase().includes(q));
-
-  filtered.sort((a, b) => (parseInt(a['Ordem']) || 0) - (parseInt(b['Ordem']) || 0));
-
-  renderList(filtered);
-}
-
-function renderEmpty() {
-  document.getElementById('empty-state').style.display = 'flex';
-  document.getElementById('list-container').innerHTML = '';
-  document.getElementById('stats-bar').style.display = 'none';
-}
-
-function renderList(rows) {
-  const es = document.getElementById('empty-state');
-  const lc = document.getElementById('list-container');
-  const sb = document.getElementById('stats-bar');
-
-  if(rows.length === 0) {
-    es.style.display = 'flex';
-    lc.innerHTML = '';
-    sb.style.display = 'none';
-    return;
-  }
-
-  es.style.display = 'none';
-  sb.style.display = 'flex';
-
-  lc.innerHTML = rows.map((r, idx) => {
-    const id = r['idRota'];
-    const session = currentEntries[id] || {};
-    const history = db.history[id] || {};
-    
-    // Logic: If not edited in current session, use history as default value (auto-fill)
-    const bombonasValue = session.bombonas !== undefined ? session.bombonas : (history.lastBombonas !== undefined ? history.lastBombonas : '');
-    
-    const prob = session.problema || '';
-    const hasData = bombonasValue !== '';
-    const hasProb = prob !== '';
-
-    let cls = 'row-card';
-    if(hasProb) cls += ' has-problem';
-    else if(hasData) cls += ' has-data';
-
-    const addr = [r['logradouro'], r['Número']].filter(Boolean).join(', ');
-
-    return `
-    <div class="${cls}" id="card-${id}">
-      <div class="row-num">${r['Ordem'] || idx+1}</div>
-      <div class="row-info">
-        <div class="row-name" title="${r['Cliente']}">${r['Cliente']}</div>
-        <div class="row-addr">${addr}</div>
-        ${history.lastBombonas !== undefined ? `<div style="font-size:0.65rem; color:var(--accent); margin-top:4px; font-weight:600">ANTERIOR: ${history.lastBombonas} ${history.lastDate ? `(${formatDateBR(history.lastDate)})` : ''}</div>` : ''}
-      </div>
-      <div class="row-inputs">
-        <div class="num-input-wrap">
-          <span class="num-label">Bomb.</span>
-          <input type="number" min="0" value="${bombonasValue}"
-            id="b-${id}"
-            class="${hasData?'has-value':''}"
-            placeholder="0"
-            onchange="setEntry('${id}','bombonas',this)"
-            oninput="setEntry('${id}','bombonas',this)">
-        </div>
-        <button class="prob-btn ${hasProb?'active':''}" id="pb-${id}"
-          onclick="toggleProb('${id}')">
-          ${hasProb ? '⚠ Prob.' : '+ Prob.'}
-        </button>
-      </div>
-      <div class="prob-row ${hasProb?'open':''}" id="pr-${id}">
-        <input type="text" maxlength="200"
-          placeholder="Descreva o problema..."
-          value="${escHtml(prob)}"
-          oninput="setEntry('${id}','problema',this)">
-      </div>
-    </div>`;
-  }).join('');
-
-  updateStats(rows);
-}
-
-function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-// ── ENTRY MUTATIONS ────────────────────────────────────────────────────────
-function setEntry(id, field, el) {
-  if(!currentEntries[id]) currentEntries[id] = {};
-  const val = field === 'bombonas' ? (el.value === '' ? undefined : parseInt(el.value)||0) : el.value;
-  currentEntries[id][field] = val;
-
-  // Update permanent history if it's a drum count
-  if(field === 'bombonas' && val !== undefined) {
-    db.history[id] = {
-      lastBombonas: val,
-      lastDate: document.getElementById('data-coleta').value
-    };
-    saveDb();
-  } else if (field === 'problema') {
-    // Problem also persists in session
-    saveDb();
-  }
-
-  const card = document.getElementById('card-'+id);
-  const session = currentEntries[id];
-  const history = db.history[id] || {};
-  
-  const hasData = session.bombonas !== undefined || history.lastBombonas !== undefined;
-  const hasProb = session.problema && session.problema.trim() !== '';
-
-  card.className = 'row-card' + (hasProb ? ' has-problem' : hasData ? ' has-data' : '');
-
-  const inp = document.getElementById('b-'+id);
-  if(inp) inp.className = hasData ? 'has-value' : '';
-
-  // update stats
-  const rotRows = allRows.filter(r => r['Roteiro'] === currentRoteiro);
-  updateStats(rotRows);
-}
-
-function toggleProb(id) {
-  const pr = document.getElementById('pr-'+id);
-  const pb = document.getElementById('pb-'+id);
-  const isOpen = pr.classList.contains('open');
-  if(isOpen) {
-    pr.classList.remove('open');
-    pb.classList.remove('active');
-    pb.textContent = '+ Prob.';
-    if(currentEntries[id]) currentEntries[id].problema = '';
-    
-    // Refresh card class - fallback to history for 'has-data'
-    const session = currentEntries[id] || {};
-    const history = db.history[id] || {};
-    const hasData = session.bombonas !== undefined || history.lastBombonas !== undefined;
-    const card = document.getElementById('card-'+id);
-    card.className = 'row-card' + (hasData ? ' has-data' : '');
-  } else {
-    pr.classList.add('open');
-    pb.classList.add('active');
-    pb.textContent = '⚠ Prob.';
-    pr.querySelector('input').focus();
-  }
-}
-
-// ── STATS ──────────────────────────────────────────────────────────────────
-function updateStats(rows) {
-  let coletados = 0, totalBombonas = 0, comProb = 0;
-  rows.forEach(r => {
-    const id = r.idRota;
-    const session = currentEntries[id] || {};
-    const history = db.history[id] || {};
-    
-    const count = session.bombonas !== undefined ? session.bombonas : history.lastBombonas;
-    const prob = session.problema || '';
-    
-    if(count !== undefined) {
-      coletados++;
-      totalBombonas += (parseInt(count) || 0);
-    }
-    if(prob.trim()) comProb++;
-  });
-  document.getElementById('stat-total').textContent = rows.length;
-  document.getElementById('stat-coletados').textContent = coletados;
-  document.getElementById('stat-bombonas').textContent = totalBombonas;
-  document.getElementById('stat-problemas').textContent = comProb;
-}
-
-// ── EXPORT CSV ─────────────────────────────────────────────────────────────
-function exportCSV(silent = false) {
-  const roteiro = document.getElementById('roteiro-select').value;
-  const data = document.getElementById('data-coleta').value;
-
-  if(!roteiro) { if(!silent) showToast('Selecione um roteiro antes de salvar', 'error'); return; }
-  if(!data) { if(!silent) showToast('Informe a data da coleta', 'error'); return; }
-
-  const rows = allRows.filter(r => r['Roteiro'] === roteiro);
-
-  const header = ['idRota','Roteiro','Cliente','logradouro','Numero','CEP','BombonasColetadas','Problemas','DataColeta'];
-  const csvRows = [header.join(';')];
-
-  rows.forEach(r => {
-    const id = r.idRota;
-    const session = currentEntries[id] || {};
-    const history = db.history[id] || {};
-    
-    const bombonas = session.bombonas !== undefined ? session.bombonas : (history.lastBombonas !== undefined ? history.lastBombonas : '');
-    const prob = session.problema || '';
-
-    const cols = [
-      id,
-      r['Roteiro'],
-      r['Cliente'] ? r['Cliente'].replace(/;/g,' ') : '',
-      (r['logradouro']||'').replace(/;/g,' '),
-      (r['Número']||'').toString().replace(',00',''),
-      r['CEP'] || '',
-      bombonas,
-      prob.replace(/;/g,' ').replace(/\n/g,' '),
-      data
-    ];
-    csvRows.push(cols.join(';'));
-  });
-
-  const bom = '\uFEFF';
-  const blob = new Blob([bom + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `coleta_${roteiro}_${data}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-  if(!silent) showToast(`✓ coleta_${roteiro}_${data}.csv salvo`, 'success');
-}
-
-// ── CHECKLIST PRINT ────────────────────────────────────────────────────────
-function openChecklist() {
-  if(!currentRoteiro) {
-    showToast('Selecione um roteiro primeiro', 'error');
-    return;
-  }
-  document.getElementById('checklist-overlay').classList.add('open');
-}
-function closeChecklist() {
-  document.getElementById('checklist-overlay').classList.remove('open');
-}
-
-function formatDateBR(dateStr) {
-  if(!dateStr) return '____/____/________';
-  const parts = dateStr.split('-');
-  if(parts.length !== 3) return dateStr;
-  return `${parts[2]}/${parts[1]}/${parts[0]}`;
-}
-
-function generateChecklist() {
-  const roteiro = document.getElementById('roteiro-select').value;
-  const dataColeta = document.getElementById('data-coleta').value;
-  const proxData = document.getElementById('prox-data-coleta').value;
-  const tipoResiduo = document.getElementById('checklist-tipo-residuo').value;
-  const motorista = document.getElementById('checklist-motorista').value.trim();
-  const veiculo = document.getElementById('checklist-veiculo').value.trim();
-
-  if(!roteiro) { showToast('Selecione um roteiro', 'error'); return; }
-
-  const rows = allRows.filter(r => r['Roteiro'] === roteiro)
-    .sort((a, b) => (parseInt(a['Ordem']) || 0) - (parseInt(b['Ordem']) || 0));
-
-  if(rows.length === 0) {
-    showToast('Nenhum ponto encontrado para este roteiro', 'error');
-    return;
-  }
-
-  // Calculate totals
-  let totalMedia = 0;
-  rows.forEach(r => {
-    const id = r.idRota;
-    const session = currentEntries[id] || {};
-    const history = db.history[id] || {};
-    const count = session.bombonas !== undefined ? session.bombonas : history.lastBombonas;
-    totalMedia += (count !== undefined && count > 0) ? parseInt(count) : 0;
-  });
-
-  const dataColetaBR = formatDateBR(dataColeta);
-  const proxDataBR = formatDateBR(proxData);
-
-  // Build table rows
-  let tableRows = '';
-  rows.forEach((r, idx) => {
-    const id = r['idRota'];
-    const session = currentEntries[id] || {};
-    const history = db.history[id] || {};
-    
-    const count = session.bombonas !== undefined ? session.bombonas : history.lastBombonas;
-    const bombonas = (count !== undefined && count > 0) ? count : '';
-    
-    const num = (r['Número'] || '').toString().replace(',00', '');
-    const cep = r['CEP'] || '';
-    const prob = session.problema || '';
-    const rowClass = prob ? ' class="row-problem"' : '';
-
-    tableRows += `
-      <tr${rowClass}>
-        <td class="c-ordem">${r['Ordem'] || idx + 1}</td>
-        <td class="c-cliente">${r['Cliente']}</td>
-        <td class="c-logradouro">${r['logradouro'] || ''}</td>
-        <td class="c-num">${num}</td>
-        <td class="c-id">${id}</td>
-        <td class="c-bombonas">${bombonas}</td>
-        <td class="c-coletadas"></td>
-        <td class="c-problema">${prob}</td>
-      </tr>`;
-  });
-
-  // Motorista & veiculo info
-  const infoExtra = `
-    <div class="info-extra">
-      ${motorista ? '<div class="info-item"><span>Motorista:</span> <strong>' + motorista + '</strong></div>' : ''}
-      ${veiculo ? '<div class="info-item"><span>Veiculo:</span> <strong>' + veiculo + '</strong></div>' : ''}
-      <div class="info-item"><span>Total de Pontos:</span> <strong>${rows.length}</strong></div>
-      <div class="info-item"><span>Bombonas Previstas:</span> <strong>${totalMedia}</strong></div>
-    </div>`;
-
-  // ── inject auto-column-width script ──────────────────────────────────────
-  // Appended just before </body> in the generated print window HTML
-  const autoSizeScript = `
-<script>
-(function() {
-  // Measure text width using Canvas API (8pt Arial = same as print body font)
-  var canvas = document.createElement('canvas');
-  var ctx = canvas.getContext('2d');
-  ctx.font = 'bold 8pt Arial'; // header font (bolder)
-
-  function maxTextWidth(cells, headerText) {
-    ctx.font = 'bold 8pt Arial';
-    var w = ctx.measureText(headerText).width;
-    ctx.font = '8pt Arial';
-    cells.forEach(function(td) {
-      var tw = ctx.measureText(td.textContent.trim()).width;
-      if (tw > w) w = tw;
-    });
-    return w;
-  }
-
-  var PADDING = 10; // px left+right cell padding
-  var FALLBACK_CM = 226; // 8cm in px (96dpi: 8*96/2.54 ≈ 302; at 72dpi print: 226)
-  var MAX_PX = 320;
-
-  var clienteCells = document.querySelectorAll('td.c-cliente');
-  var logradouroCells = document.querySelectorAll('td.c-logradouro');
-
-  var clienteW  = Math.min(Math.max(maxTextWidth(clienteCells,  'CLIENTE')     + PADDING, 60), MAX_PX);
-  var logradouroW = Math.min(Math.max(maxTextWidth(logradouroCells, 'LOGRADOURO') + PADDING, 60), MAX_PX);
-
-  // Apply to all cells of each column
-  function setWidth(cells, headerClass, w) {
-    var th = document.querySelector('th.' + headerClass);
-    if (th) th.style.width = w + 'px';
-    cells.forEach(function(td) { td.style.width = w + 'px'; });
-  }
-
-  setWidth(clienteCells,    'c-cliente',    clienteW);
-  setWidth(logradouroCells, 'c-logradouro', logradouroW);
-})();
-<\/script>`;
-
-  const htmlContent = `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<title>Checklist Coleta ${roteiro} - ${dataColetaBR}</title>
-<style>
-  @page {
-    size: A4 landscape;
-    margin: 8mm 10mm;
-  }
-  * {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }
-  body {
-    font-family: Arial, Helvetica, sans-serif;
-    font-size: 9pt;
-    color: #000;
-    line-height: 1.2;
-  }
-
-  /* ── HEADER ── */
-  .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 5px;
-    padding-bottom: 4px;
-    border-bottom: 2px solid #1a3a5c;
-  }
-  .page-header h1 {
-    font-size: 14pt;
-    font-weight: 700;
-    color: #1a3a5c;
-    line-height: 1.1;
-  }
-  .page-header h1 span {
-    font-weight: 400;
-    font-size: 11pt;
-    color: #444;
-  }
-  .header-info {
-    text-align: right;
-    font-size: 9pt;
-    color: #333;
-    line-height: 1.5;
-  }
-  .header-info strong {
-    color: #000;
-  }
-
-  /* ── INFO BAR ── */
-  .info-bar {
-    display: flex;
-    gap: 20px;
-    margin-bottom: 5px;
-    padding: 3px 0;
-    font-size: 8.5pt;
-    color: #333;
-    border-bottom: 1px solid #ccc;
-    padding-bottom: 3px;
-  }
-  .info-bar span {
-    white-space: nowrap;
-  }
-  .info-bar .label {
-    font-weight: 600;
-    color: #1a3a5c;
-  }
-  .info-extra {
-    display: flex;
-    gap: 20px;
-    margin-bottom: 5px;
-    font-size: 8pt;
-    color: #555;
-    flex-wrap: wrap;
-  }
-  .info-extra .info-item span {
-    color: #777;
-    margin-right: 3px;
-  }
-
-  /* ── TABLE ── */
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
-    margin-top: 3px;
-  }
-  thead {
-    display: table-header-group;
-  }
-  thead th {
-    background: #1a3a5c;
-    color: #fff;
-    font-size: 8pt;
-    font-weight: 700;
-    padding: 4px 4px;
-    text-align: center;
-    border: 1px solid #1a3a5c;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    white-space: nowrap;
-  }
-  tbody tr {
-    page-break-inside: avoid;
-  }
-  tbody td {
-    padding: 3px 4px;
-    border: 1px solid #ccc;
-    font-size: 8pt;
-    vertical-align: middle;
-  }
-  tbody tr:nth-child(even) {
-    background: #f5f7fa;
-  }
-  tbody tr:last-child td {
-    border-bottom: 2px solid #1a3a5c;
-  }
-  .row-problem {
-    background: #fff3cd !important;
-  }
-  .row-problem td.c-problema {
-    color: #856404;
-    font-weight: 600;
-  }
-
-  /* Column widths */
-  .c-ordem    { width: 30px; text-align: center; }
-  .c-cliente  { width: 226px; } /* fallback 8cm; overridden by JS */
-  .c-logradouro { width: 226px; } /* fallback 8cm; overridden by JS */
-  .c-num      { width: 40px; text-align: center; }
-  .c-id       { width: 50px; text-align: center; font-size: 7pt; }
-  .c-bombonas { width: 38px; text-align: center; font-weight: 600; }
-  .c-coletadas { width: 50px; text-align: center; }
-  .c-problema { width: 140px; font-size: 7pt; color: #555; }
-
-  /* ── FOOTER ── */
-  .page-footer {
-    margin-top: 8px;
-    padding-top: 4px;
-    border-top: 1px solid #ccc;
-    display: flex;
-    justify-content: space-between;
-    font-size: 7pt;
-    color: #999;
-  }
-  .assinatura-area {
-    margin-top: 12px;
-    display: flex;
-    gap: 40px;
-  }
-  .assinatura-box {
-    flex: 1;
-    text-align: center;
-    padding-top: 30px;
-    border-top: 1px solid #000;
-    font-size: 8pt;
-    color: #333;
-  }
-
-  /* ── PRINT ── */
-  @media print {
-    body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-    .page-header { border-bottom: 2px solid #1a3a5c; }
-    thead th { background: #1a3a5c !important; color: #fff !important; }
-    tbody tr:nth-child(even) { background: #f5f7fa !important; }
-    .row-problem { background: #fff3cd !important; }
-    .no-print { display: none !important; }
-  }
-
-  .print-actions {
-    position: fixed;
-    top: 10px;
-    right: 10px;
-    display: flex;
-    gap: 8px;
-    z-index: 999;
-  }
-  .print-btn {
-    font-family: Arial, sans-serif;
-    font-size: 11pt;
-    font-weight: 700;
-    padding: 10px 20px;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .btn-go-print {
-    background: #1a3a5c;
-    color: #fff;
-  }
-  .btn-go-print:hover { background: #2a5a8c; }
-  .btn-go-close {
-    background: #666;
-    color: #fff;
-  }
-  .btn-go-close:hover { background: #888; }
-</style>
-</head>
-<body>
-
-<div class="print-actions no-print">
-  <button class="print-btn btn-go-close" onclick="window.close()">Fechar</button>
-  <button class="print-btn btn-go-print" onclick="window.print()">
-    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h2m2 4h6a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2zm8-12V5a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4h10z"/></svg>
-    Imprimir / Salvar PDF
-  </button>
-</div>
-
-<div class="page-header">
-  <h1>Checklist Coleta ${roteiro}<br><span></h1>
-  <div class="header-info">
-    <div><strong>Tipo de Residuo:</strong> ${tipoResiduo}</div>
-    <div><strong>Roteiro:</strong> ${roteiro}</div>
-    <div><strong>Total de Pontos:</strong> ${rows.length}</div>
-  </div>
-</div>
-
-<div class="info-bar">
-  <span><span class="label">Data:</span> ${dataColetaBR}</span>
-  <span><span class="label">Proxima Coleta:</span> ${proxDataBR}</span>
-  <span><span class="label">Tipo:</span> ${tipoResiduo}</span>
-  ${motorista ? '<span><span class="label">Motorista:</span> ' + motorista + '</span>' : ''}
-  ${veiculo ? '<span><span class="label">Veiculo:</span> ' + veiculo + '</span>' : ''}
-  <span><span class="label">Pontos:</span> ${rows.length}</span>
-  <span><span class="label">Bombonas Previstas:</span> ${totalMedia}</span>
-</div>
-
-<table>
-  <thead>
-    <tr>
-      <th class="c-ordem">Ord.</th>
-      <th class="c-cliente">Cliente</th>
-      <th class="c-logradouro">Logradouro</th>
-      <th class="c-num">No</th>
-      <th class="c-id">ID</th>
-      <th class="c-bombonas">Bomb.<br>Qtd.</th>
-      <th class="c-coletadas">Qtd.<br>Coletada</th>
-      <th class="c-problema">Problema</th>
-    </tr>
-  </thead>
-  <tbody>
-    ${tableRows}
-  </tbody>
-</table>
-
-<div class="page-footer">
-  <span>Documento gerado em ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}</span>
-  <span>Checklist Coleta ${roteiro} - ${dataColetaBR}</span>
-</div>
-
-<div class="assinatura-area">
-  <div class="assinatura-box">Motorista</div>
-  <div class="assinatura-box">Supervisor</div>
-</div>
-
-</body>
-</html>` + autoSizeScript;
-
-  // Open in new window
-  const printWindow = window.open('', '_blank');
-  if(!printWindow) {
-    showToast('Bloqueador de popups detectado. Permita pop-ups para esta pagina.', 'error');
-    return;
-  }
-  printWindow.document.write(htmlContent);
-  printWindow.document.close();
-
-  closeChecklist();
-  showToast('Checklist gerado! Use Ctrl+P para imprimir ou salvar em PDF.', 'success');
-}
-
-// ── BACKUP / RESTORE ───────────────────────────────────────────────────────
-function exportBackup() {
-  const data = JSON.stringify(db, null, 2);
-  const blob = new Blob([data], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  const now = new Date().toISOString().split('T')[0];
-  a.href = url;
-  a.download = `backup_coleta_${now}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast('Backup exportado com sucesso', 'success');
-}
-
-function triggerImportDb() {
-  document.getElementById('db-import-input').click();
-}
-
-function importBackup(input) {
-  const file = input.files[0];
-  if(!file) return;
-  
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    try {
-      const parsed = JSON.parse(e.target.result);
-      if(!parsed.clients || !parsed.history) throw new Error('Formato de backup inválido');
-      
-      if(confirm('Isso irá substituir todos os dados atuais. Deseja continuar?')) {
-        db = parsed;
-        saveDb();
-        syncAllRowsFromDb();
-        buildRouteSelector();
-        applyFilters();
-        showToast('Banco de dados restaurado!', 'success');
-      }
-    } catch(err) {
-      showToast('Erro ao importar: ' + err.message, 'error');
-    }
-  };
-  reader.readAsText(file);
-  input.value = ''; // reset
-}
-
-// ── GOOGLE DRIVE IMPORT ─────────────────────────────────────────────────────
-function extractDriveFileId(url) {
-  // Formats:
-  // https://drive.google.com/file/d/FILE_ID/...
-  // https://drive.google.com/open?id=FILE_ID
-  // https://drive.google.com/uc?export=download&id=FILE_ID
-  // Short: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
-  
-  let match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (match) return match[1];
-  
-  match = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-  if (match) return match[1];
-  
-  return null;
-}
-
-function getDriveDownloadUrl(fileId) {
-  return `https://drive.google.com/uc?export=download&id=${fileId}`;
-}
-
-async function importFromDrive() {
-  const urlInput = document.getElementById('gdrive-url');
-  const statusEl = document.getElementById('drive-status');
-  const btn = document.getElementById('btn-import-drive');
-  const url = urlInput.value.trim();
-
-  if (!url) {
-    statusEl.style.display = 'block';
-    statusEl.style.color = 'var(--danger)';
-    statusEl.textContent = 'Cole a URL do Google Drive';
-    return;
-  }
-
-  const fileId = extractDriveFileId(url);
-  if (!fileId) {
-    statusEl.style.display = 'block';
-    statusEl.style.color = 'var(--danger)';
-    statusEl.textContent = 'URL invalida. Use o formato: https://drive.google.com/file/d/...';
-    return;
-  }
-
-  btn.disabled = true;
-  statusEl.style.display = 'block';
-  statusEl.style.color = 'var(--muted)';
-  statusEl.textContent = 'Baixando arquivo...';
-
-  try {
-    const downloadUrl = getDriveDownloadUrl(fileId);
-    const response = await fetch(downloadUrl);
-    
-    if (!response.ok) throw new Error('Falha ao baixar arquivo');
-
-    const blob = await response.blob();
-    const text = await readBlobAsText(blob, 'UTF-16');
-    
-    processCSVText(text);
-
-    // Save URL for next time
-    localStorage.setItem('coleta_gdrive_url', url);
-    localStorage.setItem('coleta_gdrive_fileid', fileId);
-
-    statusEl.style.color = 'var(--accent)';
-    statusEl.textContent = 'Importado com sucesso!';
-    
-    setTimeout(() => closeImport(), 800);
-  } catch (err) {
-    statusEl.style.color = 'var(--danger)';
-    statusEl.textContent = 'Erro: ' + err.message + '. Verifique se o arquivo esta publico.';
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-function readBlobAsText(blob, encoding) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsText(blob, encoding);
-  });
-}
-
-function processCSVText(text) {
-  const lines = text.split(/\r?\n/).filter(l => l.trim());
-  if (lines.length < 2) throw new Error('Arquivo vazio ou invalido');
-
-  const header = lines[0].split(';').map(h => h.trim());
-
-  // Mark all existing clients as inactive before sync
-  Object.keys(db.clients).forEach(id => db.clients[id].active = false);
-
-  let importedCount = 0;
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(';');
-    if (cols.length < header.length) continue;
-    const obj = {};
-    header.forEach((h, idx) => obj[h] = (cols[idx] || '').trim());
-
-    const id = obj['idRota'];
-    if (!id) continue;
-
-    db.clients[id] = {
-      idRota: id,
-      Cliente: obj['Cliente'],
-      logradouro: obj['logradouro'],
-      Número: obj['Número'],
-      CEP: obj['CEP'],
-      Roteiro: obj['Roteiro'],
-      Ordem: obj['Ordem'],
-      active: obj['Inativo'] === '0'
-    };
-    importedCount++;
-  }
-
-  db.lastSync = new Date().toISOString();
-  saveDb();
-  syncAllRowsFromDb();
-  currentEntries = {};
-
-  buildRouteSelector();
-  showToast(`✓ ${importedCount} pontos sincronizados`, 'success');
-  applyFilters();
-  return importedCount;
-}
-
-function loadSavedDriveUrl() {
-  const savedUrl = localStorage.getItem('coleta_gdrive_url');
-  if (savedUrl) {
-    document.getElementById('gdrive-url').value = savedUrl;
-  }
-}
-
-async function autoImportFromDrive() {
-  const fileId = localStorage.getItem('coleta_gdrive_fileid');
-  if (!fileId) return false;
-
-  try {
-    const downloadUrl = getDriveDownloadUrl(fileId);
-    const response = await fetch(downloadUrl);
-    if (!response.ok) return false;
-
-    const blob = await response.blob();
-    const text = await readBlobAsText(blob, 'UTF-16');
-    processCSVText(text);
-    return true;
-  } catch (e) {
-    console.warn('Auto-import failed:', e);
-    return false;
-  }
-}
-
-// ── SETTINGS (APPS SCRIPT) ──────────────────────────────────────────────────
-const APPS_SCRIPT_CODE = `// Google Apps Script - Coleta Bombonas API
-// Cole este codigo em script.google.com e faca deploy como Web App
-
-function doPost(e) {
-  try {
-    const data = JSON.parse(e.postData.contents);
-    const action = data.action;
-    
-    if (action === 'save') {
-      return saveRecords(data);
-    }
-    if (action === 'ping') {
-      return jsonResponse({ status: 'ok', timestamp: new Date().toISOString() });
-    }
-    
-    return jsonResponse({ error: 'Acao desconhecida' }, 400);
-  } catch (err) {
-    return jsonResponse({ error: err.toString() }, 500);
-  }
-}
-
-function doGet(e) {
-  return jsonResponse({ status: 'ok', message: 'API Coleta Bombonas ativa' });
-}
-
-function saveRecords(data) {
-  // Abra a planilha pelo ID ou nome
-  const ss = SpreadsheetApp.openById('SEU_SPREADSHEET_ID_AQUI');
-  let sheet = ss.getSheetByName('Coleta');
-  
-  // Se a aba nao existir, cria com cabecalho
-  if (!sheet) {
-    sheet = ss.insertSheet('Coleta');
-    sheet.appendRow([
-      'idRota', 'Roteiro', 'Cliente', 'logradouro', 'Numero', 'CEP',
-      'BombonasColetadas', 'Problemas', 'DataColeta', 'SincronizadoEm'
-    ]);
-  }
-  
-  const now = new Date().toISOString();
-  const rows = data.records || [];
-  
-  // Limpa registros da mesma data e roteiro (para evitar duplicatas)
-  if (rows.length > 0) {
-    const dataColeta = rows[0].DataColeta;
-    const roteiro = rows[0].Roteiro;
-    
-    const existing = sheet.getDataRange().getValues();
-    const headerRow = existing[0];
-    
-    // Encontra indices das colunas
-    const dataIdx = headerRow.indexOf('DataColeta');
-    const rotIdx = headerRow.indexOf('Roteiro');
-    
-    if (dataIdx >= 0 && rotIdx >= 0) {
-      // Remove linhas antigas da mesma data/roteiro (de baixo para cima)
-      for (let i = existing.length - 1; i > 0; i--) {
-        if (existing[i][dataIdx] === dataColeta && existing[i][rotIdx] === roteiro) {
-          sheet.deleteRow(i + 1);
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Operação de Coleta - SATELITE v3</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00f2fe;
+            --secondary: #4facfe;
+            --bg: #0b0e14;
+            --surface: #161b22;
+            --surface2: #1c2128;
+            --text: #e6edf3;
+            --text-dim: #8b949e;
+            --accent: #79c0ff;
+            --danger: #ff7b72;
+            --success: #3fb950;
+            --glass: rgba(22, 27, 34, 0.8);
+            --card-border: rgba(255, 255, 255, 0.1);
         }
-      }
-    }
-  }
-  
-  // Adiciona novos registros
-  rows.forEach(row => {
-    sheet.appendRow([
-      row.idRota || '',
-      row.Roteiro || '',
-      row.Cliente || '',
-      row.logradouro || '',
-      row.Numero || '',
-      row.CEP || '',
-      row.BombonasColetadas || '',
-      row.Problemas || '',
-      row.DataColeta || '',
-      now
-    ]);
-  });
-  
-  return jsonResponse({ 
-    status: 'ok', 
-    saved: rows.length,
-    timestamp: now
-  });
-}
 
-function jsonResponse(data, statusCode) {
-  return ContentService
-    .createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON);
-}`;
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
-function openSettings() {
-  const saved = localStorage.getItem('coleta_appscript_url') || '';
-  document.getElementById('appscript-url').value = saved;
-  document.getElementById('settings-overlay').classList.add('open');
-}
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
 
-function closeSettings() {
-  document.getElementById('settings-overlay').classList.remove('open');
-}
+        header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--card-border);
+            padding: 15px 20px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
 
-function saveSettings() {
-  const url = document.getElementById('appscript-url').value.trim();
-  if (url) {
-    localStorage.setItem('coleta_appscript_url', url);
-    showToast('Configuracoes salvas!', 'success');
-  } else {
-    localStorage.removeItem('coleta_appscript_url');
-    showToast('URL removida. Exportacao local ativa.', 'success');
-  }
-  updateSaveButtonHint();
-  closeSettings();
-}
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
 
-function copyAppsScriptCode() {
-  navigator.clipboard.writeText(APPS_SCRIPT_CODE).then(() => {
-    showToast('Codigo copiado! Cole no Google Apps Script.', 'success');
-  }).catch(() => {
-    // Fallback
-    const ta = document.createElement('textarea');
-    ta.value = APPS_SCRIPT_CODE;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-    showToast('Codigo copiado!', 'success');
-  });
-}
+        .logo-area { display: flex; align-items: center; gap: 15px; }
+        .btn-back { color: var(--text-dim); text-decoration: none; }
 
-function handleSave() {
-  const appScriptUrl = localStorage.getItem('coleta_appscript_url');
-  if (appScriptUrl) {
-    // Send to Google Sheets via Apps Script
-    sendToAppsScript(appScriptUrl);
-  } else {
-    // Fallback: download CSV local
-    exportCSV();
-  }
-}
+        .controls {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+            align-items: center;
+        }
 
-async function sendToAppsScript(url) {
-  const roteiro = document.getElementById('roteiro-select').value;
-  const data = document.getElementById('data-coleta').value;
+        .search-box {
+            position: sticky;
+            bottom: 20px;
+            z-index: 100;
+            margin-top: 30px;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
 
-  if (!roteiro) { showToast('Selecione um roteiro antes de salvar', 'error'); return; }
-  if (!data) { showToast('Informe a data da coleta', 'error'); return; }
+        .search-box input {
+            width: 100%;
+            background: #fff;
+            color: #000;
+            font-weight: 800;
+            font-size: 1.5rem;
+            padding: 15px 25px;
+            border-radius: 20px;
+            border: 4px solid var(--primary);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            text-align: center;
+        }
 
-  const rows = allRows.filter(r => r['Roteiro'] === roteiro);
+        .search-box input::placeholder { color: rgba(0,0,0,0.3); }
 
-  const records = rows.map(r => {
-    const id = r.idRota;
-    const session = currentEntries[id] || {};
-    const history = db.history[id] || {};
+        .search-hint {
+            position: absolute;
+            right: 25px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 0.8rem;
+            background: var(--surface2);
+            padding: 6px 12px;
+            border-radius: 8px;
+            color: var(--text-dim);
+            font-weight: 600;
+        }
 
-    const bombonas = session.bombonas !== undefined ? session.bombonas : (history.lastBombonas !== undefined ? history.lastBombonas : '');
-    const prob = session.problema || '';
+        select, input {
+            background: var(--surface2);
+            border: 1px solid var(--card-border);
+            color: var(--text);
+            padding: 8px 12px;
+            border-radius: 8px;
+            outline: none;
+            font-family: inherit;
+        }
 
-    return {
-      idRota: id,
-      Roteiro: r['Roteiro'],
-      Cliente: r['Cliente'] || '',
-      logradouro: r['logradouro'] || '',
-      Numero: (r['Número'] || '').toString().replace(',00', ''),
-      CEP: r['CEP'] || '',
-      BombonasColetadas: bombonas,
-      Problemas: prob.replace(/;/g, ' ').replace(/\n/g, ' '),
-      DataColeta: data
-    };
-  });
+        .stats-bar {
+            background: rgba(255, 255, 255, 0.02);
+            padding: 10px 20px;
+            display: flex;
+            gap: 20px;
+            font-size: 0.8rem;
+            border-bottom: 1px solid var(--card-border);
+        }
 
-  const btn = document.getElementById('btn-save');
-  btn.disabled = true;
-  btn.textContent = 'Enviando...';
+        .stat { display: flex; align-items: center; gap: 6px; }
+        .stat-val { font-family: 'JetBrains Mono'; color: var(--primary); font-weight: 600; }
 
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'save', records })
-    });
+        main {
+            max-width: 800px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
 
-    // no-cors sempre retorna opaque response, entao assumimos sucesso
-    showToast(`✓ ${records.length} registros enviados ao Google Sheets!`, 'success');
-    
-    // Tambem baixa backup local
-    exportCSV(true); // true = silent mode
-  } catch (err) {
-    showToast('Erro ao enviar: ' + err.message + '. Tentando download local...', 'error');
-    exportCSV();
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = `
-      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"/></svg>
-      Salvar`;
-  }
-}
+        .row-card {
+            background: var(--surface);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 15px;
+            display: grid;
+            grid-template-columns: 40px 1fr auto;
+            gap: 15px;
+            align-items: start;
+            transition: transform 0.2s, border-color 0.2s;
+        }
 
-// ── TOAST ──────────────────────────────────────────────────────────────────
-let toastTimer;
-function showToast(msg, type='success') {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.className = 'show ' + type;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.className = '', 3000);
-}
-</script>
+        .row-card:hover { border-color: var(--secondary); transform: translateX(5px); }
+        .row-card.done { border-left: 4px solid var(--success); background: rgba(63, 185, 80, 0.05); }
+
+        .row-num { color: var(--text-dim); font-family: 'JetBrains Mono'; font-size: 0.8rem; padding-top: 4px; }
+        .row-info h3 { font-size: 1.1rem; margin-bottom: 4px; }
+        .row-info p { font-size: 0.85rem; color: var(--text-dim); }
+
+        .row-inputs {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: flex-end;
+        }
+
+        .qty-input { width: 80px; text-align: center; font-size: 1.1rem; font-weight: 600; }
+        
+        .btn-issue {
+            font-size: 0.75rem;
+            background: transparent;
+            border: 1px dashed var(--card-border);
+            color: var(--text-dim);
+            padding: 5px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .btn-issue.active { border-color: var(--danger); color: var(--danger); background: rgba(255, 123, 114, 0.1); }
+
+        .issue-row {
+            grid-column: 1 / 4;
+            display: none;
+            margin-top: 10px;
+        }
+        .issue-row.open { display: block; }
+        .issue-row input { width: 100%; color: var(--danger); border-color: var(--danger); }
+
+        .btn-save {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: var(--success);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 50px;
+            border: none;
+            font-weight: 800;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.3s;
+        }
+        .btn-save:hover { transform: scale(1.05); box-shadow: 0 15px 30px rgba(63, 185, 80, 0.4); }
+
+        .empty-state {
+            text-align: center;
+            padding: 100px 20px;
+            color: var(--text-dim);
+        }
+
+        #toast {
+            position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
+            background: var(--surface2); color: var(--text);
+            padding: 12px 24px; border-radius: 12px; border: 1px solid var(--primary);
+            opacity: 0; transition: opacity 0.3s; pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <div class="logo-area">
+                <a href="index.html" class="btn-back">⬅️</a>
+                <h2 style="font-weight: 800; letter-spacing: -1px;">OPERAÇÃO</h2>
+            </div>
+            <div class="controls">
+                <select id="routeSelect">
+                    <option value="">Selecione o Roteiro</option>
+                </select>
+                <input type="date" id="opDate">
+            </div>
+        </div>
+    </header>
+
+    <div class="stats-bar">
+        <div class="stat">Total: <span class="stat-val" id="s-total">0</span></div>
+        <div class="stat">Coletados: <span class="stat-val" id="s-done">0</span></div>
+        <div class="stat">Bombonas: <span class="stat-val" id="s-qty">0</span></div>
+        <div class="stat">Problemas: <span class="stat-val" id="s-issues">0</span></div>
+    </div>
+
+    <main>
+        <div id="listContainer">
+            <div class="empty-state">
+                <h3>Nenhum roteiro selecionado</h3>
+                <p>Escolha um roteiro acima para iniciar o checklist.</p>
+            </div>
+        </div>
+        
+        <div class="search-box" id="searchBox" style="display: none;">
+            <input type="text" id="idSearch" placeholder="DIGITE O ID ROTA..." autocomplete="off">
+            <span class="search-hint">⌨️ BUSCAR</span>
+        </div>
+    </main>
+
+    <button class="btn-save" id="btnSave">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        SALVAR OPERAÇÃO
+    </button>
+
+    <div id="toast">Operação salva com sucesso!</div>
+
+    <script type="module">
+        import db from './database.js';
+
+        let currentClients = [];
+        let sessionData = {}; // id_rota -> { qty, issue }
+
+        async function init() {
+            await db.init();
+            
+            // Set today's date
+            document.getElementById('opDate').valueAsDate = new Date();
+            
+            // Populate routes
+            const routes = db.getRoteiros();
+            const select = document.getElementById('routeSelect');
+            routes.forEach(r => {
+                const opt = document.createElement('option');
+                opt.value = r.id;
+                opt.textContent = r.nome;
+                select.appendChild(opt);
+            });
+
+            select.onchange = loadRoute;
+            document.getElementById('btnSave').onclick = saveOperation;
+
+            // Search logic
+            const idSearch = document.getElementById('idSearch');
+            idSearch.onkeydown = (e) => {
+                if (e.key === 'Enter') {
+                    const id = idSearch.value.trim();
+                    if (id) focusItem(id);
+                }
+            };
+        }
+
+        function loadRoute() {
+            const routeId = document.getElementById('routeSelect').value;
+            if (!routeId) {
+                renderEmpty();
+                document.getElementById('searchBox').style.display = 'none';
+                return;
+            }
+
+            currentClients = db.getClientesByRoteiro(routeId);
+            sessionData = {};
+            renderList();
+            
+            document.getElementById('searchBox').style.display = 'block';
+            // Focus search automatically
+            document.getElementById('idSearch').focus();
+        }
+
+        function focusItem(id) {
+            const client = currentClients.find(c => c.id_rota == id);
+            if (!client) {
+                // Flash red on error
+                const input = document.getElementById('idSearch');
+                input.style.borderColor = 'var(--danger)';
+                setTimeout(() => input.style.borderColor = 'var(--primary)', 500);
+                return;
+            }
+
+            renderList(id); // Show ONLY the selected item
+            
+            setTimeout(() => {
+                const qtyInput = document.getElementById(`q-${id}`);
+                const issueInput = document.getElementById(`i-${id}`);
+
+                if (qtyInput) {
+                    qtyInput.focus();
+                    qtyInput.select();
+                    
+                    // Enter logic for quantity -> focus issue or finish
+                    qtyInput.onkeydown = (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (issueInput && !document.getElementById(`ir-${id}`).classList.contains('open')) {
+                                // If issue is closed, just finish
+                                finishEntry(id);
+                            } else {
+                                issueInput.focus();
+                            }
+                        }
+                    };
+                }
+
+                if (issueInput) {
+                    issueInput.onkeydown = (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            finishEntry(id);
+                        }
+                    };
+                }
+            }, 50);
+        }
+
+        function finishEntry(id) {
+            updateEntry(id);
+            const searchInput = document.getElementById('idSearch');
+            searchInput.value = '';
+            renderList(); // Back to full list
+            searchInput.focus();
+        }
+
+        function renderEmpty() {
+            document.getElementById('listContainer').innerHTML = `
+                <div class="empty-state">
+                    <h3>Nenhum roteiro selecionado</h3>
+                    <p>Escolha um roteiro acima para iniciar o checklist.</p>
+                </div>
+            `;
+            updateStats();
+        }
+
+        function renderList(filterId = null) {
+            const container = document.getElementById('listContainer');
+            if (currentClients.length === 0) {
+                container.innerHTML = '<div class="empty-state"><h3>Roteiro sem pontos cadastrados</h3><p>Vá em Gestão de Roteiros para adicionar pontos.</p></div>';
+                return;
+            }
+
+            const clientsToShow = filterId 
+                ? currentClients.filter(c => c.id_rota == filterId)
+                : currentClients;
+
+            container.innerHTML = clientsToShow.map((c, i) => {
+                const session = sessionData[c.id_rota] || {};
+                const isDone = session.qty > 0;
+                const hasIssue = session.issue;
+
+                return `
+                <div class="row-card ${isDone ? 'done' : ''}" id="card-${c.id_rota}">
+                    <div class="row-num">${c.ordem || i + 1}</div>
+                    <div class="row-info">
+                        <h3>${c.cliente}</h3>
+                        <p>${c.logradouro || ''}, ${c.numero || ''}</p>
+                        <p style="font-size: 0.7rem; color: var(--primary); margin-top: 5px;">ID: ${c.id_rota}</p>
+                    </div>
+                    <div class="row-inputs">
+                        <input type="number" class="qty-input" placeholder="0" min="0" 
+                            id="q-${c.id_rota}"
+                            value="${session.qty || ''}"
+                            onchange="updateEntry('${c.id_rota}')">
+                        <button class="btn-issue ${hasIssue ? 'active' : ''}" id="bi-${c.id_rota}" onclick="toggleIssue('${c.id_rota}')">
+                            ${hasIssue ? '⚠️ Problema' : '+ Problema'}
+                        </button>
+                    </div>
+                    <div class="issue-row ${hasIssue ? 'open' : ''}" id="ir-${c.id_rota}">
+                        <input type="text" placeholder="Descreva o problema..." id="i-${c.id_rota}" 
+                            value="${session.issue || ''}"
+                            oninput="updateEntry('${c.id_rota}')">
+                    </div>
+                </div>
+                `;
+            }).join('');
+
+            // If we are showing the full list, add a button to clear the view if it was filtered
+            if (!filterId && currentClients.length > 0) {
+                // Keep it clean
+            }
+            
+            updateStats();
+        }
+
+        window.updateEntry = (id) => {
+            const qty = parseInt(document.getElementById(`q-${id}`).value) || 0;
+            const issue = document.getElementById(`i-${id}`).value;
+            
+            sessionData[id] = { qty, issue };
+            
+            const card = document.getElementById(`card-${id}`);
+            if (qty > 0) card.classList.add('done');
+            else card.classList.remove('done');
+            
+            updateStats();
+        };
+
+        window.toggleIssue = (id) => {
+            const ir = document.getElementById(`ir-${id}`);
+            const bi = document.getElementById(`bi-${id}`);
+            ir.classList.toggle('open');
+            bi.classList.toggle('active');
+        };
+
+        function updateStats() {
+            const total = currentClients.length;
+            let done = 0;
+            let totalQty = 0;
+            let issues = 0;
+
+            Object.values(sessionData).forEach(d => {
+                if (d.qty > 0) done++;
+                totalQty += d.qty;
+                if (d.issue && d.issue.trim() !== '') issues++;
+            });
+
+            document.getElementById('s-total').textContent = total;
+            document.getElementById('s-done').textContent = done;
+            document.getElementById('s-qty').textContent = totalQty;
+            document.getElementById('s-issues').textContent = issues;
+        }
+
+        async function saveOperation() {
+            const date = document.getElementById('opDate').value;
+            if (!date) { alert('Selecione a data!'); return; }
+
+            const entries = Object.entries(sessionData).filter(([id, d]) => d.qty > 0 || d.issue);
+            
+            if (entries.length === 0) { alert('Nenhum registro para salvar!'); return; }
+
+            entries.forEach(([id, d]) => {
+                db.addColeta({
+                    id_rota: id,
+                    data: date,
+                    quantidade: d.qty,
+                    intercorrencia: d.issue || ''
+                });
+            });
+
+            showToast();
+        }
+
+        function showToast() {
+            const t = document.getElementById('toast');
+            t.style.opacity = '1';
+            setTimeout(() => t.style.opacity = '0', 3000);
+        }
+
+        init();
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
 </body>
 </html>

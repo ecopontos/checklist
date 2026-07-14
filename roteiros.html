@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestão de Roteiros - SATELITE v3</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00f2fe;
+            --secondary: #4facfe;
+            --bg: #0b0e14;
+            --surface: #161b22;
+            --text: #e6edf3;
+            --text-dim: #8b949e;
+            --accent: #79c0ff;
+            --danger: #ff7b72;
+            --success: #3fb950;
+            --glass: rgba(22, 27, 34, 0.8);
+            --card-border: rgba(255, 255, 255, 0.1);
+        }
+
+        .import-modal-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .point-preview-list {
+            max-height: 400px;
+            overflow-y: auto;
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .point-preview-item {
+            display: grid;
+            grid-template-columns: 80px 1fr 1fr;
+            gap: 10px;
+            padding: 10px;
+            border-bottom: 1px solid var(--card-border);
+            align-items: center;
+        }
+
+        .point-preview-item input {
+            padding: 5px 10px;
+            font-size: 0.8rem;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; }
+
+        .header-nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+
+        .btn-back {
+            color: var(--text-dim);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: color 0.3s;
+        }
+
+        .btn-back:hover { color: var(--primary); }
+
+        h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: 10px; }
+        .subtitle { color: var(--text-dim); margin-bottom: 30px; }
+
+        .toolbar {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+            background: var(--surface);
+            padding: 20px;
+            border-radius: 16px;
+            border: 1px solid var(--card-border);
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: inherit;
+        }
+
+        .btn-primary { background: var(--primary); color: #000; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0, 242, 254, 0.3); }
+        .btn-outline { background: transparent; border: 1px solid var(--card-border); color: var(--text); }
+        .btn-outline:hover { background: rgba(255, 255, 255, 0.05); }
+
+        input, select {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            color: var(--text);
+            padding: 10px 15px;
+            border-radius: 8px;
+            outline: none;
+            font-family: inherit;
+        }
+
+        input:focus { border-color: var(--primary); }
+
+        .table-container {
+            background: var(--glass);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 15px 20px;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-dim);
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        td {
+            padding: 15px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+            font-size: 0.9rem;
+        }
+
+        tr:hover { background: rgba(255, 255, 255, 0.01); }
+
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .badge-active { background: rgba(63, 185, 80, 0.1); color: var(--success); }
+        .badge-inactive { background: rgba(255, 123, 114, 0.1); color: var(--danger); }
+
+        .actions-cell { display: flex; gap: 10px; }
+        .btn-icon { background: none; border: none; cursor: pointer; color: var(--text-dim); transition: color 0.3s; }
+        .btn-icon:hover { color: var(--primary); }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background: var(--surface);
+            padding: 40px;
+            border-radius: 24px;
+            width: 100%;
+            max-width: 600px;
+            border: 1px solid var(--card-border);
+        }
+
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 8px; color: var(--text-dim); font-size: 0.9rem; }
+        .form-group input, .form-group select { width: 100%; }
+
+        .modal-footer { display: flex; justify-content: flex-end; gap: 15px; margin-top: 30px; }
+
+        #drop-zone {
+            border: 2px dashed var(--card-border);
+            padding: 40px;
+            text-align: center;
+            border-radius: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        #drop-zone:hover { border-color: var(--primary); background: rgba(0, 242, 254, 0.05); }
+
+        .loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg); display: none; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 2000;
+        }
+
+        .spinner {
+            width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.1);
+            border-top-color: var(--primary); border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-nav">
+            <a href="index.html" class="btn-back">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                Voltar ao Dashboard
+            </a>
+        </div>
+
+        <h1>Gestão de Roteiros</h1>
+        <p class="subtitle">Gerenciamento completo dos pontos de coleta e definição de rotas.</p>
+
+        <div class="toolbar">
+            <select id="routeFilter">
+                <option value="">Todos os Roteiros</option>
+            </select>
+            <input type="text" id="searchClient" placeholder="Buscar cliente ou ID Rota...">
+            <button class="btn btn-primary" onclick="openImportModal()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                Importar CSV
+            </button>
+            <button class="btn btn-outline" onclick="openAddModal()">+ Novo Ponto</button>
+            <button class="btn btn-outline" style="border-color: #f1c40f; color: #f1c40f;" onclick="openLegacyModal()">
+                📦 Importar Legado (Access/Excel)
+            </button>
+            <button class="btn btn-outline" style="border-color: var(--accent); color: var(--accent);" onclick="printChecklist()">
+                🖨️ Imprimir
+            </button>
+        </div>
+
+        <div class="table-container">
+            <table id="clientsTable">
+                <thead>
+                    <tr>
+                        <th>Ordem</th>
+                        <th>ID Rota</th>
+                        <th>Cliente</th>
+                        <th>Roteiro</th>
+                        <th>Status</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody id="clientsBody">
+                    <!-- Rows injected via JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Legacy Import Modal -->
+    <div id="legacyModal" class="modal">
+        <div class="modal-content" style="max-width: 900px;">
+            <h2>Absorver Banco Legado</h2>
+            <p class="subtitle">Selecione os arquivos .xlsx do sistema antigo para migrar roteiros e pontos.</p>
+            
+            <div class="import-modal-grid">
+                <div>
+                    <label class="badge" style="margin-bottom: 10px; display: block;">1. Tabela de Rotas (tblRota.xlsx)</label>
+                    <input type="file" id="legacyRotaFile" accept=".xlsx">
+                </div>
+                <div>
+                    <label class="badge" style="margin-bottom: 10px; display: block;">2. Tabela de Roteiros (tblRoteiro.xlsx)</label>
+                    <input type="file" id="legacyRoteiroFile" accept=".xlsx">
+                </div>
+            </div>
+
+            <div id="legacyPreview" style="display: none;">
+                <h3 style="margin-top: 20px;">Dê nomes aos pontos encontrados:</h3>
+                <p class="subtitle" style="font-size: 0.8rem;">O sistema sugeriu nomes baseados no endereço. Você pode ajustar abaixo.</p>
+                <div class="point-preview-list" id="legacyPointList">
+                    <!-- Points will be listed here -->
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('legacyModal')">Cancelar</button>
+                <button class="btn btn-primary" id="btnConfirmLegacy" disabled>Processar e Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <h2 id="modalTitle">Editar Ponto</h2>
+            <form id="editForm">
+                <div class="form-group">
+                    <label>ID Rota</label>
+                    <input type="text" id="f_idRota" required>
+                </div>
+                <div class="form-group">
+                    <label>Cliente</label>
+                    <input type="text" id="f_cliente" required>
+                </div>
+                <div class="form-group">
+                    <label>Roteiro</label>
+                    <select id="f_roteiro" required></select>
+                </div>
+                <div class="form-group">
+                    <label>Ordem</label>
+                    <input type="number" id="f_ordem" required>
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="f_status">
+                        <option value="1">Ativo</option>
+                        <option value="0">Inativo</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" onclick="closeModal('editModal')">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar Alterações</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="loading-overlay" id="loader">
+        <div class="spinner"></div>
+        <p>Processando dados...</p>
+    </div>
+
+    <script src="vendor/papaparse.min.js"></script>
+    <script src="vendor/xlsx.full.min.js"></script>
+    <script src="vendor/sql-wasm.js"></script>
+    <script type="module">
+        import db from './database.js';
+
+        async function init() {
+            await db.init();
+            renderRoteiros();
+            renderClients();
+        }
+
+        function renderRoteiros() {
+            const roteiros = db.getRoteiros();
+            const filter = document.getElementById('routeFilter');
+            const formSelect = document.getElementById('f_roteiro');
+            
+            const options = roteiros.map(r => `<option value="${r.id}">${r.nome}</option>`).join('');
+            filter.innerHTML = '<option value="">Todos os Roteiros</option>' + options;
+            formSelect.innerHTML = options;
+        }
+
+        function renderClients() {
+            const filterVal = document.getElementById('routeFilter').value;
+            const searchVal = document.getElementById('searchClient').value.toLowerCase();
+            
+            let query = "SELECT c.*, r.nome as roteiro_nome FROM clientes c JOIN roteiros r ON c.roteiro_id = r.id WHERE 1=1";
+            const params = [];
+
+            if (filterVal) {
+                query += " AND c.roteiro_id = ?";
+                params.push(filterVal);
+            }
+            if (searchVal) {
+                query += " AND (c.cliente LIKE ? OR c.id_rota LIKE ?)";
+                params.push(`%${searchVal}%`, `%${searchVal}%`);
+            }
+            
+            query += " ORDER BY r.nome, c.ordem";
+
+            const res = db.db.exec(query, params);
+            const body = document.getElementById('clientsBody');
+            body.innerHTML = '';
+
+            if (res.length) {
+                const cols = res[0].columns;
+                res[0].values.forEach(v => {
+                    const row = {};
+                    cols.forEach((c, i) => row[c] = v[i]);
+                    
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${row.ordem}</td>
+                        <td style="font-family: 'JetBrains Mono'">${row.id_rota}</td>
+                        <td style="font-weight: 600">${row.cliente}</td>
+                        <td>${row.roteiro_nome}</td>
+                        <td><span class="badge ${row.ativo ? 'badge-active' : 'badge-inactive'}">${row.ativo ? 'Ativo' : 'Inativo'}</span></td>
+                        <td class="actions-cell">
+                            <button class="btn-icon" onclick="editItem('${row.id_rota}')">✏️</button>
+                            <button class="btn-icon" onclick="toggleStatus('${row.id_rota}', ${row.ativo})">🔄</button>
+                        </td>
+                    `;
+                    body.appendChild(tr);
+                });
+            }
+        }
+
+        // Global functions for buttons
+        window.openImportModal = () => document.getElementById('importModal').style.display = 'flex';
+        window.closeModal = (id) => document.getElementById(id).style.display = 'none';
+        
+        window.editItem = (idRota) => {
+            const res = db.db.exec("SELECT * FROM clientes WHERE id_rota = ?", [idRota]);
+            if (res.length) {
+                const v = res[0].values[0];
+                const cols = res[0].columns;
+                const row = {};
+                cols.forEach((c, i) => row[c] = v[i]);
+
+                document.getElementById('f_idRota').value = row.id_rota;
+                document.getElementById('f_idRota').disabled = true;
+                document.getElementById('f_cliente').value = row.cliente;
+                document.getElementById('f_roteiro').value = row.roteiro_id;
+                document.getElementById('f_ordem').value = row.ordem;
+                document.getElementById('f_status').value = row.ativo;
+                
+                document.getElementById('modalTitle').textContent = 'Editar Ponto';
+                document.getElementById('editModal').style.display = 'flex';
+            }
+        };
+
+        window.openAddModal = () => {
+            document.getElementById('f_idRota').value = '';
+            document.getElementById('f_idRota').disabled = false;
+            document.getElementById('f_cliente').value = '';
+            document.getElementById('f_ordem').value = '100';
+            document.getElementById('f_status').value = '1';
+            
+            document.getElementById('modalTitle').textContent = 'Novo Ponto';
+            document.getElementById('editModal').style.display = 'flex';
+        };
+
+        window.printChecklist = () => {
+            const routeId = document.getElementById('routeFilter').value;
+            if (!routeId) {
+                alert('Selecione um roteiro no filtro para imprimir o checklist.');
+                return;
+            }
+            window.open(`imprimir.html?id=${routeId}`, '_blank');
+        };
+
+        window.toggleStatus = (idRota, current) => {
+            db.db.run("UPDATE clientes SET ativo = ? WHERE id_rota = ?", [current ? 0 : 1, idRota]);
+            db.save();
+            renderClients();
+        };
+
+        // Form Submit
+        document.getElementById('editForm').onsubmit = (e) => {
+            e.preventDefault();
+            const data = {
+                idRota: document.getElementById('f_idRota').value,
+                Cliente: document.getElementById('f_cliente').value,
+                roteiro_id: document.getElementById('f_roteiro').value,
+                Ordem: document.getElementById('f_ordem').value,
+                ativo: document.getElementById('f_status').value == '1'
+            };
+            db.upsertCliente(data);
+            closeModal('editModal');
+            renderClients();
+        };
+
+        // Filters
+        document.getElementById('routeFilter').onchange = renderClients;
+        document.getElementById('searchClient').oninput = renderClients;
+
+        // CSV Import logic
+        const dropZone = document.getElementById('drop-zone');
+        dropZone.onclick = () => document.getElementById('csvFile').click();
+        document.getElementById('csvFile').onchange = (e) => handleFile(e.target.files[0]);
+
+        function handleFile(file) {
+            if (!file) return;
+            document.getElementById('loader').style.display = 'flex';
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                Papa.parse(e.target.result, {
+                    header: true,
+                    skipEmptyLines: true,
+                    dynamicTyping: true,
+                    complete: async function(results) {
+                        const data = results.data;
+                        
+                        if (data.length === 0) {
+                            alert('Arquivo vazio ou formato inválido.');
+                            document.getElementById('loader').style.display = 'none';
+                            return;
+                        }
+
+                        const uniqueRoteiros = [...new Set(data.map(r => getVal(r, 'Roteiro')).filter(Boolean))];
+                        uniqueRoteiros.forEach(name => db.addRoteiro(name));
+                        renderRoteiros();
+
+                        const roteiros = db.getRoteiros();
+                        const routeMap = {};
+                        roteiros.forEach(r => routeMap[r.nome] = r.id);
+
+                        data.forEach(row => {
+                            const idRota = getVal(row, 'idRota') || getVal(row, 'id Rota');
+                            const clienteNome = getVal(row, 'Cliente');
+                            const roteiroName = getVal(row, 'Roteiro');
+
+                            if (idRota && clienteNome) {
+                                db.upsertCliente({
+                                    idRota: idRota.toString(),
+                                    Cliente: clienteNome,
+                                    logradouro: getVal(row, 'Logradouro') || getVal(row, 'Rua') || '',
+                                    Número: getVal(row, 'Número') || getVal(row, 'Num') || getVal(row, 'Nº') || '',
+                                    CEP: getVal(row, 'CEP') || '',
+                                    roteiro_id: routeMap[roteiroName],
+                                    Ordem: getVal(row, 'Ordem') || 0,
+                                    ativo: getVal(row, 'Inativo') != 1
+                                });
+                            }
+                        });
+
+                        document.getElementById('loader').style.display = 'none';
+                        closeModal('importModal');
+                        renderClients();
+                    }
+                });
+            };
+            reader.readAsText(file);
+        }
+
+        const getVal = (row, name) => {
+            const key = Object.keys(row).find(k => k.toLowerCase().trim() === name.toLowerCase());
+            return key ? row[key] : null;
+        };
+
+        // --- LEGACY IMPORT LOGIC ---
+        let legacyData = { rotas: [], roteiros: [] };
+
+        window.openLegacyModal = () => {
+            document.getElementById('legacyModal').style.display = 'flex';
+            document.getElementById('legacyPreview').style.display = 'none';
+            document.getElementById('btnConfirmLegacy').disabled = true;
+        };
+
+        document.getElementById('legacyRotaFile').onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const data = await readExcel(file);
+            legacyData.rotas = data;
+            checkLegacyReady();
+        };
+
+        document.getElementById('legacyRoteiroFile').onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const data = await readExcel(file);
+            legacyData.roteiros = data;
+            checkLegacyReady();
+        };
+
+        async function readExcel(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const data = new Uint8Array(e.target.result);
+                    const wb = XLSX.read(data, { type: 'array' });
+                    const ws = wb.Sheets[wb.SheetNames[0]];
+                    resolve(XLSX.utils.sheet_to_json(ws, { defval: '' }));
+                };
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        function checkLegacyReady() {
+            if (legacyData.roteiros.length > 0) {
+                renderLegacyPreview();
+            }
+        }
+
+        function renderLegacyPreview() {
+            const list = document.getElementById('legacyPointList');
+            list.innerHTML = '';
+            document.getElementById('legacyPreview').style.display = 'block';
+            document.getElementById('btnConfirmLegacy').disabled = false;
+
+            legacyData.roteiros.forEach((p, i) => {
+                const id = p.ID_Rota || p.id_rota || p.ID || i;
+                const logr = p.Logradouro || p.Rua || '';
+                const num = p.Numero || p.Nº || '';
+                
+                // Sugestão de nome: Bairro + Logradouro ou apenas o ID
+                const suggestedName = p.Cliente || p.Nome || `${p.Bairro || ''} - ${logr} ${num}`.trim() || `Ponto ${id}`;
+
+                const item = document.createElement('div');
+                item.className = 'point-preview-item';
+                item.innerHTML = `
+                    <div style="font-family: 'JetBrains Mono'; font-size: 0.8rem;">${id}</div>
+                    <div style="color: var(--text-dim); font-size: 0.8rem;">${logr}, ${num}</div>
+                    <input type="text" value="${suggestedName}" data-idx="${i}" class="legacy-name-input">
+                `;
+                list.appendChild(item);
+            });
+        }
+
+        document.getElementById('btnConfirmLegacy').onclick = () => {
+            document.getElementById('loader').style.display = 'flex';
+            
+            // 1. Process Rotas
+            const routeMap = {};
+            legacyData.rotas.forEach(r => {
+                const nome = r.Nome_Rota || r.Rota || r.Descricao || `Rota ${r.ID_Rota}`;
+                db.addRoteiro(nome);
+            });
+            
+            const dbRoteiros = db.getRoteiros();
+            dbRoteiros.forEach(r => routeMap[r.nome] = r.id);
+
+            // 2. Process Points
+            const nameInputs = document.querySelectorAll('.legacy-name-input');
+            legacyData.roteiros.forEach((p, i) => {
+                const name = nameInputs[i].value;
+                const idRota = (p.ID_Rota || p.id_rota || p.ID || i).toString();
+                
+                // Find corresponding route
+                // If legacy Rota file was provided, try to match by ID if possible, otherwise by name
+                let roteiroId = null;
+                const rotaIdLegacy = p.ID_Rota_Ref || p.RotaID || p.id_rota;
+                const legacyRota = legacyData.rotas.find(r => r.ID_Rota == rotaIdLegacy);
+                if (legacyRota) {
+                    const rotaNome = legacyRota.Nome_Rota || legacyRota.Rota || legacyRota.Descricao || `Rota ${legacyRota.ID_Rota}`;
+                    roteiroId = routeMap[rotaNome];
+                }
+
+                db.upsertCliente({
+                    idRota: idRota,
+                    Cliente: name,
+                    logradouro: p.Logradouro || p.Rua || '',
+                    Número: p.Numero || p.Nº || '',
+                    CEP: p.CEP || '',
+                    roteiro_id: roteiroId || dbRoteiros[0]?.id,
+                    Ordem: p.Ordem || i * 10,
+                    ativo: true
+                });
+            });
+
+            document.getElementById('loader').style.display = 'none';
+            closeModal('legacyModal');
+            renderRoteiros();
+            renderClients();
+        };
+
+        init();
+    </script>
+</body>
+</html>

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Checklist de Coleta Satélite - Impressão</title>
+    <style>
+        @media print {
+            .no-print { display: none; }
+            @page { size: portrait; margin: 10mm; }
+            body { font-size: 10pt; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { border: 1px solid #000 !important; }
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            color: #000;
+            background: #fff;
+            padding: 20px;
+            max-width: 210mm;
+            margin: 0 auto;
+        }
+
+        .header {
+            margin-bottom: 10px;
+        }
+
+        .title-row {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 5px;
+        }
+
+        .title {
+            font-size: 22pt;
+            font-weight: bold;
+            color: #444;
+        }
+
+        .route-badge {
+            font-size: 22pt;
+            font-weight: bold;
+            color: #000;
+        }
+
+        .info-bar {
+            display: flex;
+            gap: 30px;
+            font-size: 10pt;
+            margin-bottom: 15px;
+            align-items: center;
+        }
+
+        .field-group { display: flex; align-items: center; gap: 8px; }
+        .empty-box { border: 1px solid #000; width: 100px; height: 20px; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 9pt;
+        }
+
+        th {
+            background-color: #f2f2f2;
+            border: 1px solid #999;
+            padding: 8px 4px;
+            text-align: left;
+        }
+
+        td {
+            border: 1px solid #ccc;
+            padding: 6px 4px;
+            vertical-align: middle;
+        }
+
+        .col-ordem { width: 30px; text-align: center; }
+        .col-cliente { width: 180px; font-weight: bold; }
+        .col-rua { width: 220px; }
+        .col-num { width: 45px; text-align: center; }
+        .col-id { width: 50px; text-align: center; font-family: 'Courier New', Courier, monospace; }
+        .col-media { width: 40px; text-align: center; }
+        .col-qtd { width: 40px; }
+        .col-prob { width: auto; }
+
+        .btn-print {
+            background: #000; color: #fff; padding: 12px 24px;
+            border: none; border-radius: 8px; cursor: pointer;
+            font-weight: bold; margin-bottom: 20px;
+        }
+        
+        .error-msg { color: red; text-align: center; padding: 50px; display: none; }
+    </style>
+</head>
+<body>
+    <div class="no-print" style="text-align: center; background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 30px; border: 1px solid #ddd;">
+        <p style="margin-bottom: 15px; color: #666;">Visualize o checklist abaixo e clique no botão para imprimir.</p>
+        <button class="btn-print" onclick="window.print()">🖨️ IMPRIMIR AGORA</button>
+        <button class="btn-print" style="background: #ccc; color: #333;" onclick="window.close()">FECHAR</button>
+    </div>
+
+    <div id="print-content">
+        <div class="header">
+            <div class="title-row">
+                <span class="title">Checklist Coleta Satélite</span>
+                <span class="route-badge" id="route-name">---</span>
+            </div>
+            <div class="info-bar">
+                <div class="field-group">Data <div class="empty-box"></div></div>
+                <div class="field-group">Tipo de Resíduo: <strong>Recicláveis Orgânico (Restos de Alimentos)</strong></div>
+            </div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th class="col-ordem">Ordem</th>
+                    <th class="col-cliente">Cliente</th>
+                    <th class="col-rua">Logradouro</th>
+                    <th class="col-num">№</th>
+                    <th class="col-id">ID</th>
+                    <th class="col-media">Média</th>
+                    <th class="col-qtd">Qtd.</th>
+                    <th class="col-prob">Problema</th>
+                </tr>
+            </thead>
+            <tbody id="table-body">
+                <!-- Data will be here -->
+            </tbody>
+        </table>
+    </div>
+
+    <div id="error-view" class="error-msg">
+        <h2>Ops! Não conseguimos carregar os dados.</h2>
+        <p>Certifique-se de que você selecionou um roteiro na tela anterior e que o mesmo possui clientes cadastrados.</p>
+    </div>
+
+    <script type="module">
+        import db from './database.js';
+
+        async function init() {
+            try {
+                console.log("Iniciando carregamento do banco para impressão...");
+                await db.init();
+                
+                const urlParams = new URLSearchParams(window.location.search);
+                const routeId = urlParams.get('id');
+                
+                if (!routeId) {
+                    showError("ID do roteiro não fornecido.");
+                    return;
+                }
+
+                console.log("Buscando dados para o Roteiro ID:", routeId);
+
+                // 1. Get Route Name
+                const routeRes = db.db.exec("SELECT nome FROM roteiros WHERE id = ?", [routeId]);
+                if (routeRes.length > 0) {
+                    document.getElementById('route-name').textContent = routeRes[0].values[0][0];
+                }
+
+                // 2. Get Clients (Try by ID and ensure ordering)
+                // We join with coletas to optionally show a real average if available
+                const query = `
+                    SELECT c.* 
+                    FROM clientes c 
+                    WHERE c.roteiro_id = ? AND c.ativo = 1
+                    ORDER BY c.ordem ASC
+                `;
+                const clientRes = db.db.exec(query, [routeId]);
+
+                if (!clientRes.length || clientRes[0].values.length === 0) {
+                    console.warn("Nenhum cliente encontrado para este roteiro.");
+                    showError("Nenhum cliente ativo encontrado para este roteiro no banco de dados.");
+                    return;
+                }
+
+                const cols = clientRes[0].columns;
+                const rows = clientRes[0].values;
+                const tbody = document.getElementById('table-body');
+                tbody.innerHTML = '';
+
+                rows.forEach(v => {
+                    const c = {};
+                    cols.forEach((col, i) => c[col] = v[i]);
+
+                    // Calculate average for this specific point
+                    const avgRes = db.db.exec(`
+                        SELECT AVG(quantidade) FROM coletas WHERE id_rota = ? AND quantidade > 0
+                    `, [c.id_rota]);
+                    
+                    const media = avgRes.length && avgRes[0].values[0][0] 
+                        ? Math.round(avgRes[0].values[0][0]) 
+                        : '';
+
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="col-ordem">${c.ordem || ''}</td>
+                        <td class="col-cliente">${c.cliente || '---'}</td>
+                        <td class="col-rua">${c.logradouro || ''}</td>
+                        <td class="col-num">${c.numero || ''}</td>
+                        <td class="col-id">${c.id_rota}</td>
+                        <td class="col-media">${media}</td>
+                        <td class="col-qtd"></td>
+                        <td class="col-prob"></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                console.log("Impressão carregada com sucesso.");
+
+            } catch (err) {
+                console.error("Erro fatal na impressão:", err);
+                showError("Erro técnico: " + err.message);
+            }
+        }
+
+        function showError(msg) {
+            document.getElementById('print-content').style.display = 'none';
+            const ev = document.getElementById('error-view');
+            ev.style.display = 'block';
+            ev.innerHTML += `<p style="font-size: 0.8rem; opacity: 0.6;">${msg}</p>`;
+        }
+
+        init();
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+</body>
+</html>

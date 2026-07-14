@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Análise e Relatórios - SATELITE v3</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00f2fe;
+            --secondary: #4facfe;
+            --bg: #0b0e14;
+            --surface: #161b22;
+            --text: #e6edf3;
+            --text-dim: #8b949e;
+            --card-border: rgba(255, 255, 255, 0.1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; }
+
+        .header-nav { display: flex; justify-content: space-between; margin-bottom: 40px; }
+        .btn-back { color: var(--text-dim); text-decoration: none; }
+
+        h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: 30px; }
+
+        .analysis-grid {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 30px;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--card-border);
+            border-radius: 24px;
+            padding: 30px;
+        }
+
+        .import-box {
+            border: 2px dashed var(--card-border);
+            padding: 30px;
+            text-align: center;
+            border-radius: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 20px;
+        }
+
+        .import-box:hover { border-color: var(--primary); background: rgba(0, 242, 254, 0.05); }
+
+        .report-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .report-table th {
+            text-align: left;
+            padding: 12px;
+            color: var(--text-dim);
+            font-size: 0.8rem;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        .report-table td {
+            padding: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+        }
+
+        .chart-placeholder {
+            height: 300px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-dim);
+            font-style: italic;
+        }
+
+        .tab-menu {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab-btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            background: transparent;
+            border: 1px solid var(--card-border);
+            color: var(--text-dim);
+            cursor: pointer;
+        }
+
+        .tab-btn.active { background: var(--primary); color: #000; border-color: var(--primary); }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-nav">
+            <a href="index.html" class="btn-back">⬅️ Voltar ao Dashboard</a>
+        </div>
+
+        <h1>Análise e Relatórios</h1>
+
+        <div class="analysis-grid">
+            <div class="card">
+                <h3>Consolidar Dados</h3>
+                <p style="color: var(--text-dim); font-size: 0.9rem; margin-top: 10px;">
+                    Importe os CSVs dos anos anteriores (do terceiro formulário) para consolidar o histórico com os novos registros.
+                </p>
+                <div class="import-box" onclick="document.getElementById('csvHist').click()">
+                    <input type="file" id="csvHist" style="display: none" accept=".csv">
+                    <span>📁 Importar CSV (Manual)</span>
+                </div>
+
+                <div class="import-box" style="border-color: #f1c40f;" onclick="document.getElementById('xlsxHist').click()">
+                    <input type="file" id="xlsxHist" style="display: none" accept=".xlsx">
+                    <span style="color: #f1c40f;">📦 Importar Legado (tblColeta.xlsx)</span>
+                </div>
+                
+                <div style="margin-top: 40px;">
+                    <h3>Exportar</h3>
+                    <p style="color: var(--text-dim); font-size: 0.8rem; margin-bottom: 10px;">Gere um arquivo CSV consolidado para uso externo.</p>
+                    <button id="btnExportCSV" class="tab-btn" style="width: 100%; border-color: var(--success); color: var(--success);">
+                        📊 Exportar para CSV
+                    </button>
+                </div>
+
+                <div style="margin-top: 40px;">
+                    <h3>Filtros</h3>
+                    <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 10px;">
+                        <label style="font-size: 0.8rem; color: var(--text-dim);">Ano</label>
+                        <select id="yearFilter">
+                            <option value="2026">2026</option>
+                            <option value="2025">2025</option>
+                            <option value="2024">2024</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="tab-menu">
+                    <button class="tab-btn active">Resumo por Roteiro</button>
+                    <button class="tab-btn">Problemas Recorrentes</button>
+                    <button class="tab-btn">Evolução Mensal</button>
+                </div>
+
+                <div id="reportContent">
+                    <div class="chart-placeholder">
+                        Gráfico de Evolução (Em breve: Integração com Chart.js)
+                    </div>
+
+                    <table class="report-table">
+                        <thead>
+                            <tr>
+                                <th>Roteiro</th>
+                                <th>Total Bombonas</th>
+                                <th>Eficiência</th>
+                                <th>Intercorrências</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reportStats">
+                            <!-- Injected via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="vendor/papaparse.min.js"></script>
+    <script src="vendor/xlsx.full.min.js"></script>
+    <script type="module">
+        import db from './database.js';
+
+        async function init() {
+            await db.init();
+            renderStats();
+
+            document.getElementById('csvHist').onchange = (e) => importHistory(e.target.files[0]);
+            document.getElementById('xlsxHist').onchange = (e) => importLegacyHistory(e.target.files[0]);
+            document.getElementById('btnExportCSV').onclick = exportToCSV;
+        }
+
+        function exportToCSV() {
+            const res = db.db.exec(`
+                SELECT r.nome as Roteiro, c.data as Data, c.id_rota as "ID Rota", cl.cliente as Cliente, c.quantidade as "Contentores Coletados", c.intercorrencia as Intercorrências
+                FROM coletas c
+                JOIN clientes cl ON c.id_rota = cl.id_rota
+                JOIN roteiros r ON cl.roteiro_id = r.id
+                ORDER BY c.data DESC, r.nome
+            `);
+
+            if (!res.length) { alert('Nenhum dado para exportar!'); return; }
+
+            const cols = res[0].columns;
+            const rows = res[0].values;
+            
+            const csvData = [cols, ...rows];
+            const csvContent = Papa.unparse(csvData);
+            
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `coleta_consolidada_${new Date().toISOString().slice(0,10)}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        function renderStats() {
+            const res = db.db.exec(`
+                SELECT r.nome, SUM(c.quantidade), COUNT(c.id) 
+                FROM coletas c
+                JOIN clientes cl ON c.id_rota = cl.id_rota
+                JOIN roteiros r ON cl.roteiro_id = r.id
+                GROUP BY r.nome
+            `);
+
+            const body = document.getElementById('reportStats');
+            body.innerHTML = '';
+
+            if (res.length) {
+                res[0].values.forEach(v => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td style="font-weight: 600">${v[0]}</td>
+                        <td style="font-family: 'JetBrains Mono'">${v[1]}</td>
+                        <td>100%</td>
+                        <td>0</td>
+                    `;
+                    body.appendChild(tr);
+                });
+            } else {
+                body.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-dim);">Nenhum dado consolidado ainda.</td></tr>';
+            }
+        }
+
+        function importHistory(file) {
+            if (!file) return;
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    const data = results.data;
+                    data.forEach(row => {
+                        const idRota = row['ID Rota'] || row['idRota'] || row['id_rota'];
+                        if (idRota) {
+                            db.addColeta({
+                                id_rota: idRota.toString(),
+                                data: row.Data || row.data,
+                                quantidade: parseInt(row['Contentores Coletados'] || row['quantidade']) || 0,
+                                intercorrencia: row['Intercorrências'] || row['intercorrencia'] || ''
+                            });
+                        }
+                    });
+                    alert('Histórico importado com sucesso!');
+                    renderStats();
+                }
+            });
+        }
+
+        async function importLegacyHistory(file) {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const data = new Uint8Array(e.target.result);
+                const wb = XLSX.read(data, { type: 'array' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
+                
+                json.forEach(row => {
+                    // Mapping for tblColeta/tblDetalhesColeta
+                    const idRota = row.ID_Rota || row.id_rota || row.ID_Ponto;
+                    const dataColeta = row.Data_Coleta || row.Data || row.data;
+                    const qtd = row.Quantidade || row.Qtd || row.Bombonas;
+                    
+                    if (idRota && dataColeta) {
+                        db.addColeta({
+                            id_rota: idRota.toString(),
+                            data: dataColeta,
+                            quantidade: parseInt(qtd) || 0,
+                            intercorrencia: row.Intercorrencia || row.Obs || ''
+                        });
+                    }
+                });
+                alert('Histórico legado importado com sucesso!');
+                renderStats();
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        init();
+    </script>
+</body>
+</html>
