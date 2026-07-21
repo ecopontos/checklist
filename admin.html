@@ -235,23 +235,22 @@
                 </button>
             </div>
 
-            <!-- SINCRONIZACAO SUPABASE -->
+            <!-- SINCRONIZACAO GOOGLE -->
             <div class="card">
-                <h2>☁️ Sincronização Supabase</h2>
-                <p>Transfira os dados locais para a nuvem para que outros dispositivos na rede possam acessar os roteiros atualizados.</p>
-                
+                <h2>☁️ Sincronização Google</h2>
+                <p>Transfira os dados locais para a nuvem (Google Sheets) para que outros dispositivos na rede possam acessar os roteiros atualizados. Rotas e pontos são atualizados automaticamente a partir do arquivo na pasta do Google Drive.</p>
+
                 <div class="sync-status">
                     <div class="status-dot status-offline" id="syncStatusDot"></div>
-                    <span id="syncStatusText">Supabase não configurado</span>
+                    <span id="syncStatusText">Verificando...</span>
                 </div>
 
                 <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <input type="text" id="supabaseUrl" placeholder="Supabase URL">
-                    <input type="password" id="supabaseKey" placeholder="Supabase Anon Key">
+                    <input type="text" id="gasUrl" placeholder="URL do Web App do Google Apps Script">
                 </div>
 
                 <div style="display: flex; gap: 10px;">
-                    <button class="btn btn-primary" style="flex: 1;" onclick="testSync()">Conectar & Sincronizar</button>
+                    <button class="btn btn-primary" style="flex: 1;" onclick="checkDriveUpdate()">Verificar agora</button>
                     <button class="btn btn-outline" onclick="backupSQLite()">Backup Local</button>
                 </div>
             </div>
@@ -269,6 +268,10 @@
                     <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
                         <span>Registros de Coleta:</span>
                         <span id="statCollectsCount" style="font-family: 'JetBrains Mono'; color: var(--primary);">0</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-top: 8px;">
+                        <span>Coletas Pendentes de Sincronização:</span>
+                        <span id="statPendingSyncCount" style="font-family: 'JetBrains Mono'; color: var(--accent);">0</span>
                     </div>
                 </div>
 
@@ -301,17 +304,22 @@
         <p id="loaderText">Sincronizando...</p>
     </div>
 
+    <script src="vendor/papaparse.min.js"></script>
     <script src="vendor/xlsx.full.min.js"></script>
     <script src="vendor/sql-wasm.js"></script>
     <script type="module">
         import db from './database.js';
+        import { getGasUrl, setGasUrl, checkAndImportRoteiros } from './google-sync.js';
 
         let legacyData = { rotas: [], roteiros: [], coletas: [] };
 
         async function init() {
             await db.init();
             updateStats();
-            
+
+            document.getElementById('gasUrl').value = getGasUrl();
+            document.getElementById('gasUrl').onchange = (e) => setGasUrl(e.target.value.trim());
+
             // File listeners
             document.getElementById('legacyRota').onchange = (e) => handleFile(e, 'rotas');
             document.getElementById('legacyRoteiro').onchange = (e) => handleFile(e, 'roteiros');
@@ -321,6 +329,8 @@
                 renderLegacyPreview();
                 document.getElementById('legacyPreviewModal').style.display = 'flex';
             };
+
+            checkDriveUpdate();
         }
 
         async function handleFile(e, type) {
@@ -430,24 +440,34 @@
             const cCount = db.db.exec("SELECT COUNT(*) FROM coletas")[0]?.values[0][0] || 0;
             document.getElementById('statPointsCount').textContent = pCount;
             document.getElementById('statCollectsCount').textContent = cCount;
+            document.getElementById('statPendingSyncCount').textContent = db.getUnsyncedColetas().length;
         }
 
-        window.testSync = () => {
-            const url = document.getElementById('supabaseUrl').value;
-            const key = document.getElementById('supabaseKey').value;
-            if (!url || !key) {
-                alert("Por favor, preencha as credenciais do Supabase.");
+        window.checkDriveUpdate = async () => {
+            const dot = document.getElementById('syncStatusDot');
+            const text = document.getElementById('syncStatusText');
+
+            if (!getGasUrl()) {
+                dot.className = 'status-dot status-offline';
+                text.textContent = 'URL do Google Apps Script não configurada';
                 return;
             }
-            showLoader("Sincronizando com Supabase...");
-            
-            // Placeholder for real sync logic
-            setTimeout(() => {
-                hideLoader();
-                document.getElementById('syncStatusDot').className = 'status-dot status-online';
-                document.getElementById('syncStatusText').textContent = 'Conectado ao Supabase';
-                alert("Sincronização concluída! Dados agora disponíveis na rede.");
-            }, 2000);
+
+            text.textContent = 'Verificando atualização...';
+            const result = await checkAndImportRoteiros(db);
+
+            if (result.error) {
+                dot.className = 'status-dot status-offline';
+                text.textContent = `Erro: ${result.error}`;
+                return;
+            }
+
+            dot.className = 'status-dot status-online';
+            text.textContent = result.updated
+                ? `Atualizado agora: ${result.roteiros} roteiros, ${result.clientes} pontos`
+                : 'Rotas e pontos já estão atualizados';
+
+            updateStats();
         };
 
         window.backupSQLite = () => db.downloadDatabase();
