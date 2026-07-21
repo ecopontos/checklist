@@ -119,22 +119,91 @@ class AppDatabase {
         });
     }
 
+    importRoteirosCsv(csvText) {
+        const results = Papa.parse(csvText, {
+            header: true,
+            skipEmptyLines: true,
+            dynamicTyping: true
+        });
+        const data = results.data;
+
+        const uniqueRoteiros = [...new Set(data.map(r => this._getCsvVal(r, 'Roteiro')).filter(Boolean))];
+        uniqueRoteiros.forEach(name => this.addRoteiro(name));
+
+        const roteiros = this.getRoteiros();
+        const routeMap = {};
+        roteiros.forEach(r => routeMap[r.nome] = r.id);
+
+        let clientesCount = 0;
+        data.forEach(row => {
+            const idRota = this._getCsvVal(row, 'idRota') || this._getCsvVal(row, 'id Rota');
+            const clienteNome = this._getCsvVal(row, 'Cliente');
+            const roteiroName = this._getCsvVal(row, 'Roteiro');
+
+            if (idRota && clienteNome) {
+                this.upsertCliente({
+                    idRota: idRota.toString(),
+                    Cliente: clienteNome,
+                    logradouro: this._getCsvVal(row, 'Logradouro') || this._getCsvVal(row, 'Rua') || '',
+                    Número: this._getCsvVal(row, 'Número') || this._getCsvVal(row, 'Num') || this._getCsvVal(row, 'Nº') || '',
+                    CEP: this._getCsvVal(row, 'CEP') || '',
+                    roteiro_id: routeMap[roteiroName],
+                    Ordem: this._getCsvVal(row, 'Ordem') || 0,
+                    ativo: this._getCsvVal(row, 'Inativo') != 1
+                });
+                clientesCount++;
+            }
+        });
+
+        return { roteiros: uniqueRoteiros.length, clientes: clientesCount };
+    }
+
+    _getCsvVal(row, name) {
+        const key = Object.keys(row).find(k => k.toLowerCase().trim() === name.toLowerCase());
+        return key ? row[key] : null;
+    }
+
     // --- Coletas ---
     addColeta(coleta) {
         this.db.run(`
             INSERT INTO coletas (id_rota, data, quantidade, intercorrencia)
             VALUES (?, ?, ?, ?)
         `, [coleta.id_rota, coleta.data, coleta.quantidade, coleta.intercorrencia]);
+        const id = this.db.exec("SELECT last_insert_rowid() AS id")[0].values[0][0];
         this.save();
+        return id;
     }
 
     getColetasByDate(data) {
         const res = this.db.exec(`
-            SELECT c.*, cl.cliente 
+            SELECT c.*, cl.cliente
             FROM coletas c
             JOIN clientes cl ON c.id_rota = cl.id_rota
             WHERE c.data = ?
         `, [data]);
+        if (!res.length) return [];
+        const cols = res[0].columns;
+        return res[0].values.map(v => {
+            const obj = {};
+            cols.forEach((c, i) => obj[c] = v[i]);
+            return obj;
+        });
+    }
+
+    markColetaSynced(id, syncId) {
+        this.db.run("UPDATE coletas SET last_sync = ?, sync_id = ? WHERE id = ?", [new Date().toISOString(), syncId, id]);
+        this.save();
+    }
+
+    getUnsyncedColetas() {
+        const res = this.db.exec(`
+            SELECT c.id, c.id_rota, c.data, c.quantidade, c.intercorrencia, cl.cliente, r.nome as roteiro
+            FROM coletas c
+            JOIN clientes cl ON c.id_rota = cl.id_rota
+            JOIN roteiros r ON cl.roteiro_id = r.id
+            WHERE c.last_sync IS NULL
+            ORDER BY c.data DESC
+        `);
         if (!res.length) return [];
         const cols = res[0].columns;
         return res[0].values.map(v => {
