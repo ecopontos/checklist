@@ -167,7 +167,7 @@ SAT01-5;6;0;5,00;SAT01;BIARRITZ, COND.;Rua Pastor William Richard Schisler Filho
 
     console.log('importRoteirosCsv:', db.importRoteirosCsv(csv));
 
-    const id = db.addColeta({ id_rota: 'SAT01-1', data: '2026-07-21', quantidade: 3, intercorrencia: '' });
+    const id = db.addColeta({ id_rota: '3', data: '2026-07-21', quantidade: 3, intercorrencia: '' });
     console.log('addColeta id:', id, typeof id);
 
     console.log('getUnsyncedColetas (before sync):', db.getUnsyncedColetas());
@@ -193,7 +193,7 @@ Expected console output:
 ```
 importRoteirosCsv: {roteiros: 1, clientes: 2}
 addColeta id: 1 number
-getUnsyncedColetas (before sync): [{id: 1, id_rota: 'SAT01-1', data: '2026-07-21', quantidade: 3, intercorrencia: '', cliente: 'CEPON', roteiro: 'SAT01'}]
+getUnsyncedColetas (before sync): [{id: 1, id_rota: '3', data: '2026-07-21', quantidade: 3, intercorrencia: '', cliente: 'CEPON', roteiro: 'SAT01'}]
 getUnsyncedColetas (after sync): []
 ```
 
