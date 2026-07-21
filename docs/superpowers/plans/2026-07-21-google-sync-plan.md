@@ -583,6 +583,8 @@ with:
 
                 if (result.clientes === 0) {
                     alert('Arquivo vazio ou formato inválido.');
+                    document.getElementById('loader').style.display = 'none';
+                    return;
                 }
 
                 renderRoteiros();
