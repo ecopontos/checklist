@@ -288,24 +288,31 @@
 
     <script type="module">
         import db from './database.js';
+        import { checkAndImportRoteiros } from './google-sync.js';
+
+        function refreshStats() {
+            const roteiros = db.getRoteiros();
+            document.getElementById('stat-routes').textContent = roteiros.length;
+
+            const allPointsRes = db.db.exec("SELECT COUNT(*) FROM clientes WHERE ativo = 1");
+            document.getElementById('stat-points').textContent = allPointsRes.length ? allPointsRes[0].values[0][0] : 0;
+
+            const collectsRes = db.db.exec("SELECT COUNT(*) FROM coletas");
+            document.getElementById('stat-collects').textContent = collectsRes.length ? collectsRes[0].values[0][0] : 0;
+
+            const issuesRes = db.db.exec("SELECT COUNT(*) FROM coletas WHERE intercorrencia != '' AND intercorrencia != 'Nenhuma'");
+            document.getElementById('stat-issues').textContent = issuesRes.length ? issuesRes[0].values[0][0] : 0;
+        }
 
         async function init() {
             try {
                 await db.init();
-                // Update stats
-                const roteiros = db.getRoteiros();
-                document.getElementById('stat-routes').textContent = roteiros.length;
-                
-                const allPointsRes = db.db.exec("SELECT COUNT(*) FROM clientes WHERE ativo = 1");
-                document.getElementById('stat-points').textContent = allPointsRes.length ? allPointsRes[0].values[0][0] : 0;
-
-                const collectsRes = db.db.exec("SELECT COUNT(*) FROM coletas");
-                document.getElementById('stat-collects').textContent = collectsRes.length ? collectsRes[0].values[0][0] : 0;
-
-                const issuesRes = db.db.exec("SELECT COUNT(*) FROM coletas WHERE intercorrencia != '' AND intercorrencia != 'Nenhuma'");
-                document.getElementById('stat-issues').textContent = issuesRes.length ? issuesRes[0].values[0][0] : 0;
-
+                refreshStats();
                 document.getElementById('btnBackup').onclick = () => db.downloadDatabase();
+
+                checkAndImportRoteiros(db).then(result => {
+                    if (result.updated) refreshStats();
+                });
             } catch (e) {
                 console.error("Database error", e);
             }
@@ -316,5 +323,6 @@
         init();
     </script>
     <script src="vendor/sql-wasm.js"></script>
+    <script src="vendor/papaparse.min.js"></script>
 </body>
 </html>
