@@ -252,6 +252,7 @@
 
     <script type="module">
         import db from './database.js';
+        import { pushColetas } from './google-sync.js';
 
         let currentClients = [];
         let sessionData = {}; // id_rota -> { qty, issue }
@@ -458,25 +459,56 @@
             if (!date) { alert('Selecione a data!'); return; }
 
             const entries = Object.entries(sessionData).filter(([id, d]) => d.qty > 0 || d.issue);
-            
+
             if (entries.length === 0) { alert('Nenhum registro para salvar!'); return; }
 
-            entries.forEach(([id, d]) => {
-                db.addColeta({
+            const routeSelect = document.getElementById('routeSelect');
+            const roteiroNome = routeSelect.options[routeSelect.selectedIndex]
+                ? routeSelect.options[routeSelect.selectedIndex].textContent
+                : '';
+
+            const savedColetas = entries.map(([id, d]) => {
+                const client = currentClients.find(c => c.id_rota == id);
+                const localId = db.addColeta({
                     id_rota: id,
                     data: date,
                     quantidade: d.qty,
                     intercorrencia: d.issue || ''
                 });
+                return {
+                    id: localId,
+                    id_rota: id,
+                    data: date,
+                    quantidade: d.qty,
+                    intercorrencia: d.issue || '',
+                    cliente: client ? client.cliente : '',
+                    roteiro: roteiroNome,
+                    sync_id: crypto.randomUUID()
+                };
             });
 
             showToast();
+            syncColetasToSheet(savedColetas);
         }
 
-        function showToast() {
+        async function syncColetasToSheet(coletas) {
+            const result = await pushColetas(coletas);
+            if (result.ok) {
+                coletas.forEach(c => db.markColetaSynced(c.id, c.sync_id));
+            } else {
+                showToast('Salvo localmente. Sincronização pendente.');
+            }
+        }
+
+        function showToast(msg) {
             const t = document.getElementById('toast');
+            const defaultMsg = 'Operação salva com sucesso!';
+            t.textContent = msg || defaultMsg;
             t.style.opacity = '1';
-            setTimeout(() => t.style.opacity = '0', 3000);
+            setTimeout(() => {
+                t.style.opacity = '0';
+                t.textContent = defaultMsg;
+            }, 3000);
         }
 
         init();
