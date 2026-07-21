@@ -132,10 +132,10 @@
                 </div>
                 
                 <div style="margin-top: 40px;">
-                    <h3>Exportar</h3>
-                    <p style="color: var(--text-dim); font-size: 0.8rem; margin-bottom: 10px;">Gere um arquivo CSV consolidado para uso externo.</p>
-                    <button id="btnExportCSV" class="tab-btn" style="width: 100%; border-color: var(--success); color: var(--success);">
-                        📊 Exportar para CSV
+                    <h3>Sincronização</h3>
+                    <p style="color: var(--text-dim); font-size: 0.8rem; margin-bottom: 10px;">Reenvia coletas que ainda não foram sincronizadas com o Google Sheets.</p>
+                    <button id="btnForceSync" class="tab-btn" style="width: 100%; border-color: var(--success); color: var(--success);">
+                        🔄 Forçar sincronização
                     </button>
                 </div>
 
@@ -186,6 +186,7 @@
     <script src="vendor/xlsx.full.min.js"></script>
     <script type="module">
         import db from './database.js';
+        import { pushColetas } from './google-sync.js';
 
         async function init() {
             await db.init();
@@ -193,34 +194,31 @@
 
             document.getElementById('csvHist').onchange = (e) => importHistory(e.target.files[0]);
             document.getElementById('xlsxHist').onchange = (e) => importLegacyHistory(e.target.files[0]);
-            document.getElementById('btnExportCSV').onclick = exportToCSV;
+            document.getElementById('btnForceSync').onclick = forceSyncColetas;
         }
 
-        function exportToCSV() {
-            const res = db.db.exec(`
-                SELECT r.nome as Roteiro, c.data as Data, c.id_rota as "ID Rota", cl.cliente as Cliente, c.quantidade as "Contentores Coletados", c.intercorrencia as Intercorrências
-                FROM coletas c
-                JOIN clientes cl ON c.id_rota = cl.id_rota
-                JOIN roteiros r ON cl.roteiro_id = r.id
-                ORDER BY c.data DESC, r.nome
-            `);
+        async function forceSyncColetas() {
+            const pending = db.getUnsyncedColetas();
+            if (!pending.length) { alert('Nenhuma coleta pendente de sincronização!'); return; }
 
-            if (!res.length) { alert('Nenhum dado para exportar!'); return; }
+            const payload = pending.map(c => ({
+                id: c.id,
+                id_rota: c.id_rota,
+                data: c.data,
+                quantidade: c.quantidade,
+                intercorrencia: c.intercorrencia,
+                cliente: c.cliente,
+                roteiro: c.roteiro,
+                sync_id: crypto.randomUUID()
+            }));
 
-            const cols = res[0].columns;
-            const rows = res[0].values;
-            
-            const csvData = [cols, ...rows];
-            const csvContent = Papa.unparse(csvData);
-            
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `coleta_consolidada_${new Date().toISOString().slice(0,10)}.csv`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
+            const result = await pushColetas(payload);
+            if (result.ok) {
+                payload.forEach(c => db.markColetaSynced(c.id, c.sync_id));
+                alert(`${payload.length} coleta(s) sincronizada(s) com sucesso!`);
+            } else {
+                alert(`Falha ao sincronizar: ${result.error || 'erro desconhecido'}`);
+            }
         }
 
         function renderStats() {
