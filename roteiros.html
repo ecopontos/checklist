@@ -489,62 +489,22 @@
         function handleFile(file) {
             if (!file) return;
             document.getElementById('loader').style.display = 'flex';
-            
+
             const reader = new FileReader();
             reader.onload = function(e) {
-                Papa.parse(e.target.result, {
-                    header: true,
-                    skipEmptyLines: true,
-                    dynamicTyping: true,
-                    complete: async function(results) {
-                        const data = results.data;
-                        
-                        if (data.length === 0) {
-                            alert('Arquivo vazio ou formato inválido.');
-                            document.getElementById('loader').style.display = 'none';
-                            return;
-                        }
+                const result = db.importRoteirosCsv(e.target.result);
 
-                        const uniqueRoteiros = [...new Set(data.map(r => getVal(r, 'Roteiro')).filter(Boolean))];
-                        uniqueRoteiros.forEach(name => db.addRoteiro(name));
-                        renderRoteiros();
+                if (result.clientes === 0) {
+                    alert('Arquivo vazio ou formato inválido.');
+                }
 
-                        const roteiros = db.getRoteiros();
-                        const routeMap = {};
-                        roteiros.forEach(r => routeMap[r.nome] = r.id);
-
-                        data.forEach(row => {
-                            const idRota = getVal(row, 'idRota') || getVal(row, 'id Rota');
-                            const clienteNome = getVal(row, 'Cliente');
-                            const roteiroName = getVal(row, 'Roteiro');
-
-                            if (idRota && clienteNome) {
-                                db.upsertCliente({
-                                    idRota: idRota.toString(),
-                                    Cliente: clienteNome,
-                                    logradouro: getVal(row, 'Logradouro') || getVal(row, 'Rua') || '',
-                                    Número: getVal(row, 'Número') || getVal(row, 'Num') || getVal(row, 'Nº') || '',
-                                    CEP: getVal(row, 'CEP') || '',
-                                    roteiro_id: routeMap[roteiroName],
-                                    Ordem: getVal(row, 'Ordem') || 0,
-                                    ativo: getVal(row, 'Inativo') != 1
-                                });
-                            }
-                        });
-
-                        document.getElementById('loader').style.display = 'none';
-                        closeModal('importModal');
-                        renderClients();
-                    }
-                });
+                renderRoteiros();
+                renderClients();
+                document.getElementById('loader').style.display = 'none';
+                closeModal('importModal');
             };
             reader.readAsText(file);
         }
-
-        const getVal = (row, name) => {
-            const key = Object.keys(row).find(k => k.toLowerCase().trim() === name.toLowerCase());
-            return key ? row[key] : null;
-        };
 
         // --- LEGACY IMPORT LOGIC ---
         let legacyData = { rotas: [], roteiros: [] };
