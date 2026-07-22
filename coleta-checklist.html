@@ -275,6 +275,11 @@
                     <option value="">Selecione o Roteiro</option>
                 </select>
                 <input type="date" id="opDate">
+                <select id="sortSelect">
+                    <option value="ordem">Número de Ordem</option>
+                    <option value="alfabetica">Ordem Alfabética</option>
+                    <option value="quantidade">Qtd. Digitada</option>
+                </select>
                 <button class="btn-checklist" id="btnChecklist" type="button">📋 Checklist Próxima Coleta</button>
             </div>
         </div>
@@ -349,6 +354,7 @@
 
         let currentClients = [];
         let sessionData = {}; // id_rota -> { qty, issue }
+        let currentSort = 'ordem'; // 'ordem' | 'alfabetica' | 'quantidade'
 
         async function init() {
             await db.init();
@@ -368,6 +374,7 @@
 
             select.onchange = loadRoute;
             document.getElementById('btnSave').onclick = saveOperation;
+            document.getElementById('sortSelect').onchange = handleSortChange;
 
             document.getElementById('btnChecklist').onclick = openChecklistModal;
             document.getElementById('btnChecklistCancel').onclick = closeChecklistModal;
@@ -394,8 +401,10 @@
 
             currentClients = db.getClientesByRoteiro(routeId);
             sessionData = {};
+            currentSort = 'ordem';
+            document.getElementById('sortSelect').value = 'ordem';
             renderList();
-            
+
             document.getElementById('searchBox').style.display = 'block';
             // Focus search automatically
             document.getElementById('idSearch').focus();
@@ -464,6 +473,28 @@
             updateStats();
         }
 
+        function sortClients(list) {
+            const sorted = [...list];
+            if (currentSort === 'alfabetica') {
+                sorted.sort((a, b) => a.cliente.localeCompare(b.cliente, 'pt-BR'));
+            } else if (currentSort === 'quantidade') {
+                sorted.sort((a, b) => {
+                    const qtyA = (sessionData[a.id_rota] && sessionData[a.id_rota].qty) || 0;
+                    const qtyB = (sessionData[b.id_rota] && sessionData[b.id_rota].qty) || 0;
+                    if (qtyB !== qtyA) return qtyB - qtyA;
+                    return (a.ordem || 0) - (b.ordem || 0);
+                });
+            } else {
+                sorted.sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+            }
+            return sorted;
+        }
+
+        function handleSortChange() {
+            currentSort = document.getElementById('sortSelect').value;
+            renderList();
+        }
+
         function renderList(filterId = null) {
             const container = document.getElementById('listContainer');
             if (currentClients.length === 0) {
@@ -471,9 +502,9 @@
                 return;
             }
 
-            const clientsToShow = filterId 
+            const clientsToShow = filterId
                 ? currentClients.filter(c => c.id_rota == filterId)
-                : currentClients;
+                : sortClients(currentClients);
 
             container.innerHTML = clientsToShow.map((c, i) => {
                 const session = sessionData[c.id_rota] || {};
