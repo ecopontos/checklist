@@ -55,3 +55,19 @@ export async function checkAndImportRoteiros(db) {
         return { checked: true, updated: false, error: e.message };
     }
 }
+
+export async function sendChecklistToDrive(filename, pdfBase64) {
+    const url = getGasUrl();
+    if (!url) return { ok: false, error: 'URL do GAS não configurada' };
+
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ checklist: { filename, pdfBase64 } })
+        });
+        return await res.json();
+    } catch (e) {
+        return { ok: false, error: e.message };
+    }
+}
