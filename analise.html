@@ -31,6 +31,11 @@
         .header-nav { display: flex; justify-content: space-between; margin-bottom: 40px; }
         .btn-back { color: var(--text-dim); text-decoration: none; }
 
+        .page-nav { display: flex; gap: 16px; flex-wrap: wrap; }
+        .page-nav a { color: var(--text-dim); text-decoration: none; transition: color 0.3s; }
+        .page-nav a:hover { color: var(--primary); }
+        .page-nav .active { color: var(--primary); font-weight: 600; }
+
         h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: 30px; }
 
         .analysis-grid {
@@ -110,7 +115,13 @@
 <body>
     <div class="container">
         <div class="header-nav">
-            <a href="index.html" class="btn-back">⬅️ Voltar ao Dashboard</a>
+            <nav class="page-nav">
+                <a href="index.html">🏠 Início</a>
+                <a href="roteiros.html">📍 Roteiros</a>
+                <a href="coleta-checklist.html">✅ Coleta</a>
+                <span class="active">📊 Análise</span>
+                <a href="admin.html">⚙️ Admin</a>
+            </nav>
         </div>
 
         <h1>Análise e Relatórios</h1>
