@@ -204,6 +204,63 @@
             padding: 12px 24px; border-radius: 12px; border: 1px solid var(--primary);
             opacity: 0; transition: opacity 0.3s; pointer-events: none;
         }
+
+        .btn-checklist {
+            background: transparent;
+            border: 1px solid var(--card-border);
+            color: var(--text);
+            padding: 8px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: border-color 0.2s;
+        }
+        .btn-checklist:hover { border-color: var(--primary); }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .modal-overlay.open { display: flex; }
+        .modal-card {
+            background: var(--surface);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 30px;
+            width: 100%;
+            max-width: 420px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .modal-card h2 { font-size: 1.3rem; }
+        .modal-field { display: flex; flex-direction: column; gap: 6px; }
+        .modal-field label { font-size: 0.8rem; color: var(--text-dim); }
+        .modal-field input, .modal-field select { width: 100%; }
+        .modal-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+        .modal-actions button {
+            flex: 1;
+            min-width: 100px;
+            padding: 10px 16px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            font-family: inherit;
+        }
+        .btn-modal-primary { background: var(--primary); color: #000; }
+        .btn-modal-success { background: var(--success); color: #fff; }
+        .btn-modal-cancel { background: transparent; border: 1px solid var(--card-border) !important; color: var(--text-dim); }
     </style>
 </head>
 <body>
@@ -218,6 +275,7 @@
                     <option value="">Selecione o Roteiro</option>
                 </select>
                 <input type="date" id="opDate">
+                <button class="btn-checklist" id="btnChecklist" type="button">📋 Checklist Próxima Coleta</button>
             </div>
         </div>
     </header>
@@ -250,9 +308,44 @@
 
     <div id="toast">Operação salva com sucesso!</div>
 
+    <div class="modal-overlay" id="checklistModal">
+        <div class="modal-card">
+            <h2>Checklist Próxima Coleta</h2>
+            <div class="modal-field">
+                <label>Data da Próxima Coleta</label>
+                <input type="date" id="proxData">
+            </div>
+            <div class="modal-field">
+                <label>Tipo de Resíduo</label>
+                <select id="tipoResiduo">
+                    <option value="Vidros">Vidros</option>
+                    <option value="Organicos">Orgânicos</option>
+                    <option value="Plasticos">Plásticos</option>
+                    <option value="Papel e Papelao">Papel e Papelão</option>
+                    <option value="Oleo de Cozinha">Óleo de Cozinha</option>
+                    <option value="Bombonas">Bombonas</option>
+                    <option value="Residuos Solidos">Resíduos Sólidos</option>
+                </select>
+            </div>
+            <div class="modal-field">
+                <label>Motorista (opcional)</label>
+                <input type="text" id="checklistMotorista" placeholder="Nome do motorista">
+            </div>
+            <div class="modal-field">
+                <label>Veículo (opcional)</label>
+                <input type="text" id="checklistVeiculo" placeholder="Placa ou identificação">
+            </div>
+            <div class="modal-actions">
+                <button class="btn-modal-cancel" id="btnChecklistCancel">Cancelar</button>
+                <button class="btn-modal-primary" id="btnChecklistDownload">Baixar PDF</button>
+                <button class="btn-modal-success" id="btnChecklistSend">Enviar para Drive</button>
+            </div>
+        </div>
+    </div>
+
     <script type="module">
         import db from './database.js';
-        import { pushColetas } from './google-sync.js';
+        import { pushColetas, sendChecklistToDrive } from './google-sync.js';
 
         let currentClients = [];
         let sessionData = {}; // id_rota -> { qty, issue }
@@ -275,6 +368,11 @@
 
             select.onchange = loadRoute;
             document.getElementById('btnSave').onclick = saveOperation;
+
+            document.getElementById('btnChecklist').onclick = openChecklistModal;
+            document.getElementById('btnChecklistCancel').onclick = closeChecklistModal;
+            document.getElementById('btnChecklistDownload').onclick = downloadChecklist;
+            document.getElementById('btnChecklistSend').onclick = sendChecklistToDriveHandler;
 
             // Search logic
             const idSearch = document.getElementById('idSearch');
@@ -511,8 +609,114 @@
             }, 3000);
         }
 
+        function openChecklistModal() {
+            if (!document.getElementById('routeSelect').value) {
+                alert('Selecione um roteiro primeiro');
+                return;
+            }
+            document.getElementById('proxData').value = '';
+            document.getElementById('checklistModal').classList.add('open');
+        }
+
+        function closeChecklistModal() {
+            document.getElementById('checklistModal').classList.remove('open');
+        }
+
+        function formatDateBR(dateStr) {
+            if (!dateStr) return '____/____/________';
+            const parts = dateStr.split('-');
+            if (parts.length !== 3) return dateStr;
+            return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+
+        function buildChecklistDoc() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+            const routeSelect = document.getElementById('routeSelect');
+            const roteiroNome = routeSelect.options[routeSelect.selectedIndex]
+                ? routeSelect.options[routeSelect.selectedIndex].textContent
+                : '';
+            const dataColeta = document.getElementById('opDate').value;
+            const proxData = document.getElementById('proxData').value;
+            const tipoResiduo = document.getElementById('tipoResiduo').value;
+            const motorista = document.getElementById('checklistMotorista').value.trim();
+            const veiculo = document.getElementById('checklistVeiculo').value.trim();
+
+            let totalPrevisto = 0;
+            const rows = currentClients.map((c, i) => {
+                const session = sessionData[c.id_rota] || {};
+                const qty = session.qty > 0 ? session.qty : '';
+                if (session.qty > 0) totalPrevisto += session.qty;
+                return [
+                    c.ordem || (i + 1),
+                    c.cliente,
+                    c.logradouro || '',
+                    c.numero || '',
+                    c.cep || '',
+                    c.id_rota,
+                    qty,
+                    '',
+                    session.issue || ''
+                ];
+            });
+
+            doc.setFontSize(16);
+            doc.text(`Checklist Coleta ${roteiroNome}`, 14, 15);
+            doc.setFontSize(9);
+            doc.text(`Data da Coleta: ${formatDateBR(dataColeta)}   Proxima Coleta: ${formatDateBR(proxData)}`, 14, 22);
+            doc.text(`Tipo de Residuo: ${tipoResiduo}   Total de Pontos: ${currentClients.length}   Bombonas Previstas: ${totalPrevisto}`, 14, 27);
+            if (motorista) doc.text(`Motorista: ${motorista}`, 14, 32);
+            if (veiculo) doc.text(`Veiculo: ${veiculo}`, 100, 32);
+
+            doc.autoTable({
+                startY: 36,
+                head: [['Ord.', 'Cliente', 'Logradouro', 'No', 'CEP', 'ID', 'Bomb. Qtd.', 'Qtd. Coletada', 'Problema']],
+                body: rows,
+                styles: { fontSize: 8 },
+                headStyles: { fillColor: [26, 58, 92] }
+            });
+
+            const finalY = doc.lastAutoTable.finalY + 20;
+            doc.text('_______________________', 30, finalY);
+            doc.text('Motorista', 55, finalY + 5);
+            doc.text('_______________________', 180, finalY);
+            doc.text('Supervisor', 205, finalY + 5);
+
+            const filename = `Checklist_${roteiroNome}_${proxData || 'sem-data'}.pdf`;
+
+            return { doc, filename, proxData };
+        }
+
+        function downloadChecklist() {
+            const { doc, filename } = buildChecklistDoc();
+            doc.save(filename);
+        }
+
+        async function sendChecklistToDriveHandler() {
+            const proxData = document.getElementById('proxData').value;
+            if (!proxData) {
+                alert('Preencha a Data da Proxima Coleta para enviar ao Drive.');
+                return;
+            }
+
+            const { doc, filename } = buildChecklistDoc();
+            const dataUri = doc.output('datauristring');
+            const pdfBase64 = dataUri.split(',')[1];
+
+            const result = await sendChecklistToDrive(filename, pdfBase64);
+            if (result.ok) {
+                alert('Checklist enviado para o Drive com sucesso!');
+                closeChecklistModal();
+            } else {
+                alert(`Falha ao enviar: ${result.error || 'erro desconhecido'}`);
+            }
+        }
+
         init();
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+    <script src="vendor/jspdf.umd.min.js"></script>
+    <script src="vendor/jspdf.plugin.autotable.min.js"></script>
 </body>
 </html>
