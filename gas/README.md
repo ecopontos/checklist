@@ -26,7 +26,7 @@
 ## Teste manual pós-deploy
 
 Depois de colocar um `cstExportaCheckList.csv` na pasta configurada, teste
-com `curl` (substitua `<URL>` pela URL do passo 8):
+com `curl` (substitua `<URL>` pela URL do passo 9):
 
 ```bash
 curl "<URL>"
