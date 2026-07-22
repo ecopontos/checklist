@@ -9,7 +9,7 @@ Aplicacao estatica para gestao local de roteiros e coletas.
 - `coleta-checklist.html`: operacao de coleta
 - `analise.html`: consulta e analise
 - `imprimir.html`: saida para impressao
-- `admin.html`: importacao legada, backup local e placeholder de sincronizacao
+- `admin.html`: importacao legada, backup local e sincronizacao com Google Sheets/Drive via Apps Script
 - `whatsapp-sender.html`: preparo de disparos via WhatsApp
 - `database.js`: persistencia local em SQLite via `sql.js` + `localStorage`
 
@@ -24,5 +24,5 @@ E um site estatico. Nao exige build.
 ## Observacoes tecnicas
 
 - O banco e local ao navegador, salvo na chave `app3_db` do `localStorage`.
-- `admin.html` exibe campos de Supabase, mas a sincronizacao ainda e mock e nao envia dados.
+- `admin.html` sincroniza de verdade: coletas sao enviadas a uma planilha Google Sheets e rotas/pontos sao importados automaticamente de um CSV numa pasta do Google Drive, atraves de um Web App Google Apps Script. Codigo-fonte e instrucoes de deploy do script em `gas/`.
 - Os arquivos em `vendor/` fazem parte da aplicacao e devem permanecer versionados.
