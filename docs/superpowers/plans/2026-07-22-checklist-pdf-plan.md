@@ -259,6 +259,20 @@ with:
    vai no campo "URL do Web App do Google Apps Script" em `admin.html`.
 ```
 
+Also fix a stale cross-reference: the renumbering shifted "Copie a URL do
+Web App gerada" from step 8 to step 9, but the "Teste manual pós-deploy"
+section still points at the old number. Replace:
+
+```markdown
+com `curl` (substitua `<URL>` pela URL do passo 8):
+```
+
+with:
+
+```markdown
+com `curl` (substitua `<URL>` pela URL do passo 9):
+```
+
 Finally, add a new `curl` example at the end of the "Teste manual pós-deploy" section, after the existing `coletas` POST example and before the "Toda vez que o `Code.gs` for editado..." paragraph:
 
 ```markdown
