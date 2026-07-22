@@ -1235,7 +1235,7 @@ with:
 
                 checkAndImportRoteiros(db).then(result => {
                     if (result.updated) refreshStats();
-                });
+                }).catch(e => console.error("Drive sync check failed", e));
             } catch (e) {
                 console.error("Database error", e);
             }
