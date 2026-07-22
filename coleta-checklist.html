@@ -51,6 +51,11 @@
         .logo-area { display: flex; align-items: center; gap: 15px; }
         .btn-back { color: var(--text-dim); text-decoration: none; }
 
+        .page-nav { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.85rem; }
+        .page-nav a { color: var(--text-dim); text-decoration: none; transition: color 0.3s; }
+        .page-nav a:hover { color: var(--primary); }
+        .page-nav .active { color: var(--primary); font-weight: 600; }
+
         .controls {
             display: flex;
             gap: 15px;
@@ -267,8 +272,14 @@
     <header>
         <div class="header-content">
             <div class="logo-area">
-                <a href="index.html" class="btn-back">⬅️</a>
                 <h2 style="font-weight: 800; letter-spacing: -1px;">OPERAÇÃO</h2>
+                <nav class="page-nav">
+                    <a href="index.html">🏠 Início</a>
+                    <a href="roteiros.html">📍 Roteiros</a>
+                    <span class="active">✅ Coleta</span>
+                    <a href="analise.html">📊 Análise</a>
+                    <a href="admin.html">⚙️ Admin</a>
+                </nav>
             </div>
             <div class="controls">
                 <select id="routeSelect">
