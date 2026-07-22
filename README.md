@@ -15,11 +15,16 @@ Aplicacao estatica para gestao local de roteiros e coletas.
 
 ## Como publicar
 
-E um site estatico. Nao exige build.
+E um site estatico. Nao exige build. Importante: usa `<script type="module">` e o
+`sql.js` carrega `.wasm` via `fetch()` — precisa ser servido por HTTP, nao abre
+corretamente via `file://` ou caminho de rede direto no Explorer.
 
+**GitHub Pages:**
 1. Publique o conteudo na raiz do repositorio.
 2. Habilite GitHub Pages a partir da branch `main`, pasta `/ (root)`.
 3. Acesse `index.html` como entrada principal.
+
+**Rede local (IIS):** ver `docs/deploy-rede-local.md`.
 
 ## Observacoes tecnicas
 
