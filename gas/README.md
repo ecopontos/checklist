@@ -42,3 +42,25 @@ planilha configurada.
 Toda vez que o `Code.gs` for editado no editor do Apps Script, é preciso
 criar uma **nova implantação** (ou gerenciar implantações > editar a
 implantação existente) para que as mudanças valham para a URL já em uso.
+
+## Limitação conhecida: linhas duplicadas em reenvios
+
+O `doPost` sempre adiciona uma nova linha na aba "Coletas" — ele não usa a
+coluna "Sync ID" para evitar duplicatas. Se uma coleta for gravada na
+planilha mas a resposta nunca chegar de volta ao app (ex: conexão caiu logo
+após o envio), o app mantém a coleta como "não sincronizada" localmente e
+vai reenviá-la na próxima sincronização automática ou manual — criando uma
+segunda linha para a mesma coleta na planilha. Isso é aceitável dado que o
+app assume conexão sempre disponível no momento da coleta (sem fila
+offline), mas é bom saber que a coluna "Sync ID" existe justamente para
+permitir identificar e limpar duplicatas manualmente na planilha, caso
+aconteçam.
+
+## Limitação conhecida: arquivo duplicado no Drive
+
+Se a pasta configurada acabar com mais de um arquivo chamado
+`cstExportaCheckList.csv` (por exemplo, por engano ao enviar um novo em vez
+de substituir o existente), o `doGet` pode retornar qualquer um dos dois —
+não necessariamente o mais recente. Sempre **substitua** o arquivo existente
+na pasta (mantendo um único arquivo com esse nome) em vez de fazer upload de
+uma cópia adicional.
