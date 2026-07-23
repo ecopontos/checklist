@@ -5,9 +5,32 @@
   "private": true,
   "main": "electron/main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "build": "electron-builder --win"
   },
   "devDependencies": {
-    "electron": "^31.0.0"
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.satelite.checklist",
+    "productName": "SATELITE Checklist",
+    "files": [
+      "electron/**/*",
+      "*.html",
+      "database.js",
+      "google-sync.js",
+      "vendor/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "perMachine": false,
+      "oneClick": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }
