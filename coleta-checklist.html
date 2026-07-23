@@ -713,19 +713,40 @@
             doc.text(`Checklist Coleta ${roteiroNome}`, 14, 15);
             doc.setFontSize(9);
             doc.text(`Coleta Anterior: ${formatDateBR(dataColeta)}   Data da Coleta: ${formatDateBR(proxData)}`, 14, 22);
-            doc.text(`Tipo de Residuo: ${tipoResiduo}   Total de Pontos: ${currentClients.length}   Bombonas Previstas: ${totalPrevisto}`, 14, 27);
+            doc.text(`Tipo de Residuo: ${tipoResiduo}   Total de Pontos: ${currentClients.length}   Recipientes Previstos: ${totalPrevisto}`, 14, 27);
             if (motorista) doc.text(`Motorista: ${motorista}`, 14, 32);
             if (veiculo) doc.text(`Veiculo: ${veiculo}`, 100, 32);
 
             doc.autoTable({
                 startY: 36,
-                head: [['Ord.', 'Cliente', 'Logradouro', 'No', 'CEP', 'ID', 'Qtd. Ant.', 'Qtd. Coletada', 'Problema']],
+                head: [['Ord.', 'Cliente', 'Logradouro', 'No', 'CEP', 'ID', 'Qtd. Ant.', 'Qtd. Coletada', 'Cód. Problema']],
                 body: rows,
                 styles: { fontSize: 8 },
                 headStyles: { fillColor: [26, 58, 92] }
             });
 
-            const finalY = doc.lastAutoTable.finalY + 20;
+            const legendStartY = doc.lastAutoTable.finalY + 12;
+            doc.setFontSize(9);
+            doc.text('Códigos de Intercorrência:', 14, legendStartY);
+            doc.setFontSize(8);
+            const codigosIntercorrencia = [
+                '1. Recipiente ausente',
+                '2. Recipiente em quantidade insuficiente',
+                '3. Recipiente quebrado',
+                '4. Recipiente preso em corrente',
+                '5. Recipiente trancado no depósito',
+                '6. Resíduo contaminado/misturado',
+                '7. Sacolas/Sacos presentes no recipiente',
+                '8. Outro'
+            ];
+            codigosIntercorrencia.forEach((item, i) => {
+                const col = i < 4 ? 0 : 1;
+                const row = i % 4;
+                doc.text(item, 14 + col * 140, legendStartY + 6 + row * 5);
+            });
+
+            const finalY = legendStartY + 6 + 4 * 5 + 15;
+            doc.setFontSize(9);
             doc.text('_______________________', 30, finalY);
             doc.text('Motorista', 55, finalY + 5);
             doc.text('_______________________', 180, finalY);
