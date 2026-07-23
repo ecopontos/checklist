@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, shell } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
@@ -69,6 +69,17 @@ function createWindow(urlPath) {
   });
 
   win.setMenuBarVisibility(false);
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    const origin = `http://127.0.0.1:${PORT}`;
+    if (url.startsWith(origin + '/')) {
+      createWindow(url.slice(origin.length));
+    } else {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
+
   win.loadURL(`http://127.0.0.1:${PORT}${urlPath}`);
   return win;
 }
