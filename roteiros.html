@@ -337,6 +337,22 @@
         </div>
     </div>
 
+    <div id="importModal" class="modal">
+        <div class="modal-content">
+            <h2>Importar CSV</h2>
+            <p class="subtitle" style="font-size: 0.9rem;">Selecione um arquivo CSV com roteiro, cliente e endereço para importar pontos.</p>
+
+            <div id="drop-zone">
+                <p>Clique para selecionar o arquivo CSV</p>
+            </div>
+            <input type="file" id="csvFile" accept=".csv" style="display: none;">
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" onclick="closeModal('importModal')">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
     <div class="loading-overlay" id="loader">
         <div class="spinner"></div>
         <p>Processando dados...</p>
