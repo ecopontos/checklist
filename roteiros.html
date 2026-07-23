@@ -63,14 +63,65 @@
 
         .header-nav {
             display: flex;
-            justify-content: space-between;
+            justify-content: flex-end;
             align-items: center;
             margin-bottom: 40px;
         }
 
-        .page-nav { display: flex; gap: 16px; flex-wrap: wrap; }
-        .page-nav a { color: var(--text-dim); text-decoration: none; transition: color 0.3s; }
-        .page-nav a:hover { color: var(--primary); }
+        .nav-wrapper { position: relative; }
+        .nav-toggle { display: none; }
+
+        .hamburger-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 34px;
+            height: 34px;
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            color: var(--text-dim);
+            cursor: pointer;
+            font-size: 1.1rem;
+            transition: all 0.3s;
+            position: relative;
+            z-index: 210;
+        }
+        .hamburger-icon:hover { border-color: var(--primary); color: var(--primary); }
+
+        .nav-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 190;
+            cursor: default;
+        }
+        .nav-toggle:checked ~ .nav-overlay { display: block; }
+
+        .page-nav {
+            display: none;
+            flex-direction: column;
+            gap: 4px;
+            position: absolute;
+            top: 44px;
+            right: 0;
+            background: var(--surface);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 10px;
+            min-width: 180px;
+            z-index: 200;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        }
+        .nav-toggle:checked ~ .page-nav { display: flex; }
+
+        .page-nav a, .page-nav .active {
+            padding: 8px 10px;
+            border-radius: 8px;
+            color: var(--text-dim);
+            text-decoration: none;
+            transition: background 0.2s, color 0.2s;
+        }
+        .page-nav a:hover { background: rgba(255, 255, 255, 0.05); color: var(--primary); }
         .page-nav .active { color: var(--primary); font-weight: 600; }
 
         h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: 10px; }
@@ -220,13 +271,19 @@
 <body>
     <div class="container">
         <div class="header-nav">
-            <nav class="page-nav">
-                <a href="index.html">🏠 Início</a>
-                <span class="active">📍 Roteiros</span>
-                <a href="coleta-checklist.html">✅ Coleta</a>
-                <a href="analise.html">📊 Análise</a>
-                <a href="admin.html">⚙️ Admin</a>
-            </nav>
+            <div class="nav-wrapper">
+                <input type="checkbox" id="navToggle" class="nav-toggle">
+                <label for="navToggle" class="hamburger-icon">☰</label>
+                <label for="navToggle" class="nav-overlay"></label>
+                <nav class="page-nav">
+                    <a href="index.html">🏠 Início</a>
+                    <span class="active">📍 Roteiros</span>
+                    <a href="coleta-checklist.html">✅ Coleta</a>
+                    <a href="analise.html">📊 Análise</a>
+                    <a href="admin.html">⚙️ Admin</a>
+                    <a href="ajuda-coleta.html" target="_blank">❓ Ajuda</a>
+                </nav>
+            </div>
         </div>
 
         <h1>Gestão de Roteiros</h1>
