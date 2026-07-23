@@ -712,14 +712,14 @@
             doc.setFontSize(16);
             doc.text(`Checklist Coleta ${roteiroNome}`, 14, 15);
             doc.setFontSize(9);
-            doc.text(`Data da Coleta: ${formatDateBR(dataColeta)}   Proxima Coleta: ${formatDateBR(proxData)}`, 14, 22);
+            doc.text(`Coleta Anterior: ${formatDateBR(dataColeta)}   Data da Coleta: ${formatDateBR(proxData)}`, 14, 22);
             doc.text(`Tipo de Residuo: ${tipoResiduo}   Total de Pontos: ${currentClients.length}   Bombonas Previstas: ${totalPrevisto}`, 14, 27);
             if (motorista) doc.text(`Motorista: ${motorista}`, 14, 32);
             if (veiculo) doc.text(`Veiculo: ${veiculo}`, 100, 32);
 
             doc.autoTable({
                 startY: 36,
-                head: [['Ord.', 'Cliente', 'Logradouro', 'No', 'CEP', 'ID', 'Bomb. Qtd.', 'Qtd. Coletada', 'Problema']],
+                head: [['Ord.', 'Cliente', 'Logradouro', 'No', 'CEP', 'ID', 'Qtd. Ant.', 'Qtd. Coletada', 'Problema']],
                 body: rows,
                 styles: { fontSize: 8 },
                 headStyles: { fillColor: [26, 58, 92] }
