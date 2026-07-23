@@ -225,6 +225,22 @@
         }
         .btn-checklist:hover { border-color: var(--primary); }
 
+        .btn-help {
+            background: transparent;
+            border: 1px solid var(--card-border);
+            color: var(--text-dim);
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+        .btn-help:hover { border-color: var(--primary); color: var(--primary); }
+
         .modal-overlay {
             display: none;
             position: fixed;
@@ -291,6 +307,7 @@
                     <option value="quantidade">Qtd. Digitada</option>
                 </select>
                 <button class="btn-checklist" id="btnChecklist" type="button">📋 Checklist Próxima Coleta</button>
+                <a href="ajuda-coleta.html" target="_blank" class="btn-help" title="Ajuda">❓</a>
             </div>
         </div>
     </header>
