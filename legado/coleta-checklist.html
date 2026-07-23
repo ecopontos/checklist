@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Coleta de Bombonas</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap');
+
+  :root {
+    --bg: #0e1117;
+    --surface: #161b26;
+    --surface2: #1e2535;
+    --border: #2a3347;
+    --accent: #00e5a0;
+    --accent2: #005f42;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --text: #e8edf5;
+    --muted: #6b7a99;
+    --input-bg: #0e1117;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Syne', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ─────────────────────────────── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 4px 24px rgba(0,0,0,.4);
+  }
+
+  .header-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 0 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logo-icon {
+    width: 34px; height: 34px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: grid; place-items: center;
+    flex-shrink: 0;
+  }
+  .logo-icon svg { width: 20px; height: 20px; }
+
+  .logo-text { font-size: 1.15rem; font-weight: 800; letter-spacing: -.3px; }
+  .logo-text span { color: var(--accent); }
+
+  .header-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px 0;
+    align-items: flex-end;
+  }
+
+  .ctrl-group { display: flex; flex-direction: column; gap: 4px; }
+  .ctrl-label {
+    font-size: .68rem;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  select, input[type="date"] {
+    font-family: 'DM Mono', monospace;
+    font-size: .85rem;
+    background: var(--input-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 12px;
+    outline: none;
+    transition: border-color .2s;
+    cursor: pointer;
+  }
+  select:focus, input[type="date"]:focus { border-color: var(--accent); }
+  select { min-width: 160px; }
+
+  .btn {
+    font-family: 'Syne', sans-serif;
+    font-size: .8rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    border: none; border-radius: 8px;
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: all .15s;
+    display: flex; align-items: center; gap: 6px;
+    white-space: nowrap;
+  }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover { filter: brightness(1.1); }
+  .btn-outline { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  .btn-outline:hover { background: rgba(0,229,160,.08); }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-danger:hover { filter: brightness(1.1); }
+  .btn-print { background: #6366f1; color: #fff; }
+  .btn-print:hover { filter: brightness(1.15); }
+
+  .header-right { margin-left: auto; display: flex; gap: 8px; align-items: flex-end; padding-bottom: 12px; }
+
+  /* ── STATS BAR ───────────────────────────── */
+  .stats-bar {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    padding: 10px 20px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stat-pill {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: .78rem;
+  }
+  .stat-dot { width: 7px; height: 7px; border-radius: 50%; }
+  .dot-green { background: var(--accent); }
+  .dot-yellow { background: var(--warn); }
+  .dot-gray { background: var(--muted); }
+  .stat-num { font-family: 'DM Mono', monospace; font-weight: 500; color: var(--accent); }
+
+  /* ── MAIN LIST ───────────────────────────── */
+  main { padding: 16px 20px; max-width: 800px; margin: 0 auto; }
+
+  #empty-state {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 12px; padding: 80px 20px; text-align: center;
+    color: var(--muted);
+  }
+  #empty-state svg { opacity: .3; }
+  #empty-state p { font-size: .95rem; }
+  #empty-state small { font-size: .8rem; opacity: .7; }
+
+  /* ── ROW CARD ────────────────────────────── */
+  .row-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    display: grid;
+    grid-template-columns: 28px 1fr auto;
+    gap: 0 12px;
+    align-items: start;
+    transition: border-color .15s, box-shadow .15s;
+    animation: fadeIn .2s ease;
+  }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+
+  .row-card:hover { border-color: rgba(0,229,160,.35); box-shadow: 0 0 0 1px rgba(0,229,160,.1); }
+  .row-card.has-data { border-left: 3px solid var(--accent); }
+  .row-card.has-problem { border-left: 3px solid var(--warn); }
+  .row-card.inactive { opacity: .45; }
+
+  .row-num {
+    font-family: 'DM Mono', monospace;
+    font-size: .75rem;
+    color: var(--muted);
+    padding-top: 2px;
+    text-align: right;
+  }
+
+  .row-info { min-width: 0; }
+  .row-name {
+    font-size: .92rem;
+    font-weight: 700;
+    line-height: 1.3;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .row-addr {
+    font-size: .73rem;
+    color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    margin-top: 2px;
+  }
+
+  .row-inputs { display: flex; gap: 8px; align-items: center; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+
+  .num-input-wrap { display: flex; align-items: center; gap: 4px; }
+  .num-label { font-size: .68rem; color: var(--muted); font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
+
+  input[type="number"] {
+    font-family: 'DM Mono', monospace;
+    font-size: .9rem;
+    font-weight: 500;
+    width: 64px;
+    text-align: center;
+    background: var(--input-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 8px;
+    outline: none;
+    transition: border-color .2s;
+    -moz-appearance: textfield;
+  }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+  input[type="number"]:focus { border-color: var(--accent); }
+  input[type="number"].has-value { border-color: var(--accent); color: var(--accent); }
+
+  .prob-btn {
+    font-family: 'Syne', sans-serif;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    background: transparent;
+    color: var(--muted);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .prob-btn:hover { border-color: var(--warn); color: var(--warn); }
+  .prob-btn.active { border-style: solid; border-color: var(--warn); color: var(--warn); background: rgba(245,158,11,.08); }
+
+  /* ── PROBLEM INLINE ──────────────────────── */
+  .prob-row {
+    grid-column: 2 / 4;
+    display: none;
+    margin-top: 8px;
+  }
+  .prob-row.open { display: block; }
+  .prob-row input[type="text"] {
+    width: 100%;
+    font-family: 'DM Mono', monospace;
+    font-size: .82rem;
+    background: var(--input-bg);
+    color: var(--warn);
+    border: 1px solid var(--warn);
+    border-radius: 8px;
+    padding: 7px 12px;
+    outline: none;
+  }
+  .prob-row input[type="text"]::placeholder { color: rgba(245,158,11,.4); }
+
+  /* ── IMPORT OVERLAY ──────────────────────── */
+  #import-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.7);
+    z-index: 200;
+    justify-content: center; align-items: center;
+    padding: 20px;
+  }
+  #import-overlay.open { display: flex; }
+
+  .import-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    max-width: 420px; width: 100%;
+  }
+  .import-card h2 { font-size: 1.1rem; margin-bottom: 6px; }
+  .import-card p { font-size: .82rem; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .2s;
+    position: relative;
+  }
+  .drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: rgba(0,229,160,.04); }
+  .drop-zone input[type="file"] { position: absolute; inset:0; opacity:0; cursor:pointer; width:100%; }
+  .drop-zone p { font-size: .85rem; color: var(--muted); margin-top: 8px; }
+  .drop-zone strong { color: var(--accent); font-size: 1rem; }
+
+  .import-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+  /* ── CHECKLIST MODAL ─────────────────────── */
+  #checklist-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.7);
+    z-index: 200;
+    justify-content: center; align-items: center;
+    padding: 20px;
+  }
+  #checklist-overlay.open { display: flex; }
+
+  .checklist-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    max-width: 520px; width: 100%;
+  }
+  .checklist-card h2 { font-size: 1.1rem; margin-bottom: 6px; }
+  .checklist-card p { font-size: .82rem; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+
+  .checklist-field {
+    display: flex; flex-direction: column; gap: 4px;
+    margin-bottom: 14px;
+  }
+  .checklist-field label {
+    font-size: .72rem;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  .checklist-field input, .checklist-field select {
+    font-family: 'DM Mono', monospace;
+    font-size: .85rem;
+    background: var(--input-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  .checklist-field input:focus, .checklist-field select:focus {
+    border-color: var(--accent);
+  }
+
+  .checklist-actions {
+    display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px;
+  }
+
+  /* ── TOAST ───────────────────────────────── */
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 20px;
+    font-size: .85rem; font-weight: 600;
+    opacity: 0; transition: all .3s;
+    z-index: 300; white-space: nowrap;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.success { border-color: var(--accent); color: var(--accent); }
+  #toast.error { border-color: var(--danger); color: var(--danger); }
+
+  /* ── SEARCH ──────────────────────────────── */
+  .search-wrap { position: relative; flex: 1; min-width: 160px; }
+  .search-wrap svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); opacity: .4; pointer-events: none; }
+  input[type="search"] {
+    width: 100%;
+    font-family: 'Syne', sans-serif;
+    font-size: .82rem;
+    background: var(--input-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 10px 7px 32px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  input[type="search"]:focus { border-color: var(--accent); }
+
+  @media (max-width: 560px) {
+    .header-controls { flex-direction: column; }
+    .header-right { margin-left: 0; width: 100%; flex-wrap: wrap; }
+    .row-card { grid-template-columns: 24px 1fr; }
+    .row-inputs { grid-column: 1 / 3; justify-content: flex-start; }
+    .prob-row { grid-column: 1 / 3; }
+  }
+</style>
+</head>
+<body>
+
+<!-- IMPORT OVERLAY -->
+<div id="import-overlay">
+  <div class="import-card">
+    <h2>Importar Planilha CSV</h2>
+    <p>Selecione o arquivo <strong>cstExportaCheckList.csv</strong> exportado do sistema. Codificação UTF-16 com separador ponto-e-vírgula.</p>
+    <div class="drop-zone" id="drop-zone">
+      <input type="file" id="file-input" accept=".csv">
+      <svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="color:var(--accent);margin:0 auto"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"/></svg>
+      <strong>Clique ou arraste o arquivo</strong>
+      <p>Formato: CSV UTF-16, separador ;</p>
+    </div>
+    <div class="import-actions">
+      <button class="btn btn-outline" onclick="closeImport()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- CHECKLIST PRINT MODAL -->
+<div id="checklist-overlay">
+  <div class="checklist-card">
+    <h2>Imprimir Checklist do Roteiro</h2>
+    <p>Configure os dados abaixo e clique em gerar. O checklist sera aberto em uma nova aba formatado para impressao A4 paisagem.</p>
+    <div class="checklist-field">
+      <label>Data da Proxima Coleta</label>
+      <input type="date" id="prox-data-coleta">
+    </div>
+    <div class="checklist-field">
+      <label>Tipo de Residuo</label>
+      <select id="checklist-tipo-residuo">
+        <option value="Vidros">Vidros</option>
+        <option value="Organicos">Organicos</option>
+        <option value="Plasticos">Plasticos</option>
+        <option value="Papel e Papelao">Papel e Papelao</option>
+        <option value="Oleo de Cozinha">Oleo de Cozinha</option>
+        <option value="Bombonas">Bombonas</option>
+        <option value="Residuos Solidos">Residuos Solidos</option>
+      </select>
+    </div>
+    <div class="checklist-field">
+      <label>Motorista</label>
+      <input type="text" id="checklist-motorista" placeholder="Nome do motorista (opcional)">
+    </div>
+    <div class="checklist-field">
+      <label>Veiculo</label>
+      <input type="text" id="checklist-veiculo" placeholder="Placa ou identificacao (opcional)">
+    </div>
+    <div class="checklist-actions">
+      <button class="btn btn-outline" onclick="closeChecklist()">Cancelar</button>
+      <button class="btn btn-print" onclick="generateChecklist()">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h2m2 4h6a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2zm8-12V5a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4h10z"/></svg>
+        Gerar Checklist
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- HEADER -->
+<header>
+  <div class="header-top">
+    <div class="logo-icon">
+      <svg fill="none" stroke="#000" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M20 7H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1zM16 3H8M12 12v4M10 14h4"/>
+      </svg>
+    </div>
+    <span class="logo-text">Coleta <span>Bombonas</span></span>
+  </div>
+  <div class="header-controls">
+    <div class="ctrl-group">
+      <span class="ctrl-label">Roteiro</span>
+      <select id="roteiro-select" onchange="applyFilters()">
+        <option value="">— selecione —</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <span class="ctrl-label">Data da Coleta</span>
+      <input type="date" id="data-coleta">
+    </div>
+    <div class="ctrl-group" style="flex:1">
+      <span class="ctrl-label">Buscar</span>
+      <div class="search-wrap">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input type="search" id="search-input" placeholder="Nome do cliente..." oninput="applyFilters()">
+      </div>
+    </div>
+    <div class="header-right">
+      <button class="btn btn-outline" onclick="openImport()">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M7.5 7.5 12 3m0 0 4.5 4.5M12 3v13.5"/></svg>
+        Importar CSV
+      </button>
+      <button class="btn btn-print" onclick="openChecklist()">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h2m2 4h6a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2zm8-12V5a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4h10z"/></svg>
+        Imprimir Checklist
+      </button>
+      <button class="btn btn-primary" onclick="exportCSV()">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"/></svg>
+        Salvar Coleta
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- STATS BAR -->
+<div class="stats-bar" id="stats-bar" style="display:none">
+  <div class="stat-pill">
+    <div class="stat-dot dot-gray"></div>
+    <span id="stat-total">0</span>&nbsp;pontos
+  </div>
+  <div class="stat-pill">
+    <div class="stat-dot dot-green"></div>
+    <span class="stat-num" id="stat-coletados">0</span>&nbsp;coletados
+  </div>
+  <div class="stat-pill">
+    <div class="stat-dot dot-green"></div>
+    <span class="stat-num" id="stat-bombonas">0</span>&nbsp;bombonas
+  </div>
+  <div class="stat-pill">
+    <div class="stat-dot dot-yellow"></div>
+    <span id="stat-problemas">0</span>&nbsp;com problema
+  </div>
+</div>
+
+<!-- MAIN -->
+<main>
+  <div id="empty-state">
+    <svg width="64" height="64" fill="none" stroke="currentColor" stroke-width="1.2" viewBox="0 0 24 24" style="color:var(--accent)">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25Z"/>
+    </svg>
+    <p>Nenhum dado carregado</p>
+    <small>Importe o arquivo CSV e selecione um roteiro para começar</small>
+  </div>
+  <div id="list-container"></div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+// ── STATE ──────────────────────────────────────────────────────────────────
+let allRows = [];   // parsed CSV rows (active only)
+let entries = {};   // { idRota: { bombonas: n, problema: '' } }
+let currentRoteiro = '';
+
+// ── INIT ───────────────────────────────────────────────────────────────────
+(function init() {
+  // default date = today
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth()+1).padStart(2,'0');
+  const dd = String(today.getDate()).padStart(2,'0');
+  document.getElementById('data-coleta').value = `${yyyy}-${mm}-${dd}`;
+
+  // next collection: 7 days from now
+  const prox = new Date(today);
+  prox.setDate(prox.getDate() + 7);
+  const py = prox.getFullYear();
+  const pm = String(prox.getMonth()+1).padStart(2,'0');
+  const pd = String(prox.getDate()).padStart(2,'0');
+  document.getElementById('prox-data-coleta').value = `${py}-${pm}-${pd}`;
+
+  // drag-over visual
+  const dz = document.getElementById('drop-zone');
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if(file) parseCSVFile(file);
+  });
+
+  document.getElementById('file-input').addEventListener('change', e => {
+    if(e.target.files[0]) parseCSVFile(e.target.files[0]);
+  });
+})();
+
+// ── IMPORT ─────────────────────────────────────────────────────────────────
+function openImport() { document.getElementById('import-overlay').classList.add('open'); }
+function closeImport() { document.getElementById('import-overlay').classList.remove('open'); }
+
+function parseCSVFile(file) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const text = e.target.result;
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if(lines.length < 2) throw new Error('Arquivo vazio ou invalido');
+
+      const header = lines[0].split(';').map(h => h.trim());
+      const rows = [];
+
+      for(let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(';');
+        if(cols.length < header.length) continue;
+        const obj = {};
+        header.forEach((h,idx) => obj[h] = (cols[idx]||'').trim());
+        if(obj['Inativo'] === '0') rows.push(obj);
+      }
+
+      if(rows.length === 0) throw new Error('Nenhum registro ativo encontrado');
+
+      allRows = rows;
+      entries = {};
+      buildRouteSelector();
+      closeImport();
+      showToast(`✓ ${rows.length} registros carregados`, 'success');
+    } catch(err) {
+      showToast('Erro ao ler arquivo: ' + err.message, 'error');
+    }
+  };
+  reader.readAsText(file, 'UTF-16');
+}
+
+function buildRouteSelector() {
+  const roteiros = [...new Set(allRows.map(r => r['Roteiro']))].sort();
+  const sel = document.getElementById('roteiro-select');
+  sel.innerHTML = '<option value="">— selecione —</option>';
+  roteiros.forEach(r => {
+    const opt = document.createElement('option');
+    opt.value = r; opt.textContent = r;
+    sel.appendChild(opt);
+  });
+}
+
+// ── FILTER + RENDER ────────────────────────────────────────────────────────
+function applyFilters() {
+  currentRoteiro = document.getElementById('roteiro-select').value;
+  const q = document.getElementById('search-input').value.toLowerCase();
+
+  if(!currentRoteiro) { renderEmpty(); return; }
+
+  let filtered = allRows.filter(r => r['Roteiro'] === currentRoteiro);
+  if(q) filtered = filtered.filter(r => r['Cliente'].toLowerCase().includes(q));
+
+  renderList(filtered);
+}
+
+function renderEmpty() {
+  document.getElementById('empty-state').style.display = 'flex';
+  document.getElementById('list-container').innerHTML = '';
+  document.getElementById('stats-bar').style.display = 'none';
+}
+
+function renderList(rows) {
+  const es = document.getElementById('empty-state');
+  const lc = document.getElementById('list-container');
+  const sb = document.getElementById('stats-bar');
+
+  if(rows.length === 0) {
+    es.style.display = 'flex';
+    lc.innerHTML = '';
+    sb.style.display = 'none';
+    return;
+  }
+
+  es.style.display = 'none';
+  sb.style.display = 'flex';
+
+  lc.innerHTML = rows.map((r, idx) => {
+    const id = r['idRota'];
+    const e = entries[id] || {};
+    const bombonas = e.bombonas !== undefined ? e.bombonas : '';
+    const prob = e.problema || '';
+    const hasData = bombonas !== '';
+    const hasProb = prob !== '';
+
+    let cls = 'row-card';
+    if(hasProb) cls += ' has-problem';
+    else if(hasData) cls += ' has-data';
+
+    const addr = [r['logradouro'], r['Número']].filter(Boolean).join(', ');
+
+    return `
+    <div class="${cls}" id="card-${id}">
+      <div class="row-num">${idx+1}</div>
+      <div class="row-info">
+        <div class="row-name" title="${r['Cliente']}">${r['Cliente']}</div>
+        <div class="row-addr">${addr}</div>
+      </div>
+      <div class="row-inputs">
+        <div class="num-input-wrap">
+          <span class="num-label">Bomb.</span>
+          <input type="number" min="0" value="${bombonas}"
+            id="b-${id}"
+            class="${hasData?'has-value':''}"
+            placeholder="0"
+            onchange="setEntry('${id}','bombonas',this)"
+            oninput="setEntry('${id}','bombonas',this)">
+        </div>
+        <button class="prob-btn ${hasProb?'active':''}" id="pb-${id}"
+          onclick="toggleProb('${id}')">
+          ${hasProb ? '⚠ Prob.' : '+ Prob.'}
+        </button>
+      </div>
+      <div class="prob-row ${hasProb?'open':''}" id="pr-${id}">
+        <input type="text" maxlength="200"
+          placeholder="Descreva o problema..."
+          value="${escHtml(prob)}"
+          oninput="setEntry('${id}','problema',this)">
+      </div>
+    </div>`;
+  }).join('');
+
+  updateStats(rows);
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── ENTRY MUTATIONS ────────────────────────────────────────────────────────
+function setEntry(id, field, el) {
+  if(!entries[id]) entries[id] = {};
+  const val = field === 'bombonas' ? (el.value === '' ? undefined : parseInt(el.value)||0) : el.value;
+  entries[id][field] = val;
+
+  const card = document.getElementById('card-'+id);
+  const hasData = entries[id].bombonas !== undefined;
+  const hasProb = entries[id].problema && entries[id].problema.trim() !== '';
+
+  card.className = 'row-card' + (hasProb ? ' has-problem' : hasData ? ' has-data' : '');
+
+  const inp = document.getElementById('b-'+id);
+  if(inp) inp.className = hasData ? 'has-value' : '';
+
+  // update stats
+  const rotRows = allRows.filter(r => r['Roteiro'] === currentRoteiro);
+  updateStats(rotRows);
+}
+
+function toggleProb(id) {
+  const pr = document.getElementById('pr-'+id);
+  const pb = document.getElementById('pb-'+id);
+  const isOpen = pr.classList.contains('open');
+  if(isOpen) {
+    pr.classList.remove('open');
+    pb.classList.remove('active');
+    pb.textContent = '+ Prob.';
+    if(entries[id]) entries[id].problema = '';
+    // refresh card class
+    const hasData = entries[id] && entries[id].bombonas !== undefined;
+    const card = document.getElementById('card-'+id);
+    card.className = 'row-card' + (hasData ? ' has-data' : '');
+  } else {
+    pr.classList.add('open');
+    pb.classList.add('active');
+    pb.textContent = '⚠ Prob.';
+    pr.querySelector('input').focus();
+  }
+}
+
+// ── STATS ──────────────────────────────────────────────────────────────────
+function updateStats(rows) {
+  let coletados = 0, totalBombonas = 0, comProb = 0;
+  rows.forEach(r => {
+    const e = entries[r['idRota']] || {};
+    if(e.bombonas !== undefined) coletados++;
+    totalBombonas += e.bombonas || 0;
+    if(e.problema && e.problema.trim()) comProb++;
+  });
+  document.getElementById('stat-total').textContent = rows.length;
+  document.getElementById('stat-coletados').textContent = coletados;
+  document.getElementById('stat-bombonas').textContent = totalBombonas;
+  document.getElementById('stat-problemas').textContent = comProb;
+}
+
+// ── EXPORT CSV ─────────────────────────────────────────────────────────────
+function exportCSV() {
+  const roteiro = document.getElementById('roteiro-select').value;
+  const data = document.getElementById('data-coleta').value;
+
+  if(!roteiro) { showToast('Selecione um roteiro antes de salvar', 'error'); return; }
+  if(!data) { showToast('Informe a data da coleta', 'error'); return; }
+
+  const rows = allRows.filter(r => r['Roteiro'] === roteiro);
+
+  const header = ['idRota','Roteiro','Cliente','logradouro','Numero','CEP','BombonasColetadas','Problemas','DataColeta'];
+  const csvRows = [header.join(';')];
+
+  rows.forEach(r => {
+    const e = entries[r['idRota']] || {};
+    const cols = [
+      r['idRota'],
+      r['Roteiro'],
+      r['Cliente'].replace(/;/g,' '),
+      (r['logradouro']||'').replace(/;/g,' '),
+      (r['Número']||'').replace(',00',''),
+      r['CEP'],
+      e.bombonas !== undefined ? e.bombonas : '',
+      (e.problema||'').replace(/;/g,' ').replace(/\n/g,' '),
+      data
+    ];
+    csvRows.push(cols.join(';'));
+  });
+
+  const bom = '\uFEFF';
+  const blob = new Blob([bom + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `coleta_${roteiro}_${data}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast(`✓ coleta_${roteiro}_${data}.csv salvo`, 'success');
+}
+
+// ── CHECKLIST PRINT ────────────────────────────────────────────────────────
+function openChecklist() {
+  if(!currentRoteiro) {
+    showToast('Selecione um roteiro primeiro', 'error');
+    return;
+  }
+  document.getElementById('checklist-overlay').classList.add('open');
+}
+function closeChecklist() {
+  document.getElementById('checklist-overlay').classList.remove('open');
+}
+
+function formatDateBR(dateStr) {
+  if(!dateStr) return '____/____/________';
+  const parts = dateStr.split('-');
+  if(parts.length !== 3) return dateStr;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
+
+function generateChecklist() {
+  const roteiro = document.getElementById('roteiro-select').value;
+  const dataColeta = document.getElementById('data-coleta').value;
+  const proxData = document.getElementById('prox-data-coleta').value;
+  const tipoResiduo = document.getElementById('checklist-tipo-residuo').value;
+  const motorista = document.getElementById('checklist-motorista').value.trim();
+  const veiculo = document.getElementById('checklist-veiculo').value.trim();
+
+  if(!roteiro) { showToast('Selecione um roteiro', 'error'); return; }
+
+  const rows = allRows.filter(r => r['Roteiro'] === roteiro);
+
+  if(rows.length === 0) {
+    showToast('Nenhum ponto encontrado para este roteiro', 'error');
+    return;
+  }
+
+  // Calculate totals
+  let totalMedia = 0;
+  rows.forEach(r => {
+    const e = entries[r['idRota']] || {};
+    totalMedia += (e.bombonas !== undefined && e.bombonas > 0) ? e.bombonas : 0;
+  });
+
+  const dataColetaBR = formatDateBR(dataColeta);
+  const proxDataBR = formatDateBR(proxData);
+
+  // Build table rows
+  let tableRows = '';
+  rows.forEach((r, idx) => {
+    const id = r['idRota'];
+    const e = entries[id] || {};
+    const bombonas = (e.bombonas !== undefined && e.bombonas > 0) ? e.bombonas : '';
+    const num = (r['Número'] || '').replace(',00', '');
+    const cep = r['CEP'] || '';
+    const prob = e.problema || '';
+    const rowClass = prob ? ' class="row-problem"' : '';
+
+    tableRows += `
+      <tr${rowClass}>
+        <td class="c-ordem">${idx + 1}</td>
+        <td class="c-cliente">${r['Cliente']}</td>
+        <td class="c-logradouro">${r['logradouro'] || ''}</td>
+        <td class="c-num">${num}</td>
+        <td class="c-cep">${cep}</td>
+        <td class="c-id">${id}</td>
+        <td class="c-bombonas">${bombonas}</td>
+        <td class="c-coletadas"></td>
+        <td class="c-problema">${prob}</td>
+      </tr>`;
+  });
+
+  // Motorista & veiculo info
+  const infoExtra = `
+    <div class="info-extra">
+      ${motorista ? '<div class="info-item"><span>Motorista:</span> <strong>' + motorista + '</strong></div>' : ''}
+      ${veiculo ? '<div class="info-item"><span>Veiculo:</span> <strong>' + veiculo + '</strong></div>' : ''}
+      <div class="info-item"><span>Total de Pontos:</span> <strong>${rows.length}</strong></div>
+      <div class="info-item"><span>Bombonas Previstas:</span> <strong>${totalMedia}</strong></div>
+    </div>`;
+
+  const htmlContent = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Checklist Coleta ${roteiro} - ${dataColetaBR}</title>
+<style>
+  @page {
+    size: A4 landscape;
+    margin: 8mm 10mm;
+  }
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 9pt;
+    color: #000;
+    line-height: 1.2;
+  }
+
+  /* ── HEADER ── */
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 5px;
+    padding-bottom: 4px;
+    border-bottom: 2px solid #1a3a5c;
+  }
+  .page-header h1 {
+    font-size: 14pt;
+    font-weight: 700;
+    color: #1a3a5c;
+    line-height: 1.1;
+  }
+  .page-header h1 span {
+    font-weight: 400;
+    font-size: 11pt;
+    color: #444;
+  }
+  .header-info {
+    text-align: right;
+    font-size: 9pt;
+    color: #333;
+    line-height: 1.5;
+  }
+  .header-info strong {
+    color: #000;
+  }
+
+  /* ── INFO BAR ── */
+  .info-bar {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 5px;
+    padding: 3px 0;
+    font-size: 8.5pt;
+    color: #333;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 3px;
+  }
+  .info-bar span {
+    white-space: nowrap;
+  }
+  .info-bar .label {
+    font-weight: 600;
+    color: #1a3a5c;
+  }
+  .info-extra {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 5px;
+    font-size: 8pt;
+    color: #555;
+    flex-wrap: wrap;
+  }
+  .info-extra .info-item span {
+    color: #777;
+    margin-right: 3px;
+  }
+
+  /* ── TABLE ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    margin-top: 3px;
+  }
+  thead {
+    display: table-header-group;
+  }
+  thead th {
+    background: #1a3a5c;
+    color: #fff;
+    font-size: 8pt;
+    font-weight: 700;
+    padding: 4px 4px;
+    text-align: center;
+    border: 1px solid #1a3a5c;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+  }
+  tbody tr {
+    page-break-inside: avoid;
+  }
+  tbody td {
+    padding: 3px 4px;
+    border: 1px solid #ccc;
+    font-size: 8pt;
+    vertical-align: middle;
+  }
+  tbody tr:nth-child(even) {
+    background: #f5f7fa;
+  }
+  tbody tr:last-child td {
+    border-bottom: 2px solid #1a3a5c;
+  }
+  .row-problem {
+    background: #fff3cd !important;
+  }
+  .row-problem td.c-problema {
+    color: #856404;
+    font-weight: 600;
+  }
+
+  /* Column widths */
+  .c-ordem    { width: 30px; text-align: center; }
+  .c-cliente  { width: 140px; }
+  .c-logradouro { width: auto; }
+  .c-num      { width: 45px; text-align: center; }
+  .c-cep      { width: 75px; text-align: center; }
+  .c-id       { width: 55px; text-align: center; font-size: 7pt; }
+  .c-bombonas { width: 40px; text-align: center; font-weight: 600; }
+  .c-coletadas { width: 55px; text-align: center; }
+  .c-problema { width: 90px; font-size: 7pt; color: #555; }
+
+  /* ── FOOTER ── */
+  .page-footer {
+    margin-top: 8px;
+    padding-top: 4px;
+    border-top: 1px solid #ccc;
+    display: flex;
+    justify-content: space-between;
+    font-size: 7pt;
+    color: #999;
+  }
+  .assinatura-area {
+    margin-top: 12px;
+    display: flex;
+    gap: 40px;
+  }
+  .assinatura-box {
+    flex: 1;
+    text-align: center;
+    padding-top: 30px;
+    border-top: 1px solid #000;
+    font-size: 8pt;
+    color: #333;
+  }
+
+  /* ── PRINT ── */
+  @media print {
+    body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    .page-header { border-bottom: 2px solid #1a3a5c; }
+    thead th { background: #1a3a5c !important; color: #fff !important; }
+    tbody tr:nth-child(even) { background: #f5f7fa !important; }
+    .row-problem { background: #fff3cd !important; }
+    .no-print { display: none !important; }
+  }
+
+  .print-actions {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    gap: 8px;
+    z-index: 999;
+  }
+  .print-btn {
+    font-family: Arial, sans-serif;
+    font-size: 11pt;
+    font-weight: 700;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn-go-print {
+    background: #1a3a5c;
+    color: #fff;
+  }
+  .btn-go-print:hover { background: #2a5a8c; }
+  .btn-go-close {
+    background: #666;
+    color: #fff;
+  }
+  .btn-go-close:hover { background: #888; }
+</style>
+</head>
+<body>
+
+<div class="print-actions no-print">
+  <button class="print-btn btn-go-close" onclick="window.close()">Fechar</button>
+  <button class="print-btn btn-go-print" onclick="window.print()">
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h2m2 4h6a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2zm8-12V5a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v4h10z"/></svg>
+    Imprimir / Salvar PDF
+  </button>
+</div>
+
+<div class="page-header">
+  <h1>Checklist Coleta ${roteiro}<br><span>Data da Coleta: ${dataColetaBR} | Proxima Coleta: ${proxDataBR}</span></h1>
+  <div class="header-info">
+    <div><strong>Tipo de Residuo:</strong> ${tipoResiduo}</div>
+    <div><strong>Roteiro:</strong> ${roteiro}</div>
+    <div><strong>Total de Pontos:</strong> ${rows.length}</div>
+  </div>
+</div>
+
+<div class="info-bar">
+  <span><span class="label">Data:</span> ${dataColetaBR}</span>
+  <span><span class="label">Proxima Coleta:</span> ${proxDataBR}</span>
+  <span><span class="label">Tipo:</span> ${tipoResiduo}</span>
+  ${motorista ? '<span><span class="label">Motorista:</span> ' + motorista + '</span>' : ''}
+  ${veiculo ? '<span><span class="label">Veiculo:</span> ' + veiculo + '</span>' : ''}
+  <span><span class="label">Pontos:</span> ${rows.length}</span>
+  <span><span class="label">Bombonas Previstas:</span> ${totalMedia}</span>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th class="c-ordem">Ord.</th>
+      <th class="c-cliente">Cliente</th>
+      <th class="c-logradouro">Logradouro</th>
+      <th class="c-num">No</th>
+      <th class="c-cep">CEP</th>
+      <th class="c-id">ID</th>
+      <th class="c-bombonas">Bomb.<br>Qtd.</th>
+      <th class="c-coletadas">Qtd.<br>Coletada</th>
+      <th class="c-problema">Problema</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${tableRows}
+  </tbody>
+</table>
+
+<div class="page-footer">
+  <span>Documento gerado em ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}</span>
+  <span>Checklist Coleta ${roteiro} - ${dataColetaBR}</span>
+</div>
+
+<div class="assinatura-area">
+  <div class="assinatura-box">Motorista</div>
+  <div class="assinatura-box">Supervisor</div>
+</div>
+
+</body>
+</html>`;
+
+  // Open in new window
+  const printWindow = window.open('', '_blank');
+  if(!printWindow) {
+    showToast('Bloqueador de popups detectado. Permita pop-ups para esta pagina.', 'error');
+    return;
+  }
+  printWindow.document.write(htmlContent);
+  printWindow.document.close();
+
+  closeChecklist();
+  showToast('Checklist gerado! Use Ctrl+P para imprimir ou salvar em PDF.', 'success');
+}
+
+// ── TOAST ──────────────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.className = '', 3000);
+}
+</script>
+</body>
+</html>

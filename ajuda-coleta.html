@@ -68,6 +68,8 @@
             line-height: 1.8;
         }
     </style>
+    <link rel="stylesheet" href="theme.css">
+    <script src="theme.js"></script>
 </head>
 <body>
     <div class="container">
@@ -76,41 +78,57 @@
         </div>
 
         <h1>❓ Ajuda — Coleta</h1>
-        <p class="subtitle">Guia rápido da tela de Operação de Coleta.</p>
+        <p class="subtitle">Guia da operação diária de coleta no computador.</p>
 
         <section>
-            <h2>📍 Selecionar rota e ordenar a lista</h2>
-            <p class="intro">No topo da tela, escolha a rota do dia em <code>Selecione o Roteiro</code>. A lista de clientes aparece na ordem cadastrada da rota por padrão.</p>
-            <p class="intro">O seletor ao lado (<code>Número de Ordem</code> / <code>Ordem Alfabética</code> / <code>Qtd. Digitada</code>) muda só a ordem de exibição na tela — não afeta o PDF do checklist nem os dados salvos:</p>
+            <h2>📍 Preparar a operação</h2>
+            <p class="intro">No cabeçalho, selecione o <code>Roteiro</code> e confira a <code>Data</code>. Os pontos cadastrados aparecem na tabela logo abaixo.</p>
+            <p class="intro">O campo <code>Ordenar por</code> muda somente a visualização:</p>
             <ul>
-                <li><strong>Número de Ordem</strong>: ordem cadastrada da rota (padrão).</li>
-                <li><strong>Ordem Alfabética</strong>: por nome do cliente.</li>
-                <li><strong>Qtd. Digitada</strong>: clientes com quantidade já preenchida aparecem primeiro (maior quantidade no topo); quem ainda não foi preenchido fica no fim.</li>
+                <li><strong>Número de ordem</strong>: segue a sequência cadastrada do roteiro.</li>
+                <li><strong>Ordem alfabética</strong>: organiza os pontos pelo nome do cliente.</li>
+                <li><strong>Quantidade digitada</strong>: mostra primeiro os pontos com maior quantidade.</li>
+            </ul>
+            <p class="intro">Se houver registros ainda não salvos, o sistema solicita confirmação antes de trocar de roteiro.</p>
+        </section>
+
+        <section>
+            <h2>⌨️ Entrada rápida pelo teclado</h2>
+            <ol>
+                <li>Digite o código no campo <code>ID do ponto</code> e pressione <code>Enter</code>.</li>
+                <li>O cliente é destacado na tabela e o foco passa para <code>Quantidade</code>.</li>
+                <li>Digite a quantidade e pressione <code>Enter</code> para registrar.</li>
+                <li>O foco retorna automaticamente ao campo de ID para o próximo ponto.</li>
+            </ol>
+            <p class="intro">Para registrar uma intercorrência, depois da quantidade pressione <code>Tab</code>, preencha o campo <code>Intercorrência</code> e pressione <code>Enter</code>. Um ID inexistente exibe uma mensagem sem retirar os demais pontos da tela.</p>
+            <p class="intro"><code>Esc</code> cancela a seleção atual e retorna ao campo de ID.</p>
+        </section>
+
+        <section>
+            <h2>🧾 Tabela, filtros e edição direta</h2>
+            <p class="intro">A tabela permanece visível durante toda a digitação. Também é possível alterar a quantidade ou a intercorrência diretamente na linha do ponto.</p>
+            <ul>
+                <li><strong>Todos</strong>: exibe o roteiro completo.</li>
+                <li><strong>Pendentes</strong>: pontos que ainda não possuem quantidade coletada.</li>
+                <li><strong>Coletados</strong>: pontos com quantidade registrada.</li>
+                <li><strong>Intercorrências</strong>: pontos que possuem observação registrada.</li>
+            </ul>
+            <p class="intro">Os indicadores acima da entrada rápida mostram o progresso, o total de bombonas, as intercorrências e os pontos pendentes.</p>
+        </section>
+
+        <section>
+            <h2>💾 Salvar e sincronizar</h2>
+            <p class="intro">O botão <code>Salvar operação</code> só é habilitado depois que houver registros. O número exibido no botão informa quantos pontos serão salvos.</p>
+            <ul>
+                <li>Após salvar, os campos ficam protegidos para evitar gravação duplicada.</li>
+                <li><strong>Sincronizado</strong>: os dados foram salvos localmente e enviados.</li>
+                <li><strong>Sincronização pendente</strong>: os dados estão seguros no computador e poderão ser enviados depois.</li>
             </ul>
         </section>
 
         <section>
-            <h2>🔍 Busca por ID Rota</h2>
-            <p class="intro">Digite o ID do ponto no campo <code>DIGITE O ID ROTA...</code> (embaixo da lista) e aperte <code>Enter</code> — a tela isola só aquele cliente, com o campo de quantidade já em foco pra digitar direto.</p>
-            <p class="intro">Se digitar o ID errado, ou só quiser voltar pra lista completa sem preencher nada:</p>
-            <ul>
-                <li>Aperte <code>Esc</code> a qualquer momento, ou</li>
-                <li>Apague o campo de busca e aperte <code>Enter</code> vazio.</li>
-            </ul>
-        </section>
-
-        <section>
-            <h2>✅ Registrar quantidade e intercorrência</h2>
-            <ul>
-                <li>Preencha o número de recipientes coletados no campo numérico do cliente.</li>
-                <li>Use o botão <code>+ Problema</code> pra marcar uma intercorrência naquele ponto.</li>
-                <li>Com o campo de quantidade em foco, <code>Enter</code> avança pro campo de problema (se estiver aberto) ou finaliza o registro daquele ponto.</li>
-            </ul>
-        </section>
-
-        <section>
-            <h2>📋 Checklist da Próxima Coleta (PDF)</h2>
-            <p class="intro">Clique em <code>📋 Checklist Próxima Coleta</code> no topo da tela. No formulário, preencha:</p>
+            <h2>📋 Checklist da próxima coleta (PDF)</h2>
+            <p class="intro">Clique em <code>Checklist da próxima coleta</code> no cabeçalho. No formulário, preencha:</p>
             <ul>
                 <li><strong>Data da Próxima Coleta</strong> (obrigatório para enviar ao Drive; ao baixar o PDF sem preencher, o arquivo sai como "sem-data")</li>
                 <li><strong>Tipo de Resíduo</strong></li>
@@ -128,6 +146,13 @@
                 <li>Sacolas/Sacos presentes no recipiente</li>
                 <li>Outro</li>
             </ol>
+        </section>
+
+        <section>
+            <h2>☰ Menu e aparência</h2>
+            <p class="intro">O menu hambúrguer no canto superior direito reúne os acessos às outras páginas e à ajuda. Pressione <code>Esc</code> para fechá-lo.</p>
+            <p class="intro">Use a opção <code>Modo claro</code> dentro do menu para alternar entre a aparência clara e escura. A escolha fica salva para as próximas vezes que o aplicativo for aberto.</p>
+            <p class="intro">Nesta página de ajuda, o mesmo ajuste está disponível no botão de aparência no canto superior direito.</p>
         </section>
     </div>
 </body>
