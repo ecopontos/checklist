@@ -396,7 +396,14 @@
             idSearch.onkeydown = (e) => {
                 if (e.key === 'Enter') {
                     const id = idSearch.value.trim();
-                    if (id) focusItem(id);
+                    if (id) {
+                        focusItem(id);
+                    } else {
+                        renderList();
+                    }
+                } else if (e.key === 'Escape') {
+                    idSearch.value = '';
+                    renderList();
                 }
             };
         }
