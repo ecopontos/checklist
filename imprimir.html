@@ -165,7 +165,7 @@
                     SELECT c.* 
                     FROM clientes c 
                     WHERE c.roteiro_id = ? AND c.ativo = 1
-                    ORDER BY c.ordem ASC
+                    ORDER BY CAST(REPLACE(TRIM(c.ordem), ',', '.') AS REAL), c.id_rota COLLATE NOCASE
                 `;
                 const clientRes = db.db.exec(query, [routeId]);
 

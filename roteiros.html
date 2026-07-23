@@ -453,7 +453,7 @@
                 params.push(`%${searchVal}%`, `%${searchVal}%`);
             }
             
-            query += " ORDER BY r.nome, c.ordem";
+            query += " ORDER BY r.nome, CAST(REPLACE(TRIM(c.ordem), ',', '.') AS REAL), c.id_rota COLLATE NOCASE";
 
             const res = db.db.exec(query, params);
             const body = document.getElementById('clientsBody');
@@ -539,7 +539,7 @@
                 idRota: document.getElementById('f_idRota').value,
                 Cliente: document.getElementById('f_cliente').value,
                 roteiro_id: document.getElementById('f_roteiro').value,
-                Ordem: document.getElementById('f_ordem').value,
+                Ordem: Number(document.getElementById('f_ordem').value),
                 ativo: document.getElementById('f_status').value == '1'
             };
             db.upsertCliente(data);

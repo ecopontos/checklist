@@ -99,17 +99,20 @@ class AppDatabase {
             cliente.idRota,
             cliente.Cliente,
             cliente.logradouro,
-            cliente.Número,
+            this._normalizeNumero(cliente.Número),
             cliente.CEP,
             cliente.roteiro_id,
-            cliente.Ordem,
+            this._normalizeOrdem(cliente.Ordem),
             cliente.ativo ? 1 : 0
         ]);
         this.save();
     }
 
     getClientesByRoteiro(roteiroId) {
-        const res = this.db.exec("SELECT * FROM clientes WHERE roteiro_id = ? ORDER BY ordem", [roteiroId]);
+        const res = this.db.exec(
+            "SELECT * FROM clientes WHERE roteiro_id = ? ORDER BY CAST(REPLACE(TRIM(ordem), ',', '.') AS REAL), id_rota COLLATE NOCASE",
+            [roteiroId]
+        );
         if (!res.length) return [];
         const cols = res[0].columns;
         return res[0].values.map(v => {
@@ -117,6 +120,21 @@ class AppDatabase {
             cols.forEach((c, i) => obj[c] = v[i]);
             return obj;
         });
+    }
+
+    _normalizeOrdem(value) {
+        const normalized = String(value ?? '').trim().replace(',', '.');
+        const order = Number(normalized);
+        return Number.isFinite(order) ? order : 0;
+    }
+
+    _normalizeNumero(value) {
+        // Planilhas exportam número de endereço formatado como decimal
+        // (ex: "123,00"). Remove o ",00"/".00" artificial, preservando
+        // valores não puramente numéricos (ex: "123A", "S/N").
+        const str = String(value ?? '').trim();
+        const match = str.match(/^(\d+)[.,]0+$/);
+        return match ? match[1] : str;
     }
 
     importRoteirosCsv(csvText) {
