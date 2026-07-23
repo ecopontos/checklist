@@ -18,8 +18,8 @@
     "files": [
       "electron/**/*",
       "*.html",
-      "database.js",
-      "google-sync.js",
+      "*.css",
+      "*.js",
       "vendor/**/*"
     ],
     "win": {
