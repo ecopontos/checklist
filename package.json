@@ -1,6 +1,6 @@
 {
   "name": "satelite-checklist",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "SATELITE v3 - Operacao de Coleta (app desktop)",
   "private": true,
   "main": "electron/main.js",

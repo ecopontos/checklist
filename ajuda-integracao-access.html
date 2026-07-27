@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ajuda - Integração com o Access - SATELITE v3</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00f2fe;
+            --secondary: #4facfe;
+            --success: #2ecc71;
+            --warning: #f1c40f;
+            --danger: #ff5f56;
+            --bg: #0b0e14;
+            --surface: #161b22;
+            --text: #e6edf3;
+            --text-dim: #8b949e;
+            --card-border: rgba(255, 255, 255, 0.1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container { max-width: 860px; margin: 0 auto; }
+        .header-nav { display: flex; gap: 22px; margin-bottom: 30px; flex-wrap: wrap; }
+        .btn-back { color: var(--text-dim); text-decoration: none; transition: color 0.3s; }
+        .btn-back:hover { color: var(--primary); }
+        h1 { font-size: 2rem; font-weight: 800; margin-bottom: 10px; }
+        .subtitle { color: var(--text-dim); margin-bottom: 35px; line-height: 1.6; }
+
+        section {
+            background: var(--surface);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 25px 30px;
+            margin-bottom: 20px;
+        }
+
+        section h2 { font-size: 1.2rem; color: var(--primary); margin-bottom: 12px; }
+        section p { color: var(--text-dim); margin-bottom: 12px; line-height: 1.65; }
+        section ol, section ul { padding-left: 22px; line-height: 1.75; }
+        section li { margin-bottom: 8px; }
+        strong { color: var(--text); }
+
+        code {
+            background: rgba(255,255,255,0.08);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9em;
+        }
+
+        .flow {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .flow-step {
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            line-height: 1.45;
+        }
+
+        .flow-step span { display: block; color: var(--text-dim); font-size: 0.88rem; margin-top: 5px; }
+        .notice { border-left: 4px solid var(--warning); }
+        .safe { border-left: 4px solid var(--success); }
+        .danger { border-left: 4px solid var(--danger); }
+        .status-list { list-style: none; padding-left: 0; }
+        .status-list code { margin-right: 5px; }
+
+        @media (max-width: 680px) {
+            body { padding: 25px 14px; }
+            section { padding: 22px 20px; }
+            .flow { grid-template-columns: 1fr; }
+        }
+    </style>
+    <link rel="stylesheet" href="theme.css">
+    <script src="theme.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="header-nav">
+            <a href="admin.html" class="btn-back">⬅️ Voltar ao Admin</a>
+            <a href="roteiros.html" class="btn-back">📍 Ir para Roteiros</a>
+        </div>
+
+        <h1>🔄 Alterações de roteiros no Access</h1>
+        <p class="subtitle">Procedimento para editar um ponto no aplicativo e devolver a alteração com segurança ao banco compartilhado do Access.</p>
+
+        <section>
+            <h2>Como a integração funciona</h2>
+            <p>A alteração é salva primeiro neste computador. Depois, o aplicativo a entrega ao GAS, onde ela aguarda a importação pelo operador do Access.</p>
+            <div class="flow">
+                <div class="flow-step"><strong>1. Aplicativo</strong><span>Salva e envia a alteração</span></div>
+                <div class="flow-step"><strong>2. GAS</strong><span>Mantém a fila pendente</span></div>
+                <div class="flow-step"><strong>3. Access</strong><span>Valida, aplica e confirma</span></div>
+            </div>
+        </section>
+
+        <section class="notice">
+            <h2>O que pode ser alterado</h2>
+            <ul>
+                <li><strong>Roteiro</strong> do ponto;</li>
+                <li><strong>Ordem</strong> dentro do roteiro;</li>
+                <li><strong>Status</strong> ativo ou inativo.</li>
+            </ul>
+            <p>Somente pontos existentes com um <code>ID Rota</code> numérico vindo do Access são devolvidos. Nome, endereço e pontos novos permanecem apenas no aplicativo nesta primeira versão.</p>
+        </section>
+
+        <section>
+            <h2>Configuração inicial</h2>
+            <ol>
+                <li>Abra <strong>Admin → Sincronização Google</strong>.</li>
+                <li>Confira a URL do Web App do Google Apps Script.</li>
+                <li>Informe o token fornecido pelo administrador no campo <strong>Token para alterações de roteiros</strong>.</li>
+                <li>Clique em <strong>Verificar agora</strong>.</li>
+                <li>Confirme que aparece <code>API GAS v3: compatível</code> e que a integração de roteiros não mostra erro.</li>
+            </ol>
+            <p>O token é confidencial. Não envie por mensagem, não coloque em planilhas e não o grave junto ao código do aplicativo.</p>
+        </section>
+
+        <section>
+            <h2>Editar e enviar pelo aplicativo</h2>
+            <ol>
+                <li>Abra <strong>Roteiros</strong> e localize o ponto pelo cliente ou pelo <code>ID Rota</code>.</li>
+                <li>Clique em <strong>Editar</strong>.</li>
+                <li>Altere o roteiro, a ordem ou o status e clique em <strong>Salvar</strong>.</li>
+                <li>O aplicativo tenta enviar imediatamente. Se a internet estiver indisponível, a alteração fica segura na fila local.</li>
+                <li>Em <strong>Admin</strong>, use <strong>Verificar agora</strong> para tentar novamente.</li>
+            </ol>
+        </section>
+
+        <section>
+            <h2>Entender os indicadores</h2>
+            <ul class="status-list">
+                <li><code>Alterações de Roteiro Pendentes: 0</code> significa que todas chegaram ao GAS. Ainda podem estar aguardando o Access.</li>
+                <li><code>PENDENTE</code> na aba <strong>AlteracoesRoteiros</strong> significa que o GAS recebeu, mas o Access ainda não confirmou.</li>
+                <li><code>PROCESSADO</code> significa que o Access aplicou e confirmou a alteração.</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>Importar no Access 365</h2>
+            <ol>
+                <li>Abra o frontend integrado do ColetaFlex.</li>
+                <li>No formulário de roteiros, clique em <strong>Importar alterações do app</strong>.</li>
+                <li>Na primeira utilização, informe o mesmo token configurado no GAS.</li>
+                <li>Confira a prévia com ID, roteiro, ordem e status.</li>
+                <li>Clique em <strong>Sim</strong> somente se todas as linhas estiverem corretas.</li>
+                <li>Aguarde a mensagem informando que as alterações foram aplicadas, confirmadas no GAS e exportadas.</li>
+            </ol>
+            <p>Antes de gravar, o Access verifica se todos os IDs e roteiros existem. O lote inteiro é aplicado em uma transação: se uma linha for inválida, nenhuma alteração é gravada.</p>
+        </section>
+
+        <section class="safe">
+            <h2>Quando ocorrer uma falha</h2>
+            <ul>
+                <li><strong>Alteração salva, mas não enviada:</strong> confira URL, token e internet na tela Admin; depois clique em <strong>Verificar agora</strong>.</li>
+                <li><strong>Token recusado no Access:</strong> aceite apagar o token salvo e informe o token atual na próxima tentativa.</li>
+                <li><strong>Validação recusada pelo Access:</strong> nada foi aplicado. Corrija o ID ou o nome do roteiro antes de tentar novamente.</li>
+                <li><strong>Access aplicou, mas não confirmou no GAS:</strong> execute a importação novamente. Reaplicar os mesmos valores é seguro.</li>
+            </ul>
+        </section>
+
+        <section class="danger">
+            <h2>Cuidados importantes</h2>
+            <ul>
+                <li>Não edite manualmente a aba <strong>AlteracoesRoteiros</strong>.</li>
+                <li>Não compartilhe o token da integração.</li>
+                <li>Confira sempre a prévia antes de confirmar no Access.</li>
+                <li>Para um primeiro teste, abra um ponto existente e salve sem mudar os valores. Assim todo o percurso é validado sem alterar o cadastro.</li>
+            </ul>
+        </section>
+    </div>
+</body>
+</html>
