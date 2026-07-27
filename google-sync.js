@@ -5,7 +5,8 @@
 
 const GAS_URL_KEY = 'app3_gas_url';
 const LAST_DRIVE_SYNC_KEY = 'app3_last_drive_sync';
-export const REQUIRED_GAS_API_VERSION = 2;
+const GAS_ROUTE_TOKEN_KEY = 'app3_gas_route_token';
+export const REQUIRED_GAS_API_VERSION = 3;
 
 export function getGasUrl() {
     return localStorage.getItem(GAS_URL_KEY) || '';
@@ -13,6 +14,14 @@ export function getGasUrl() {
 
 export function setGasUrl(url) {
     localStorage.setItem(GAS_URL_KEY, url);
+}
+
+export function getGasRouteToken() {
+    return localStorage.getItem(GAS_ROUTE_TOKEN_KEY) || '';
+}
+
+export function setGasRouteToken(token) {
+    localStorage.setItem(GAS_ROUTE_TOKEN_KEY, token);
 }
 
 export async function getGasStatus() {
@@ -113,4 +122,51 @@ export async function sendChecklistToDrive(filename, pdfBase64) {
     } catch (e) {
         return { ok: false, error: e.message };
     }
+}
+
+export async function pushRoteiroChanges(changes) {
+    const url = getGasUrl();
+    if (!url) return { ok: false, error: 'URL do GAS não configurada' };
+    if (!changes.length) return { ok: true, count: 0, acceptedIds: [] };
+
+    const token = getGasRouteToken();
+    if (!token) {
+        return { ok: false, error: 'Token de alterações de roteiros não configurado' };
+    }
+
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+                action: 'routeChanges',
+                token,
+                changes
+            })
+        });
+        return await res.json();
+    } catch (e) {
+        return { ok: false, error: e.message };
+    }
+}
+
+export async function syncPendingRoteiroChanges(db) {
+    const changes = db.getPendingRoteiroChanges(50);
+    if (!changes.length) return { ok: true, count: 0, pending: 0 };
+
+    const result = await pushRoteiroChanges(changes);
+    if (!result.ok) {
+        return { ...result, pending: db.getPendingRoteiroChangesCount() };
+    }
+
+    const confirmedIds = [
+        ...(result.acceptedIds || []),
+        ...(result.duplicateIds || [])
+    ];
+    db.markRoteiroChangesSent(confirmedIds);
+    return {
+        ...result,
+        count: confirmedIds.length,
+        pending: db.getPendingRoteiroChangesCount()
+    };
 }

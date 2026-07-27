@@ -312,6 +312,8 @@
 
                 <div style="display: flex; flex-direction: column; gap: 10px;">
                     <input type="text" id="gasUrl" placeholder="URL do Web App do Google Apps Script">
+                    <input type="password" id="gasRouteToken" placeholder="Token para alterações de roteiros">
+                    <span class="gas-version-status" id="routeChangesStatus">Alterações de roteiros: verificando...</span>
                 </div>
 
                 <div style="display: flex; gap: 10px;">
@@ -337,6 +339,10 @@
                     <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-top: 8px;">
                         <span>Coletas Pendentes de Sincronização:</span>
                         <span id="statPendingSyncCount" style="font-family: 'JetBrains Mono'; color: var(--accent);">0</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-top: 8px;">
+                        <span>Alterações de Roteiro Pendentes:</span>
+                        <span id="statPendingRouteCount" style="font-family: 'JetBrains Mono'; color: var(--accent);">0</span>
                     </div>
                 </div>
 
@@ -386,6 +392,9 @@
             setGasUrl,
             getGasStatus,
             checkAndImportRoteiros,
+            getGasRouteToken,
+            setGasRouteToken,
+            syncPendingRoteiroChanges,
             REQUIRED_GAS_API_VERSION
         } from './google-sync.js';
 
@@ -398,6 +407,11 @@
             document.getElementById('gasUrl').value = getGasUrl();
             document.getElementById('gasUrl').onchange = (e) => {
                 setGasUrl(e.target.value.trim());
+                window.checkDriveUpdate();
+            };
+            document.getElementById('gasRouteToken').value = getGasRouteToken();
+            document.getElementById('gasRouteToken').onchange = (e) => {
+                setGasRouteToken(e.target.value.trim());
                 window.checkDriveUpdate();
             };
 
@@ -522,28 +536,35 @@
             document.getElementById('statPointsCount').textContent = pCount;
             document.getElementById('statCollectsCount').textContent = cCount;
             document.getElementById('statPendingSyncCount').textContent = db.getUnsyncedColetas().length;
+            document.getElementById('statPendingRouteCount').textContent = db.getPendingRoteiroChangesCount();
         }
 
         window.checkDriveUpdate = async () => {
             const dot = document.getElementById('syncStatusDot');
             const text = document.getElementById('syncStatusText');
             const versionText = document.getElementById('gasVersionStatus');
+            const routeChangesText = document.getElementById('routeChangesStatus');
 
             if (!getGasUrl()) {
                 dot.className = 'status-dot status-offline';
                 text.textContent = 'URL do Google Apps Script não configurada';
                 versionText.className = 'gas-version-status error';
                 versionText.textContent = 'API GAS: não configurada';
+                routeChangesText.className = 'gas-version-status error';
+                routeChangesText.textContent = 'Alterações de roteiros: URL não configurada';
                 return;
             }
 
             text.textContent = 'Verificando atualização...';
             versionText.className = 'gas-version-status';
             versionText.textContent = 'API GAS: verificando...';
+            routeChangesText.className = 'gas-version-status';
+            routeChangesText.textContent = 'Alterações de roteiros: verificando...';
 
-            const [gasStatus, result] = await Promise.all([
+            const [gasStatus, result, routeSync] = await Promise.all([
                 getGasStatus(),
-                checkAndImportRoteiros(db)
+                checkAndImportRoteiros(db),
+                syncPendingRoteiroChanges(db)
             ]);
 
             if (!gasStatus.ok) {
@@ -555,6 +576,22 @@
             } else {
                 versionText.className = 'gas-version-status compatible';
                 versionText.textContent = `API GAS v${gasStatus.apiVersion}: compatível`;
+            }
+
+            if (gasStatus.ok && !gasStatus.routeChangesConfigured) {
+                routeChangesText.className = 'gas-version-status error';
+                routeChangesText.textContent = 'Alterações de roteiros: ROUTE_CHANGES_TOKEN não configurado no GAS';
+            } else if (!getGasRouteToken()) {
+                routeChangesText.className = 'gas-version-status error';
+                routeChangesText.textContent = 'Alterações de roteiros: informe o token neste app';
+            } else if (!routeSync.ok) {
+                routeChangesText.className = 'gas-version-status error';
+                routeChangesText.textContent = `Alterações de roteiros: ${routeSync.error || 'erro desconhecido'}`;
+            } else {
+                routeChangesText.className = 'gas-version-status compatible';
+                routeChangesText.textContent = routeSync.count
+                    ? `${routeSync.count} alteração(ões) enviada(s); aguardando importação no Access`
+                    : 'Alterações de roteiros: fila local sincronizada';
             }
 
             if (result.error) {

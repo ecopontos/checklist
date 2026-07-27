@@ -364,6 +364,10 @@
     <div id="editModal" class="modal">
         <div class="modal-content">
             <h2 id="modalTitle">Editar Ponto</h2>
+            <p class="subtitle" style="font-size: 0.8rem;">
+                Nesta primeira integração, alterações de roteiro, ordem e status são enviadas ao Access.
+                Nome e endereço permanecem somente neste aplicativo.
+            </p>
             <form id="editForm">
                 <div class="form-group">
                     <label>ID Rota</label>
@@ -422,6 +426,7 @@
     <script src="vendor/sql-wasm.js"></script>
     <script type="module">
         import db from './database.js';
+        import { syncPendingRoteiroChanges } from './google-sync.js';
 
         async function init() {
             await db.init();
@@ -528,18 +533,41 @@
             window.open(`imprimir.html?id=${routeId}`, '_blank');
         };
 
-        window.toggleStatus = (idRota, current) => {
+        async function queueAndSyncAccessChange(idRota) {
+            const queued = db.queueRoteiroChange(idRota);
+            if (!queued.queued) return;
+
+            const result = await syncPendingRoteiroChanges(db);
+            if (!result.ok) {
+                alert(
+                    'Alteração salva neste aplicativo, mas ainda não enviada ao Access: ' +
+                    (result.error || 'erro desconhecido') +
+                    '. Configure a integração na tela Admin.'
+                );
+            }
+        }
+
+        window.toggleStatus = async (idRota, current) => {
             db.db.run("UPDATE clientes SET ativo = ? WHERE id_rota = ?", [current ? 0 : 1, idRota]);
             db.save();
             renderClients();
+            await queueAndSyncAccessChange(idRota);
         };
 
         // Form Submit
-        document.getElementById('editForm').onsubmit = (e) => {
+        document.getElementById('editForm').onsubmit = async (e) => {
             e.preventDefault();
+            const idRotaInput = document.getElementById('f_idRota');
+            const isExistingAccessPoint = idRotaInput.disabled;
+            const existing = isExistingAccessPoint
+                ? db.getClienteByIdRota(idRotaInput.value)
+                : null;
             const data = {
-                idRota: document.getElementById('f_idRota').value,
+                idRota: idRotaInput.value,
                 Cliente: document.getElementById('f_cliente').value,
+                logradouro: existing?.logradouro || '',
+                Número: existing?.numero || '',
+                CEP: existing?.cep || '',
                 roteiro_id: document.getElementById('f_roteiro').value,
                 Ordem: Number(document.getElementById('f_ordem').value),
                 ativo: document.getElementById('f_status').value == '1'
@@ -547,6 +575,11 @@
             db.upsertCliente(data);
             closeModal('editModal');
             renderClients();
+            if (isExistingAccessPoint) {
+                await queueAndSyncAccessChange(data.idRota);
+            } else {
+                alert('Novo ponto salvo apenas localmente. A inclusão de novos IDs no Access será tratada em uma etapa futura.');
+            }
         };
 
         // Filters

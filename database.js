@@ -24,8 +24,8 @@ class AppDatabase {
             this.db = new this.SQL.Database(uInt8Array);
         } else {
             this.db = new this.SQL.Database();
-            this.createTables();
         }
+        this.createTables();
     }
 
     createTables() {
@@ -60,6 +60,17 @@ class AppDatabase {
                 last_sync TEXT,
                 sync_id TEXT,
                 FOREIGN KEY (id_rota) REFERENCES clientes(id_rota)
+            );
+
+            CREATE TABLE IF NOT EXISTS roteiro_change_outbox (
+                change_id TEXT PRIMARY KEY,
+                id_rota TEXT NOT NULL,
+                inativo INTEGER NOT NULL,
+                ordem REAL NOT NULL,
+                roteiro TEXT NOT NULL,
+                alterado_em TEXT NOT NULL,
+                origem TEXT NOT NULL,
+                sent_at TEXT
             );
         `);
         this.save();
@@ -122,6 +133,19 @@ class AppDatabase {
         });
     }
 
+    getClienteByIdRota(idRota) {
+        const res = this.db.exec(
+            "SELECT c.*, r.nome AS roteiro_nome FROM clientes c JOIN roteiros r ON c.roteiro_id = r.id WHERE c.id_rota = ?",
+            [idRota]
+        );
+        if (!res.length) return null;
+        const obj = {};
+        res[0].columns.forEach((column, index) => {
+            obj[column] = res[0].values[0][index];
+        });
+        return obj;
+    }
+
     _normalizeOrdem(value) {
         const normalized = String(value ?? '').trim().replace(',', '.');
         const order = Number(normalized);
@@ -179,6 +203,94 @@ class AppDatabase {
     _getCsvVal(row, name) {
         const key = Object.keys(row).find(k => k.toLowerCase().trim() === name.toLowerCase());
         return key ? row[key] : null;
+    }
+
+    // --- Alterações de roteiros pendentes para o Access ---
+    queueRoteiroChange(idRota) {
+        const cliente = this.getClienteByIdRota(idRota);
+        if (!cliente || !/^\d+$/.test(String(cliente.id_rota))) {
+            return { queued: false, reason: 'not-access-record' };
+        }
+
+        let origem = localStorage.getItem('app3_device_id');
+        if (!origem) {
+            origem = this._newChangeId();
+            localStorage.setItem('app3_device_id', origem);
+        }
+
+        const change = {
+            change_id: this._newChangeId(),
+            id_rota: String(cliente.id_rota),
+            inativo: cliente.ativo ? 0 : 1,
+            ordem: this._normalizeOrdem(cliente.ordem),
+            roteiro: cliente.roteiro_nome,
+            alterado_em: new Date().toISOString(),
+            origem
+        };
+
+        this.db.run(`
+            INSERT INTO roteiro_change_outbox
+                (change_id, id_rota, inativo, ordem, roteiro, alterado_em, origem)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [
+            change.change_id,
+            change.id_rota,
+            change.inativo,
+            change.ordem,
+            change.roteiro,
+            change.alterado_em,
+            change.origem
+        ]);
+        this.save();
+        return { queued: true, change };
+    }
+
+    getPendingRoteiroChanges(limit = 50) {
+        const safeLimit = Math.max(1, Math.min(Number(limit) || 50, 100));
+        const res = this.db.exec(`
+            SELECT change_id, id_rota, inativo, ordem, roteiro, alterado_em, origem
+            FROM roteiro_change_outbox
+            WHERE sent_at IS NULL
+            ORDER BY alterado_em, change_id
+            LIMIT ?
+        `, [safeLimit]);
+        if (!res.length) return [];
+        return res[0].values.map(values => {
+            const row = {};
+            res[0].columns.forEach((column, index) => {
+                row[column] = values[index];
+            });
+            return row;
+        });
+    }
+
+    markRoteiroChangesSent(changeIds) {
+        const sentAt = new Date().toISOString();
+        changeIds.forEach(changeId => {
+            this.db.run(
+                "UPDATE roteiro_change_outbox SET sent_at = ? WHERE change_id = ?",
+                [sentAt, changeId]
+            );
+        });
+        this.save();
+    }
+
+    getPendingRoteiroChangesCount() {
+        const res = this.db.exec(
+            "SELECT COUNT(*) FROM roteiro_change_outbox WHERE sent_at IS NULL"
+        );
+        return res.length ? Number(res[0].values[0][0]) : 0;
+    }
+
+    _newChangeId() {
+        if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
+            return globalThis.crypto.randomUUID();
+        }
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, char => {
+            const random = Math.floor(Math.random() * 16);
+            const value = char === 'x' ? random : (random & 0x3) | 0x8;
+            return value.toString(16);
+        });
     }
 
     // --- Coletas ---

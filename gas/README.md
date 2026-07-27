@@ -16,6 +16,8 @@
    - `SPREADSHEET_ID` = o ID copiado no passo 1
    - `DRIVE_FOLDER_ID` = o ID copiado no passo 2
    - `CHECKLISTS_FOLDER_ID` = o ID da pasta de checklists criada agora
+   - `ROUTE_CHANGES_TOKEN` = um segredo compartilhado com pelo menos 32
+     caracteres (`A-Z`, `a-z`, `0-9`, hífen ou sublinhado)
 7. Clique em "Implantar" > "Nova implantação" > tipo "App da Web".
    - Executar como: **Eu** (sua conta)
    - Quem tem acesso: **Qualquer pessoa**
@@ -53,7 +55,7 @@ o conteúdo ao aplicativo.
 curl "<URL>?action=status"
 ```
 
-Esperado: `{"ok":true,"service":"satelite-gas","apiVersion":2}`.
+Esperado: `{"ok":true,"service":"satelite-gas","apiVersion":3,"routeChangesConfigured":true}`.
 
 ```bash
 curl "<URL>"
@@ -93,6 +95,22 @@ Esperado: `{"ok":true}`, e um arquivo `Checklist_TESTE_2026-01-01.pdf` na
 pasta configurada em `CHECKLISTS_FOLDER_ID`. Rodar o mesmo comando de novo
 deve substituir esse arquivo (mesmo nome), não duplicar.
 
+### Alterações de roteiros vindas do app
+
+O app envia alterações de pontos existentes com a ação `routeChanges`. O GAS
+cria automaticamente a aba `AlteracoesRoteiros` na planilha configurada em
+`SPREADSHEET_ID`. Cada alteração é identificada por um `Change ID`, portanto um
+reenvio não duplica a operação.
+
+Somente este fluxo usa o `ROUTE_CHANGES_TOKEN`; as rotas históricas de leitura
+do CSV e de envio de coletas permanecem compatíveis. O token deve ser informado
+na tela Admin do app e no frontend Access integrado. A consulta do Access e a
+confirmação das linhas processadas são feitas por `POST`, evitando expor o
+segredo na URL.
+
+O procedimento completo de instalação e piloto está em
+[`docs/INTEGRACAO_ACCESS_ROTEIROS.md`](../docs/INTEGRACAO_ACCESS_ROTEIROS.md).
+
 ## Publicação automatizada com GitHub Actions
 
 O workflow `.github/workflows/deploy-gas.yml` publica o conteúdo de `gas/`
@@ -122,7 +140,8 @@ endpoint `action=status`.
 
 Para rollback, execute novamente informando em `target_version` o número de
 uma versão GAS anterior. As propriedades do script
-(`SPREADSHEET_ID`, `DRIVE_FOLDER_ID` e `CHECKLISTS_FOLDER_ID`) não são
+(`SPREADSHEET_ID`, `DRIVE_FOLDER_ID`, `CHECKLISTS_FOLDER_ID` e
+`ROUTE_CHANGES_TOKEN`) não são
 alteradas pelo workflow.
 
 ## Limitação conhecida: linhas duplicadas em reenvios
