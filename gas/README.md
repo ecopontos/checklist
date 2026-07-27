@@ -45,6 +45,10 @@ ela preserva o ponto de entrada público quando o projeto é enviado pelo
 Depois de colocar um `cstExportaCheckList.csv` na pasta configurada, teste
 com `curl` (substitua `<URL>` pela URL do passo 9):
 
+O arquivo exportado pelo Access pode permanecer em UTF-16LE. O GAS detecta
+UTF-16LE/UTF-16BE (com ou sem BOM) e UTF-8 automaticamente antes de enviar
+o conteúdo ao aplicativo.
+
 ```bash
 curl "<URL>?action=status"
 ```
@@ -55,8 +59,8 @@ Esperado: `{"ok":true,"service":"satelite-gas","apiVersion":2}`.
 curl "<URL>"
 ```
 
-Esperado: JSON com `"ok":true`, `"content":"Fonte;idRota;..."` e
-`"modifiedTime"`.
+Esperado: JSON com `"ok":true`, `"content":"Fonte;idRota;..."`,
+`"modifiedTime"` e `"encoding":"UTF-16LE"` para o arquivo do Access.
 
 ```bash
 curl -X POST "<URL>" -H "Content-Type: text/plain;charset=utf-8" \

@@ -11,6 +11,7 @@
 var CSV_FILE_NAME = 'cstExportaCheckList.csv';
 var COLETAS_SHEET_NAME = 'Coletas';
 var GAS_API_VERSION = 2;
+var CSV_DECODE_SYNC_OFFSET_MS = 1;
 
 function getConfig_() {
     var props = PropertiesService.getScriptProperties();
@@ -55,14 +56,66 @@ function doGet(e) {
         }
 
         var file = files.next();
+        var decoded = decodeCsvBlob_(file.getBlob());
+        var modifiedTime = file.getLastUpdated();
+
+        // Clients that already cached the timestamp while UTF-16 was decoded
+        // as UTF-8 need to import this same Drive revision once more. A stable
+        // 1 ms offset preserves the normal "only when changed" behavior.
+        if (decoded.encoding !== 'UTF-8') {
+            modifiedTime = new Date(modifiedTime.getTime() + CSV_DECODE_SYNC_OFFSET_MS);
+        }
+
         return jsonResponse_({
             ok: true,
-            content: file.getBlob().getDataAsString('UTF-8'),
-            modifiedTime: file.getLastUpdated().toISOString()
+            content: decoded.content,
+            modifiedTime: modifiedTime.toISOString(),
+            encoding: decoded.encoding
         });
     } catch (err) {
         return jsonResponse_({ ok: false, error: err.message });
     }
+}
+
+function decodeCsvBlob_(blob) {
+    var bytes = blob.getBytes();
+    var encoding = detectCsvEncoding_(bytes);
+    var content = blob.getDataAsString(encoding);
+
+    // Remove BOM after decoding so Papa Parse sees "Fonte" as the first
+    // header, regardless of the source encoding.
+    content = content.replace(/^\uFEFF/, '');
+
+    return { content: content, encoding: encoding };
+}
+
+function detectCsvEncoding_(bytes) {
+    if (bytes.length >= 2) {
+        var first = bytes[0] & 255;
+        var second = bytes[1] & 255;
+        if (first === 255 && second === 254) return 'UTF-16LE';
+        if (first === 254 && second === 255) return 'UTF-16BE';
+    }
+
+    // Access normally writes a BOM, but also recognize BOM-less UTF-16 by
+    // the alternating NUL bytes in the ASCII CSV header.
+    var sampleSize = Math.min(bytes.length, 200);
+    var evenNulls = 0;
+    var oddNulls = 0;
+    for (var i = 0; i < sampleSize; i++) {
+        if ((bytes[i] & 255) !== 0) continue;
+        if (i % 2 === 0) evenNulls++;
+        else oddNulls++;
+    }
+
+    if (sampleSize >= 8 && oddNulls >= sampleSize / 4 && oddNulls > evenNulls * 2) {
+        return 'UTF-16LE';
+    }
+    if (sampleSize >= 8 && evenNulls >= sampleSize / 4 && evenNulls > oddNulls * 2) {
+        return 'UTF-16BE';
+    }
+
+    return 'UTF-8';
 }
 
 function getUltimaColeta_(roteiroNome) {
