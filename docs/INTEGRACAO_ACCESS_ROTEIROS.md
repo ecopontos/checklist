@@ -17,6 +17,8 @@ entre várias rotas e exigem regras próprias antes de serem editados com segura
 
 1. Ao salvar um ponto existente, o app grava a alteração no banco local e em
    uma fila de saída persistente.
+   No modo **Organizar roteiro**, todas as posições afetadas são atualizadas em
+   uma única transação e a sequência é normalizada de 1 até o último ponto.
 2. O app envia a fila ao GAS usando a URL já configurada e um token separado.
 3. O GAS registra as linhas idempotentemente na aba `AlteracoesRoteiros`, com
    status `PENDENTE`.
@@ -32,6 +34,10 @@ entre várias rotas e exigem regras próprias antes de serem editados com segura
 Se a confirmação no GAS falhar depois do commit, as mesmas linhas reaparecem na
 próxima importação. Reaplicá-las é seguro: são atualizações idempotentes pelos
 mesmos valores.
+
+O app envia lotes de até 100 alterações por requisição e continua até esvaziar
+a fila. O Access pode receber até 2.000 alterações pendentes em uma única
+importação, evitando que roteiros grandes precisem ser confirmados em etapas.
 
 ## Preparação do GAS
 

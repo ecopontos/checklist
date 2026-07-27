@@ -155,6 +155,7 @@
         .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0, 242, 254, 0.3); }
         .btn-outline { background: transparent; border: 1px solid var(--card-border); color: var(--text); }
         .btn-outline:hover { background: rgba(255, 255, 255, 0.05); }
+        .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
 
         input, select {
             background: rgba(255, 255, 255, 0.05);
@@ -265,6 +266,59 @@
             margin-bottom: 20px;
         }
 
+        .organizer-modal-content {
+            width: min(1040px, calc(100vw - 32px));
+            max-width: 1040px;
+            height: min(880px, calc(100vh - 32px));
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .organizer-header, .organizer-footer { padding: 22px 26px; background: var(--surface); position: relative; z-index: 2; }
+        .organizer-header { border-bottom: 1px solid var(--card-border); }
+        .organizer-footer { border-top: 1px solid var(--card-border); display: flex; justify-content: space-between; align-items: center; gap: 15px; }
+        .organizer-footer .modal-footer { margin-top: 0; }
+        .organizer-toolbar { display: grid; grid-template-columns: minmax(240px, 1fr) auto; gap: 15px; align-items: center; margin-top: 16px; }
+        .organizer-toolbar input { width: 100%; }
+        .organizer-count { color: var(--text-dim); white-space: nowrap; }
+        .organizer-count strong { color: var(--primary); }
+        .organizer-help { color: var(--text-dim); font-size: 0.86rem; margin-top: 10px; }
+        .organizer-list { flex: 1; overflow-y: auto; padding: 12px 18px 18px; }
+        .organizer-row {
+            display: grid;
+            grid-template-columns: 38px 72px 100px minmax(220px, 1fr) 92px 128px;
+            gap: 10px;
+            align-items: center;
+            padding: 10px 12px;
+            border: 1px solid transparent;
+            border-bottom-color: var(--card-border);
+            background: rgba(255, 255, 255, 0.015);
+        }
+        .organizer-row.changed { border-left-color: var(--primary); background: rgba(0, 242, 254, 0.04); }
+        .organizer-row.inactive { opacity: 0.68; }
+        .organizer-row.search-miss { display: none; }
+        .organizer-row.dragging { opacity: 0.35; }
+        .organizer-row.drag-over { border-top-color: var(--primary); }
+        .drag-handle { cursor: grab; color: var(--text-dim); font-size: 1.3rem; text-align: center; }
+        .drag-handle:active { cursor: grabbing; }
+        .organizer-position { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+        .organizer-id { font-family: 'JetBrains Mono', monospace; color: var(--text-dim); font-size: 0.82rem; }
+        .organizer-client { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .organizer-position-input { width: 74px; padding: 7px 8px; text-align: center; }
+        .organizer-actions { display: flex; gap: 5px; align-items: center; }
+        .organizer-actions button { width: 32px; height: 32px; border: 1px solid var(--card-border); border-radius: 7px; background: transparent; color: var(--text); cursor: pointer; }
+        .organizer-actions button:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+        .organizer-actions button:disabled { opacity: 0.3; cursor: not-allowed; }
+        @media (max-width: 760px) {
+            .organizer-modal-content { width: 100vw; height: 100vh; border-radius: 0; }
+            .organizer-toolbar { grid-template-columns: 1fr; }
+            .organizer-row { grid-template-columns: 32px 52px minmax(130px, 1fr) 80px 116px; }
+            .organizer-id { display: none; }
+            .organizer-footer { align-items: stretch; flex-direction: column; }
+            .organizer-footer .modal-footer { margin-top: 0; }
+        }
+
         @keyframes spin { to { transform: rotate(360deg); } }
     </style>
     <link rel="stylesheet" href="theme.css">
@@ -297,6 +351,9 @@
                 <option value="">Todos os Roteiros</option>
             </select>
             <input type="text" id="searchClient" placeholder="Buscar cliente ou ID Rota...">
+            <button class="btn btn-primary" id="btnOrganizeRoute" onclick="openOrganizer()" disabled>
+                ↕ Organizar roteiro
+            </button>
             <button class="btn btn-primary" onclick="openImportModal()">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                 Importar CSV
@@ -326,6 +383,27 @@
                     <!-- Rows injected via JS -->
                 </tbody>
             </table>
+        </div>
+    </div>
+
+    <div id="organizeModal" class="modal">
+        <div class="modal-content organizer-modal-content">
+            <div class="organizer-header">
+                <h2 id="organizerTitle">Organizar roteiro</h2>
+                <div class="organizer-toolbar">
+                    <input type="search" id="organizerSearch" placeholder="Localizar cliente ou ID sem alterar a sequência">
+                    <span class="organizer-count" id="organizerChangeCount"></span>
+                </div>
+                <p class="organizer-help">Arraste pela alça, use as setas ou digite uma posição. Ao salvar, a sequência será normalizada de 1 até o último ponto.</p>
+            </div>
+            <div class="organizer-list" id="organizerList"></div>
+            <div class="organizer-footer">
+                <span class="organizer-count" id="organizerVisibleCount"></span>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" onclick="closeOrganizer()">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="btnSaveOrganizer" onclick="saveOrganizer()" disabled>Salvar alterações</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -368,6 +446,7 @@
             <p class="subtitle" style="font-size: 0.8rem;">
                 Nesta primeira integração, alterações de roteiro, ordem e status são enviadas ao Access.
                 Nome e endereço permanecem somente neste aplicativo.
+                Para mudar a sequência, feche este formulário e use <strong>Organizar roteiro</strong>.
                 <a href="ajuda-integracao-access.html" target="_blank" style="color: var(--accent);">Ver o procedimento completo.</a>
             </p>
             <form id="editForm">
@@ -384,7 +463,7 @@
                     <select id="f_roteiro" required></select>
                 </div>
                 <div class="form-group">
-                    <label>Ordem</label>
+                    <label>Ordem (alterada pelo organizador do roteiro)</label>
                     <input type="number" id="f_ordem" required>
                 </div>
                 <div class="form-group">
@@ -430,6 +509,15 @@
         import db from './database.js';
         import { syncPendingRoteiroChanges } from './google-sync.js';
 
+        const organizerState = {
+            routeId: '',
+            routeName: '',
+            clients: new Map(),
+            currentIds: [],
+            draggedId: null,
+            saving: false
+        };
+
         async function init() {
             await db.init();
             renderRoteiros();
@@ -449,6 +537,7 @@
         function renderClients() {
             const filterVal = document.getElementById('routeFilter').value;
             const searchVal = document.getElementById('searchClient').value.toLowerCase();
+            document.getElementById('btnOrganizeRoute').disabled = !filterVal;
             
             let query = "SELECT c.*, r.nome as roteiro_nome FROM clientes c JOIN roteiros r ON c.roteiro_id = r.id WHERE 1=1";
             const params = [];
@@ -491,6 +580,255 @@
             }
         }
 
+        function normalizeOrganizerOrder(value) {
+            const normalized = Number(String(value ?? '').trim().replace(',', '.'));
+            return Number.isFinite(normalized) ? normalized : 0;
+        }
+
+        function getOrganizerChangedIds() {
+            return organizerState.currentIds.filter((id, index) => {
+                const cliente = organizerState.clients.get(id);
+                return normalizeOrganizerOrder(cliente.ordem) !== index + 1;
+            });
+        }
+
+        function moveOrganizerItem(id, targetIndex) {
+            const fromIndex = organizerState.currentIds.indexOf(id);
+            if (fromIndex < 0) return;
+            const parsedIndex = Number(targetIndex);
+            if (!Number.isInteger(parsedIndex)) {
+                renderOrganizer();
+                return;
+            }
+            const nextIds = [...organizerState.currentIds];
+            nextIds.splice(fromIndex, 1);
+            const safeIndex = Math.max(0, Math.min(parsedIndex, nextIds.length));
+            nextIds.splice(safeIndex, 0, id);
+            organizerState.currentIds = nextIds;
+            renderOrganizer();
+        }
+
+        function moveOrganizerBefore(draggedId, targetId) {
+            if (!draggedId || draggedId === targetId) return;
+            const nextIds = organizerState.currentIds.filter(id => id !== draggedId);
+            const targetIndex = nextIds.indexOf(targetId);
+            if (targetIndex < 0) return;
+            nextIds.splice(targetIndex, 0, draggedId);
+            organizerState.currentIds = nextIds;
+            renderOrganizer();
+        }
+
+        function renderOrganizer() {
+            const list = document.getElementById('organizerList');
+            const search = document.getElementById('organizerSearch').value.trim().toLowerCase();
+            const changedIds = new Set(getOrganizerChangedIds());
+            let visibleCount = 0;
+            list.textContent = '';
+
+            organizerState.currentIds.forEach((id, index) => {
+                const cliente = organizerState.clients.get(id);
+                const position = index + 1;
+                const matchesSearch = !search ||
+                    String(cliente.cliente).toLowerCase().includes(search) ||
+                    id.toLowerCase().includes(search);
+                if (matchesSearch) visibleCount++;
+
+                const row = document.createElement('div');
+                row.className = [
+                    'organizer-row',
+                    changedIds.has(id) ? 'changed' : '',
+                    cliente.ativo ? '' : 'inactive',
+                    matchesSearch ? '' : 'search-miss'
+                ].filter(Boolean).join(' ');
+                row.dataset.id = id;
+
+                const handle = document.createElement('span');
+                handle.className = 'drag-handle';
+                handle.textContent = '⠿';
+                handle.title = 'Arrastar para outra posição';
+                handle.tabIndex = 0;
+                handle.draggable = true;
+                handle.addEventListener('dragstart', event => {
+                    organizerState.draggedId = id;
+                    row.classList.add('dragging');
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('text/plain', id);
+                });
+                handle.addEventListener('dragend', () => {
+                    organizerState.draggedId = null;
+                    row.classList.remove('dragging');
+                });
+                handle.addEventListener('keydown', event => {
+                    if (event.key === 'ArrowUp') {
+                        event.preventDefault();
+                        moveOrganizerItem(id, index - 1);
+                    } else if (event.key === 'ArrowDown') {
+                        event.preventDefault();
+                        moveOrganizerItem(id, index + 1);
+                    }
+                });
+
+                const positionInput = document.createElement('input');
+                positionInput.type = 'number';
+                positionInput.className = 'organizer-position-input';
+                positionInput.min = '1';
+                positionInput.max = String(organizerState.currentIds.length);
+                positionInput.value = String(position);
+                positionInput.title = 'Mover para a posição informada';
+                positionInput.addEventListener('change', () => {
+                    moveOrganizerItem(id, Number(positionInput.value) - 1);
+                });
+
+                const idCell = document.createElement('span');
+                idCell.className = 'organizer-id';
+                idCell.textContent = id;
+
+                const clientCell = document.createElement('span');
+                clientCell.className = 'organizer-client';
+                clientCell.textContent = cliente.cliente;
+                clientCell.title = cliente.cliente;
+
+                const status = document.createElement('span');
+                status.className = `badge ${cliente.ativo ? 'badge-active' : 'badge-inactive'}`;
+                status.textContent = cliente.ativo ? 'Ativo' : 'Inativo';
+
+                const actions = document.createElement('div');
+                actions.className = 'organizer-actions';
+                const upButton = document.createElement('button');
+                upButton.type = 'button';
+                upButton.textContent = '↑';
+                upButton.title = 'Subir uma posição';
+                upButton.disabled = index === 0;
+                upButton.addEventListener('click', () => moveOrganizerItem(id, index - 1));
+                const downButton = document.createElement('button');
+                downButton.type = 'button';
+                downButton.textContent = '↓';
+                downButton.title = 'Descer uma posição';
+                downButton.disabled = index === organizerState.currentIds.length - 1;
+                downButton.addEventListener('click', () => moveOrganizerItem(id, index + 1));
+                actions.append(upButton, downButton);
+
+                row.addEventListener('dragover', event => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'move';
+                    row.classList.add('drag-over');
+                });
+                row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+                row.addEventListener('drop', event => {
+                    event.preventDefault();
+                    row.classList.remove('drag-over');
+                    moveOrganizerBefore(organizerState.draggedId || event.dataTransfer.getData('text/plain'), id);
+                });
+
+                row.append(handle, positionInput, idCell, clientCell, status, actions);
+                list.appendChild(row);
+            });
+
+            const changeCount = changedIds.size;
+            document.getElementById('organizerChangeCount').innerHTML =
+                `<strong>${changeCount}</strong> ponto(s) serão atualizado(s)`;
+            document.getElementById('organizerVisibleCount').textContent = search
+                ? `${visibleCount} de ${organizerState.currentIds.length} ponto(s) localizados`
+                : `${organizerState.currentIds.length} ponto(s) no roteiro`;
+            const saveButton = document.getElementById('btnSaveOrganizer');
+            saveButton.disabled = changeCount === 0 || organizerState.saving;
+            saveButton.textContent = organizerState.saving
+                ? 'Salvando e enviando...'
+                : `Salvar ${changeCount} alteração(ões)`;
+        }
+
+        window.openOrganizer = () => {
+            const routeFilter = document.getElementById('routeFilter');
+            const routeId = routeFilter.value;
+            if (!routeId) {
+                alert('Selecione um roteiro antes de organizar a ordem.');
+                return;
+            }
+
+            const clientes = db.getClientesByRoteiro(routeId);
+            if (!clientes.length) {
+                alert('O roteiro selecionado não possui pontos.');
+                return;
+            }
+            if (clientes.some(cliente => !/^\d+$/.test(String(cliente.id_rota)))) {
+                alert('Este roteiro possui pontos criados somente no aplicativo. Remova-os ou cadastre-os no Access antes de reorganizar.');
+                return;
+            }
+
+            organizerState.routeId = routeId;
+            organizerState.routeName = routeFilter.options[routeFilter.selectedIndex].textContent;
+            organizerState.clients = new Map(clientes.map(cliente => [String(cliente.id_rota), cliente]));
+            organizerState.currentIds = clientes.map(cliente => String(cliente.id_rota));
+            organizerState.draggedId = null;
+            organizerState.saving = false;
+            document.getElementById('organizerTitle').textContent = `Organizar roteiro ${organizerState.routeName}`;
+            document.getElementById('organizerSearch').value = '';
+            document.getElementById('organizeModal').style.display = 'flex';
+            renderOrganizer();
+        };
+
+        window.closeOrganizer = (force = false) => {
+            if (organizerState.saving && !force) return;
+            if (!force && getOrganizerChangedIds().length &&
+                !confirm('Descartar todas as alterações de ordem ainda não salvas?')) {
+                return;
+            }
+            document.getElementById('organizeModal').style.display = 'none';
+            organizerState.routeId = '';
+            organizerState.clients = new Map();
+            organizerState.currentIds = [];
+        };
+
+        window.saveOrganizer = async () => {
+            const changeCount = getOrganizerChangedIds().length;
+            if (!changeCount || organizerState.saving) return;
+            if (!confirm(`Salvar a nova sequência e enviar ${changeCount} alteração(ões) ao Access?`)) return;
+
+            organizerState.saving = true;
+            renderOrganizer();
+            let applied;
+            try {
+                applied = db.applyRoteiroOrder(organizerState.routeId, organizerState.currentIds);
+            } catch (error) {
+                organizerState.saving = false;
+                renderOrganizer();
+                alert(`Não foi possível salvar a nova sequência: ${error.message}`);
+                return;
+            }
+
+            window.closeOrganizer(true);
+            renderClients();
+            let syncResult;
+            try {
+                syncResult = await syncPendingRoteiroChanges(db);
+            } catch (error) {
+                syncResult = {
+                    ok: false,
+                    error: error.message,
+                    pending: db.getPendingRoteiroChangesCount()
+                };
+            }
+
+            if (!syncResult.ok) {
+                alert(
+                    `${applied.count} alteração(ões) salva(s) neste aplicativo. ` +
+                    `${syncResult.pending || 0} ainda aguardam envio ao GAS: ${syncResult.error || 'erro desconhecido'}`
+                );
+            } else {
+                alert(
+                    `${applied.count} posição(ões) atualizada(s). ` +
+                    `A fila foi enviada ao GAS e agora aguarda a importação no Access.`
+                );
+            }
+        };
+
+        document.getElementById('organizerSearch').addEventListener('input', renderOrganizer);
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && document.getElementById('organizeModal').style.display === 'flex') {
+                window.closeOrganizer();
+            }
+        });
+
         // Global functions for buttons
         window.openImportModal = () => document.getElementById('importModal').style.display = 'flex';
         window.closeModal = (id) => document.getElementById(id).style.display = 'none';
@@ -508,6 +846,7 @@
                 document.getElementById('f_cliente').value = row.cliente;
                 document.getElementById('f_roteiro').value = row.roteiro_id;
                 document.getElementById('f_ordem').value = row.ordem;
+                document.getElementById('f_ordem').disabled = true;
                 document.getElementById('f_status').value = row.ativo;
                 
                 document.getElementById('modalTitle').textContent = 'Editar Ponto';
@@ -520,6 +859,7 @@
             document.getElementById('f_idRota').disabled = false;
             document.getElementById('f_cliente').value = '';
             document.getElementById('f_ordem').value = '100';
+            document.getElementById('f_ordem').disabled = false;
             document.getElementById('f_status').value = '1';
             
             document.getElementById('modalTitle').textContent = 'Novo Ponto';

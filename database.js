@@ -146,6 +146,84 @@ class AppDatabase {
         return obj;
     }
 
+    applyRoteiroOrder(roteiroId, orderedIds) {
+        const clientes = this.getClientesByRoteiro(roteiroId);
+        if (!clientes.length) {
+            throw new Error('O roteiro selecionado não possui pontos.');
+        }
+
+        const ids = orderedIds.map(id => String(id));
+        const uniqueIds = new Set(ids);
+        const currentById = new Map(clientes.map(cliente => [String(cliente.id_rota), cliente]));
+        if (ids.length !== clientes.length || uniqueIds.size !== ids.length) {
+            throw new Error('A lista reordenada contém pontos ausentes ou duplicados.');
+        }
+        if (ids.some(id => !currentById.has(id))) {
+            throw new Error('A lista reordenada não corresponde ao roteiro selecionado.');
+        }
+        if (ids.some(id => !/^\d+$/.test(id))) {
+            throw new Error('O roteiro possui pontos locais que ainda não existem no Access.');
+        }
+
+        const routeResult = this.db.exec('SELECT nome FROM roteiros WHERE id = ?', [roteiroId]);
+        if (!routeResult.length) throw new Error('Roteiro não encontrado.');
+        const roteiroNome = String(routeResult[0].values[0][0]);
+        const changed = ids.reduce((result, id, index) => {
+            const cliente = currentById.get(id);
+            const ordem = index + 1;
+            if (this._normalizeOrdem(cliente.ordem) !== ordem) {
+                result.push({ cliente, ordem });
+            }
+            return result;
+        }, []);
+
+        if (!changed.length) return { count: 0, changedIds: [] };
+
+        let origem = localStorage.getItem('app3_device_id');
+        if (!origem) {
+            origem = this._newChangeId();
+            localStorage.setItem('app3_device_id', origem);
+        }
+        const alteredAt = new Date().toISOString();
+        let inTransaction = false;
+        try {
+            this.db.run('BEGIN TRANSACTION');
+            inTransaction = true;
+            changed.forEach(({ cliente, ordem }) => {
+                this.db.run(
+                    'UPDATE clientes SET ordem = ? WHERE id_rota = ? AND roteiro_id = ?',
+                    [ordem, cliente.id_rota, roteiroId]
+                );
+                this.db.run(`
+                    INSERT INTO roteiro_change_outbox
+                        (change_id, id_rota, inativo, ordem, roteiro, alterado_em, origem)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                `, [
+                    this._newChangeId(),
+                    String(cliente.id_rota),
+                    cliente.ativo ? 0 : 1,
+                    ordem,
+                    roteiroNome,
+                    alteredAt,
+                    origem
+                ]);
+            });
+            this.db.run('COMMIT');
+            inTransaction = false;
+        } catch (error) {
+            if (inTransaction) {
+                try { this.db.run('ROLLBACK'); } catch (_) { /* mantém o erro original */ }
+            }
+            throw error;
+        }
+
+        this.save();
+        return {
+            count: changed.length,
+            changedIds: changed.map(({ cliente }) => String(cliente.id_rota))
+        };
+    }
+
     _normalizeOrdem(value) {
         const normalized = String(value ?? '').trim().replace(',', '.');
         const order = Number(normalized);

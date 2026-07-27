@@ -16,6 +16,7 @@ var ROUTE_CHANGES_HEADERS = [
     'Change ID', 'ID Rota', 'Inativo', 'Ordem', 'Roteiro', 'Alterado Em',
     'Origem', 'Status', 'Recebido Em', 'Processado Em', 'Mensagem'
 ];
+var ROUTE_CHANGES_MAX_DELIVERY = 2000;
 var GAS_API_VERSION = 3;
 var CSV_DECODE_SYNC_OFFSET_MS = 1;
 
@@ -409,7 +410,7 @@ function getPendingRouteChanges_(token) {
                 ROUTE_CHANGES_HEADERS.length
             ).getValues();
             var pendingCount = 0;
-            for (var i = 0; i < values.length && pendingCount < 100; i++) {
+            for (var i = 0; i < values.length && pendingCount < ROUTE_CHANGES_MAX_DELIVERY; i++) {
                 var row = values[i];
                 if (String(row[7]) !== 'PENDENTE') continue;
                 lines.push([
@@ -428,7 +429,7 @@ function getPendingRouteChanges_(token) {
 function confirmRouteChanges_(changeIds, token, message) {
     var authError = routeChangesAuthError_(token);
     if (authError) return jsonResponse_({ ok: false, error: authError });
-    if (!Array.isArray(changeIds) || changeIds.length > 100) {
+    if (!Array.isArray(changeIds) || changeIds.length > ROUTE_CHANGES_MAX_DELIVERY) {
         return jsonResponse_({ ok: false, error: 'Confirmação inválida' });
     }
 

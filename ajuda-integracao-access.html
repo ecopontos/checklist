@@ -135,10 +135,24 @@
             <ol>
                 <li>Abra <strong>Roteiros</strong> e localize o ponto pelo cliente ou pelo <code>ID Rota</code>.</li>
                 <li>Clique em <strong>Editar</strong>.</li>
-                <li>Altere o roteiro, a ordem ou o status e clique em <strong>Salvar</strong>.</li>
+                <li>Para uma edição individual, altere o roteiro ou o status e clique em <strong>Salvar</strong>.</li>
                 <li>O aplicativo tenta enviar imediatamente. Se a internet estiver indisponível, a alteração fica segura na fila local.</li>
                 <li>Em <strong>Admin</strong>, use <strong>Verificar agora</strong> para tentar novamente.</li>
             </ol>
+        </section>
+
+        <section>
+            <h2>Organizar a ordem de um roteiro inteiro</h2>
+            <ol>
+                <li>Em <strong>Roteiros</strong>, selecione um roteiro no filtro.</li>
+                <li>Clique em <strong>Organizar roteiro</strong>.</li>
+                <li>Arraste um ponto pela alça, use as setas ou digite diretamente a posição desejada.</li>
+                <li>A lista desloca os demais pontos automaticamente e mostra quantos registros serão atualizados.</li>
+                <li>Use a busca para localizar um cliente ou ID sem alterar a sequência.</li>
+                <li>Clique em <strong>Salvar alterações</strong> e confirme o lote.</li>
+            </ol>
+            <p>A ordem de um ponto existente não é editada no formulário individual. A sequência final é normalizada de <code>1</code> até o último ponto pelo organizador. O salvamento acontece em uma única transação local e todos os registros afetados são enviados ao GAS, mesmo quando o roteiro possui mais de 100 pontos.</p>
+            <p>Cancelar ou fechar o organizador não grava alterações. Pontos criados somente no aplicativo precisam ser cadastrados no Access antes de participarem de uma reorganização.</p>
         </section>
 
         <section>
@@ -170,6 +184,7 @@
                 <li><strong>Token recusado no Access:</strong> aceite apagar o token salvo e informe o token atual na próxima tentativa.</li>
                 <li><strong>Validação recusada pelo Access:</strong> nada foi aplicado. Corrija o ID ou o nome do roteiro antes de tentar novamente.</li>
                 <li><strong>Access aplicou, mas não confirmou no GAS:</strong> execute a importação novamente. Reaplicar os mesmos valores é seguro.</li>
+                <li><strong>Lote grande:</strong> aguarde o envio terminar antes de fechar o app. O Access apresenta todos os itens pendentes em uma única prévia.</li>
             </ul>
         </section>
 

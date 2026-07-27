@@ -151,22 +151,54 @@ export async function pushRoteiroChanges(changes) {
 }
 
 export async function syncPendingRoteiroChanges(db) {
-    const changes = db.getPendingRoteiroChanges(50);
-    if (!changes.length) return { ok: true, count: 0, pending: 0 };
+    let sentCount = 0;
+    let acceptedCount = 0;
+    let duplicateCount = 0;
 
-    const result = await pushRoteiroChanges(changes);
-    if (!result.ok) {
-        return { ...result, pending: db.getPendingRoteiroChangesCount() };
+    for (let batchNumber = 0; batchNumber < 50; batchNumber++) {
+        const changes = db.getPendingRoteiroChanges(100);
+        if (!changes.length) {
+            return {
+                ok: true,
+                count: sentCount,
+                acceptedCount,
+                duplicateCount,
+                pending: 0
+            };
+        }
+
+        const result = await pushRoteiroChanges(changes);
+        if (!result.ok) {
+            return {
+                ...result,
+                count: sentCount,
+                pending: db.getPendingRoteiroChangesCount()
+            };
+        }
+
+        const batchIds = new Set(changes.map(change => change.change_id));
+        const acceptedIds = (result.acceptedIds || []).filter(id => batchIds.has(id));
+        const duplicateIds = (result.duplicateIds || []).filter(id => batchIds.has(id));
+        const confirmedIds = [...new Set([...acceptedIds, ...duplicateIds])];
+        if (!confirmedIds.length) {
+            return {
+                ok: false,
+                error: 'O GAS não confirmou nenhuma alteração do lote enviado',
+                count: sentCount,
+                pending: db.getPendingRoteiroChangesCount()
+            };
+        }
+
+        db.markRoteiroChangesSent(confirmedIds);
+        sentCount += confirmedIds.length;
+        acceptedCount += acceptedIds.length;
+        duplicateCount += duplicateIds.length;
     }
 
-    const confirmedIds = [
-        ...(result.acceptedIds || []),
-        ...(result.duplicateIds || [])
-    ];
-    db.markRoteiroChangesSent(confirmedIds);
     return {
-        ...result,
-        count: confirmedIds.length,
+        ok: false,
+        error: 'A fila excedeu o limite de segurança de 5.000 alterações por sincronização',
+        count: sentCount,
         pending: db.getPendingRoteiroChangesCount()
     };
 }
