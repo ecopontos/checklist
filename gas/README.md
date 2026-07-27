@@ -43,6 +43,16 @@ curl -X POST "<URL>" -H "Content-Type: text/plain;charset=utf-8" \
 Esperado: `{"ok":true,"count":1}`, e uma nova linha na aba "Coletas" da
 planilha configurada.
 
+Para testar a consulta da última coleta de um roteiro (o nome deve ser o
+mesmo gravado na coluna `Roteiro`):
+
+```bash
+curl "<URL>?action=ultimaColeta&roteiro=SAT01"
+```
+
+Esperado: `{"ok":true,"data":"2026-07-21"}` com a data mais recente do
+roteiro, ou `{"ok":true,"data":null}` se ele ainda não tiver coletas.
+
 Para testar o envio de checklist (substitua `<URL>`; o base64 abaixo é o
 texto "teste" codificado, só para confirmar que a rota funciona — não é um
 PDF válido, mas é suficiente para verificar que o arquivo aparece na pasta):

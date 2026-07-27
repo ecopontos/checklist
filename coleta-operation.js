@@ -1,5 +1,5 @@
 import db from './database.js';
-import { pushColetas, sendChecklistToDrive } from './google-sync.js';
+import { pushColetas, sendChecklistToDrive, getUltimaColeta } from './google-sync.js';
 
 let currentClients = [];
 let sessionData = {};
@@ -9,6 +9,8 @@ let activeClientId = null;
 let previousRouteId = '';
 let operationSaved = false;
 let syncState = 'idle';
+let ultimaColetaData = null;
+let ultimaColetaRequestId = 0;
 
 async function init() {
     await db.init();
@@ -363,13 +365,35 @@ function bindTableEvents() {
         issueInput.addEventListener('change', updateFromRow);
         [qtyInput, issueInput].forEach(input => {
             input.addEventListener('keydown', event => {
-                if (event.key !== 'Enter') return;
-                event.preventDefault();
-                updateFromRow();
-                requestAnimationFrame(() => document.getElementById('idSearch').focus());
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    updateFromRow();
+                    requestAnimationFrame(() => document.getElementById('idSearch').focus());
+                    return;
+                }
+                if (event.key === 'Tab' && !event.shiftKey) {
+                    // renderList() rebuilds the whole table on commit, which destroys
+                    // the field the browser was about to focus mid-Tab. Commit first,
+                    // then manually focus the next field once the new DOM exists.
+                    event.preventDefault();
+                    updateFromRow();
+                    requestAnimationFrame(() => focusNextRowField(id, input === qtyInput ? 'issue' : 'next-qty'));
+                }
             });
         });
     });
+}
+
+function focusNextRowField(currentId, target) {
+    if (target === 'issue') {
+        document.querySelector(`tr[data-id="${CSS.escape(currentId)}"] [data-role="issue"]`)?.focus();
+        return;
+    }
+
+    const rowsEls = [...document.querySelectorAll('tbody tr[data-id]')];
+    const idx = rowsEls.findIndex(r => r.dataset.id === currentId);
+    const nextQty = idx !== -1 ? rowsEls[idx + 1]?.querySelector('[data-role="qty"]') : null;
+    (nextQty || document.getElementById('idSearch')).focus();
 }
 
 function updateStats() {
@@ -514,16 +538,48 @@ function escapeHTML(value) {
 }
 
 function openChecklistModal() {
-    if (!document.getElementById('routeSelect').value) {
+    const routeSelect = document.getElementById('routeSelect');
+    if (!routeSelect.value) {
         alert('Selecione um roteiro primeiro.');
         return;
     }
     document.getElementById('proxData').value = '';
     document.getElementById('checklistModal').classList.add('open');
     requestAnimationFrame(() => document.getElementById('proxData').focus());
+
+    const roteiroNome = routeSelect.options[routeSelect.selectedIndex]?.textContent || '';
+    loadUltimaColeta(roteiroNome);
+}
+
+async function loadUltimaColeta(roteiroNome) {
+    const requestId = ++ultimaColetaRequestId;
+    ultimaColetaData = null;
+    const field = document.getElementById('ultimaColeta');
+    const downloadBtn = document.getElementById('btnChecklistDownload');
+    const sendBtn = document.getElementById('btnChecklistSend');
+
+    field.value = 'Buscando...';
+    downloadBtn.disabled = true;
+    sendBtn.disabled = true;
+
+    const result = await getUltimaColeta(roteiroNome);
+    if (requestId !== ultimaColetaRequestId) return;
+
+    if (result.ok && result.data) {
+        ultimaColetaData = result.data;
+        field.value = formatDateBR(result.data);
+    } else if (result.ok) {
+        field.value = 'Nenhuma coleta anterior registrada';
+    } else {
+        field.value = 'Não foi possível buscar (verifique a conexão)';
+    }
+
+    downloadBtn.disabled = false;
+    sendBtn.disabled = false;
 }
 
 function closeChecklistModal() {
+    ultimaColetaRequestId++;
     document.getElementById('checklistModal').classList.remove('open');
     document.getElementById('btnChecklist').focus();
 }
@@ -539,7 +595,7 @@ function buildChecklistDoc() {
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     const routeSelect = document.getElementById('routeSelect');
     const roteiroNome = routeSelect.options[routeSelect.selectedIndex]?.textContent || '';
-    const dataColeta = document.getElementById('opDate').value;
+    const dataColeta = ultimaColetaData || '';
     const proxData = document.getElementById('proxData').value;
     const tipoResiduo = document.getElementById('tipoResiduo').value;
     const motorista = document.getElementById('checklistMotorista').value.trim();
@@ -558,7 +614,7 @@ function buildChecklistDoc() {
             client.cep || '',
             client.id_rota,
             quantity,
-            '',
+            quantity,
             session.issue || ''
         ];
     });
@@ -571,19 +627,7 @@ function buildChecklistDoc() {
     if (motorista) doc.text(`Motorista: ${motorista}`, 14, 32);
     if (veiculo) doc.text(`Veiculo: ${veiculo}`, 100, 32);
 
-    doc.autoTable({
-        startY: 36,
-        head: [['Ord.', 'Cliente', 'Logradouro', 'No', 'CEP', 'ID', 'Qtd. Ant.', 'Qtd. Coletada', 'Cód. Problema']],
-        body: rows,
-        styles: { fontSize: 8 },
-        headStyles: { fillColor: [26, 58, 92] }
-    });
-
-    const legendStartY = doc.lastAutoTable.finalY + 12;
-    doc.setFontSize(9);
-    doc.text('Códigos de Intercorrência:', 14, legendStartY);
-    doc.setFontSize(8);
-    [
+    const codigosProblemas = [
         '1. Recipiente ausente',
         '2. Recipiente em quantidade insuficiente',
         '3. Recipiente quebrado',
@@ -592,18 +636,48 @@ function buildChecklistDoc() {
         '6. Resíduo contaminado/misturado',
         '7. Sacolas/Sacos presentes no recipiente',
         '8. Outro'
-    ].forEach((item, index) => {
-        const column = index < 4 ? 0 : 1;
-        const row = index % 4;
-        doc.text(item, 14 + column * 140, legendStartY + 6 + row * 5);
+    ];
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const legendMaxWidth = doc.internal.pageSize.getWidth() - 28;
+    const legendLines = doc.splitTextToSize(codigosProblemas.join('     '), legendMaxWidth);
+    // Fixed bottom reserve, big enough for the per-page legend plus the
+    // signature block (which only gets drawn once, on the final page).
+    const footerReserve = 42;
+
+    doc.autoTable({
+        startY: 36,
+        head: [['Ord.', 'Cliente', 'Logradouro', 'No', 'CEP', 'ID', 'Qtd. Ant.', 'Qtd. Coletada', 'Cód. Problema']],
+        body: rows,
+        theme: 'grid',
+        styles: {
+            fontSize: 9,
+            cellPadding: 2.2,
+            lineColor: [40, 40, 40],
+            lineWidth: 0.3
+        },
+        headStyles: { fillColor: [26, 58, 92], textColor: 255, fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [222, 230, 238] },
+        columnStyles: {
+            7: { fillColor: [255, 248, 220] },
+            8: { fillColor: [255, 248, 220] }
+        },
+        margin: { bottom: footerReserve },
+        didDrawPage: () => {
+            const titleY = pageHeight - footerReserve + 6;
+            doc.setFontSize(7);
+            doc.setFont(undefined, 'bold');
+            doc.text('Códigos de Problemas:', 14, titleY);
+            doc.setFont(undefined, 'normal');
+            doc.text(legendLines, 14, titleY + 4);
+        }
     });
 
-    const finalY = legendStartY + 41;
+    const signatureY = pageHeight - 14;
     doc.setFontSize(9);
-    doc.text('_______________________', 30, finalY);
-    doc.text('Motorista', 55, finalY + 5);
-    doc.text('_______________________', 180, finalY);
-    doc.text('Supervisor', 205, finalY + 5);
+    doc.text('_______________________', 30, signatureY);
+    doc.text('Motorista', 55, signatureY + 5);
+    doc.text('_______________________', 180, signatureY);
+    doc.text('Supervisor', 205, signatureY + 5);
 
     return {
         doc,

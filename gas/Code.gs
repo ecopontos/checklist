@@ -26,6 +26,12 @@ function jsonResponse_(obj) {
 }
 
 function doGet(e) {
+    var params = (e && e.parameter) || {};
+
+    if (params.action === 'ultimaColeta') {
+        return getUltimaColeta_(params.roteiro || '');
+    }
+
     var config = getConfig_();
     if (!config.folderId) {
         return jsonResponse_({ ok: false, error: 'DRIVE_FOLDER_ID não configurado' });
@@ -48,6 +54,60 @@ function doGet(e) {
     } catch (err) {
         return jsonResponse_({ ok: false, error: err.message });
     }
+}
+
+function getUltimaColeta_(roteiroNome) {
+    var config = getConfig_();
+    if (!config.spreadsheetId) {
+        return jsonResponse_({ ok: false, error: 'SPREADSHEET_ID não configurado' });
+    }
+    if (!roteiroNome) {
+        return jsonResponse_({ ok: false, error: 'Parâmetro roteiro ausente' });
+    }
+
+    try {
+        var ss = SpreadsheetApp.openById(config.spreadsheetId);
+        var sheet = ss.getSheetByName(COLETAS_SHEET_NAME);
+        if (!sheet) {
+            return jsonResponse_({ ok: true, data: null });
+        }
+        if (sheet.getLastRow() === 0) {
+            return jsonResponse_({ ok: true, data: null });
+        }
+
+        var values = sheet.getDataRange().getValues();
+        var header = values[0];
+        var colData = header.indexOf('Data');
+        var colRoteiro = header.indexOf('Roteiro');
+        if (colData === -1 || colRoteiro === -1) {
+            return jsonResponse_({ ok: false, error: 'Colunas Data/Roteiro não encontradas na aba ' + COLETAS_SHEET_NAME });
+        }
+
+        var roteiroAlvo = roteiroNome.trim();
+        var lastDate = null;
+        for (var i = 1; i < values.length; i++) {
+            var row = values[i];
+            if (String(row[colRoteiro]).trim() !== roteiroAlvo) continue;
+
+            var normalized = normalizeDateValue_(row[colData]);
+            if (normalized && (!lastDate || normalized > lastDate)) {
+                lastDate = normalized;
+            }
+        }
+
+        return jsonResponse_({ ok: true, data: lastDate });
+    } catch (err) {
+        return jsonResponse_({ ok: false, error: err.message });
+    }
+}
+
+function normalizeDateValue_(value) {
+    if (!value) return null;
+    if (Object.prototype.toString.call(value) === '[object Date]') {
+        return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    }
+    var match = String(value).trim().match(/^(\d{4}-\d{2}-\d{2})/);
+    return match ? match[1] : null;
 }
 
 function doPost(e) {
