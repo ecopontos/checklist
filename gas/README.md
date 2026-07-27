@@ -35,6 +35,11 @@ Para publicar uma alteração, não crie outra implantação de produção:
 O Deployment ID e a URL `/exec` permanecem os mesmos. Todos os aplicativos
 que já usam essa URL passam a acessar o backend novo sem reconfiguração.
 
+O arquivo `gas/appsscript.json` mantém a seção `webapp` com acesso
+`ANYONE_ANONYMOUS` e execução como `USER_DEPLOYING`. Não remova essa seção:
+ela preserva o ponto de entrada público quando o projeto é enviado pelo
+`clasp`.
+
 ## Teste manual pós-deploy
 
 Depois de colocar um `cstExportaCheckList.csv` na pasta configurada, teste
