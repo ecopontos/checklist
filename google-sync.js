@@ -5,6 +5,7 @@
 
 const GAS_URL_KEY = 'app3_gas_url';
 const LAST_DRIVE_SYNC_KEY = 'app3_last_drive_sync';
+export const REQUIRED_GAS_API_VERSION = 2;
 
 export function getGasUrl() {
     return localStorage.getItem(GAS_URL_KEY) || '';
@@ -12,6 +13,33 @@ export function getGasUrl() {
 
 export function setGasUrl(url) {
     localStorage.setItem(GAS_URL_KEY, url);
+}
+
+export async function getGasStatus() {
+    const url = getGasUrl();
+    if (!url) return { ok: false, error: 'URL do GAS não configurada' };
+
+    try {
+        const res = await fetch(`${url}?action=status`);
+        if (!res.ok) {
+            return { ok: false, error: `Falha HTTP ${res.status}` };
+        }
+
+        const data = await res.json();
+        if (!data.ok) return data;
+        if (!Object.prototype.hasOwnProperty.call(data, 'apiVersion')) {
+            return { ok: true, service: 'satelite-gas-legado', apiVersion: 1, legacy: true };
+        }
+
+        const apiVersion = Number(data.apiVersion);
+        if (data.service !== 'satelite-gas' || !Number.isInteger(apiVersion) || apiVersion < 1) {
+            return { ok: false, error: 'Resposta de status do GAS inválida' };
+        }
+
+        return { ...data, apiVersion };
+    } catch (e) {
+        return { ok: false, error: e.message };
+    }
 }
 
 export async function pushColetas(coletas) {

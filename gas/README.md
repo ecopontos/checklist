@@ -23,10 +23,28 @@
 9. Copie a URL do Web App gerada (termina em `/exec`) — essa é a URL que
    vai no campo "URL do Web App do Google Apps Script" em `admin.html`.
 
+## Atualização sem trocar a URL dos aplicativos
+
+Para publicar uma alteração, não crie outra implantação de produção:
+
+1. Abra o mesmo projeto no Apps Script.
+2. Acesse "Implantar" > "Gerenciar implantações".
+3. Edite a implantação ativa.
+4. Selecione "Nova versão" e confirme a implantação.
+
+O Deployment ID e a URL `/exec` permanecem os mesmos. Todos os aplicativos
+que já usam essa URL passam a acessar o backend novo sem reconfiguração.
+
 ## Teste manual pós-deploy
 
 Depois de colocar um `cstExportaCheckList.csv` na pasta configurada, teste
 com `curl` (substitua `<URL>` pela URL do passo 9):
+
+```bash
+curl "<URL>?action=status"
+```
+
+Esperado: `{"ok":true,"service":"satelite-gas","apiVersion":2}`.
 
 ```bash
 curl "<URL>"
@@ -66,9 +84,37 @@ Esperado: `{"ok":true}`, e um arquivo `Checklist_TESTE_2026-01-01.pdf` na
 pasta configurada em `CHECKLISTS_FOLDER_ID`. Rodar o mesmo comando de novo
 deve substituir esse arquivo (mesmo nome), não duplicar.
 
-Toda vez que o `Code.gs` for editado no editor do Apps Script, é preciso
-criar uma **nova implantação** (ou gerenciar implantações > editar a
-implantação existente) para que as mudanças valham para a URL já em uso.
+## Publicação automatizada com GitHub Actions
+
+O workflow `.github/workflows/deploy-gas.yml` publica o conteúdo de `gas/`
+no mesmo Deployment ID. Ele é manual e usa o ambiente protegido
+`gas-production`.
+
+Antes da primeira execução:
+
+1. Ative a API do Google Apps Script em
+   https://script.google.com/home/usersettings.
+2. Execute `npx @google/clasp@3.3.0 login` em uma máquina confiável.
+3. Crie no GitHub o ambiente `gas-production`, preferencialmente com
+   aprovação obrigatória.
+
+Configure nesse ambiente:
+
+- Secret `CLASPRC_JSON`: conteúdo do arquivo `~/.clasprc.json` gerado por
+  `clasp login`.
+- Secret `CLASP_JSON`: JSON com o Script ID, normalmente
+  `{"scriptId":"SEU_SCRIPT_ID"}`.
+- Variable `GAS_DEPLOYMENT_ID`: ID da implantação de produção existente.
+- Variable `GAS_WEB_APP_URL`: URL de produção terminada em `/exec`.
+
+Para publicar, execute o workflow deixando `target_version` vazio. O fluxo
+envia o código, cria uma versão, atualiza a implantação existente e testa o
+endpoint `action=status`.
+
+Para rollback, execute novamente informando em `target_version` o número de
+uma versão GAS anterior. As propriedades do script
+(`SPREADSHEET_ID`, `DRIVE_FOLDER_ID` e `CHECKLISTS_FOLDER_ID`) não são
+alteradas pelo workflow.
 
 ## Limitação conhecida: linhas duplicadas em reenvios
 

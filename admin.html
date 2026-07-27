@@ -163,6 +163,12 @@
             font-size: 0.85rem;
         }
 
+        .sync-status-copy { display: flex; flex-direction: column; gap: 3px; }
+        .gas-version-status { color: var(--text-dim); font-size: 0.75rem; }
+        .gas-version-status.compatible { color: var(--success); }
+        .gas-version-status.outdated { color: var(--warning); }
+        .gas-version-status.error { color: var(--danger); }
+
         .status-dot { width: 8px; height: 8px; border-radius: 50%; }
         .status-online { background: var(--success); box-shadow: 0 0 10px var(--success); }
         .status-offline { background: var(--danger); }
@@ -298,7 +304,10 @@
 
                 <div class="sync-status">
                     <div class="status-dot status-offline" id="syncStatusDot"></div>
-                    <span id="syncStatusText">Verificando...</span>
+                    <div class="sync-status-copy">
+                        <span id="syncStatusText">Verificando...</span>
+                        <span class="gas-version-status" id="gasVersionStatus">API GAS: verificando...</span>
+                    </div>
                 </div>
 
                 <div style="display: flex; flex-direction: column; gap: 10px;">
@@ -372,7 +381,13 @@
     <script src="vendor/sql-wasm.js"></script>
     <script type="module">
         import db from './database.js';
-        import { getGasUrl, setGasUrl, checkAndImportRoteiros } from './google-sync.js';
+        import {
+            getGasUrl,
+            setGasUrl,
+            getGasStatus,
+            checkAndImportRoteiros,
+            REQUIRED_GAS_API_VERSION
+        } from './google-sync.js';
 
         let legacyData = { rotas: [], roteiros: [], coletas: [] };
 
@@ -381,7 +396,10 @@
             updateStats();
 
             document.getElementById('gasUrl').value = getGasUrl();
-            document.getElementById('gasUrl').onchange = (e) => setGasUrl(e.target.value.trim());
+            document.getElementById('gasUrl').onchange = (e) => {
+                setGasUrl(e.target.value.trim());
+                window.checkDriveUpdate();
+            };
 
             // File listeners
             document.getElementById('legacyRota').onchange = (e) => handleFile(e, 'rotas');
@@ -509,15 +527,35 @@
         window.checkDriveUpdate = async () => {
             const dot = document.getElementById('syncStatusDot');
             const text = document.getElementById('syncStatusText');
+            const versionText = document.getElementById('gasVersionStatus');
 
             if (!getGasUrl()) {
                 dot.className = 'status-dot status-offline';
                 text.textContent = 'URL do Google Apps Script não configurada';
+                versionText.className = 'gas-version-status error';
+                versionText.textContent = 'API GAS: não configurada';
                 return;
             }
 
             text.textContent = 'Verificando atualização...';
-            const result = await checkAndImportRoteiros(db);
+            versionText.className = 'gas-version-status';
+            versionText.textContent = 'API GAS: verificando...';
+
+            const [gasStatus, result] = await Promise.all([
+                getGasStatus(),
+                checkAndImportRoteiros(db)
+            ]);
+
+            if (!gasStatus.ok) {
+                versionText.className = 'gas-version-status error';
+                versionText.textContent = `API GAS: não foi possível verificar (${gasStatus.error || 'erro desconhecido'})`;
+            } else if (Number(gasStatus.apiVersion) < REQUIRED_GAS_API_VERSION) {
+                versionText.className = 'gas-version-status outdated';
+                versionText.textContent = `API GAS v${gasStatus.apiVersion}: atualização v${REQUIRED_GAS_API_VERSION} necessária`;
+            } else {
+                versionText.className = 'gas-version-status compatible';
+                versionText.textContent = `API GAS v${gasStatus.apiVersion}: compatível`;
+            }
 
             if (result.error) {
                 dot.className = 'status-dot status-offline';

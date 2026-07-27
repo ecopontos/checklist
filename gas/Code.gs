@@ -10,6 +10,7 @@
 
 var CSV_FILE_NAME = 'cstExportaCheckList.csv';
 var COLETAS_SHEET_NAME = 'Coletas';
+var GAS_API_VERSION = 2;
 
 function getConfig_() {
     var props = PropertiesService.getScriptProperties();
@@ -27,6 +28,14 @@ function jsonResponse_(obj) {
 
 function doGet(e) {
     var params = (e && e.parameter) || {};
+
+    if (params.action === 'status') {
+        return jsonResponse_({
+            ok: true,
+            service: 'satelite-gas',
+            apiVersion: GAS_API_VERSION
+        });
+    }
 
     if (params.action === 'ultimaColeta') {
         return getUltimaColeta_(params.roteiro || '');

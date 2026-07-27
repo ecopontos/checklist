@@ -1,0 +1,134 @@
+name: Publicar GAS
+
+on:
+  workflow_dispatch:
+    inputs:
+      description:
+        description: Descrição da versão a publicar
+        required: false
+        type: string
+      target_version:
+        description: Versão GAS existente para rollback (deixe vazio para publicar o código atual)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gas-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Atualizar implantação de produção
+    runs-on: ubuntu-latest
+    environment: gas-production
+    env:
+      GAS_DEPLOYMENT_ID: ${{ vars.GAS_DEPLOYMENT_ID }}
+      GAS_WEB_APP_URL: ${{ vars.GAS_WEB_APP_URL }}
+      TARGET_VERSION: ${{ inputs.target_version }}
+      RELEASE_DESCRIPTION: ${{ inputs.description }}
+
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validar configuração
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$GAS_DEPLOYMENT_ID" || { echo "Variable GAS_DEPLOYMENT_ID ausente"; exit 1; }
+          test -n "$GAS_WEB_APP_URL" || { echo "Variable GAS_WEB_APP_URL ausente"; exit 1; }
+
+      - name: Configurar autenticação do clasp
+        shell: bash
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          CLASP_JSON: ${{ secrets.CLASP_JSON }}
+        run: |
+          set -euo pipefail
+          test -n "$CLASPRC_JSON" || { echo "Secret CLASPRC_JSON ausente"; exit 1; }
+          test -n "$CLASP_JSON" || { echo "Secret CLASP_JSON ausente"; exit 1; }
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          printf '%s' "$CLASP_JSON" > gas/.clasp.json
+
+      - name: Publicar ou reverter versão
+        working-directory: gas
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          description="$RELEASE_DESCRIPTION"
+          if [ -z "$description" ]; then
+            description="GitHub ${GITHUB_SHA::7}"
+          fi
+
+          version="$TARGET_VERSION"
+          if [ -n "$version" ] && ! [[ "$version" =~ ^[0-9]+$ ]]; then
+            echo "target_version deve conter somente o número da versão GAS"
+            exit 1
+          fi
+
+          if [ -z "$version" ]; then
+            npx --yes @google/clasp@3.3.0 push --force
+            version_output="$(npx --yes @google/clasp@3.3.0 create-version "$description")"
+            printf '%s\n' "$version_output"
+            version="$(printf '%s\n' "$version_output" | grep -Eo '[0-9]+' | tail -1)"
+            test -n "$version" || { echo "Não foi possível identificar a versão criada"; exit 1; }
+          else
+            description="Rollback para GAS v$version - $description"
+          fi
+
+          npx --yes @google/clasp@3.3.0 update-deployment "$GAS_DEPLOYMENT_ID" --versionNumber "$version" --description "$description"
+          echo "GAS v$version apontado pelo deployment $GAS_DEPLOYMENT_ID"
+
+      - name: Validar Web App publicado
+        shell: bash
+        run: |
+          set -euo pipefail
+          verified=false
+
+          if [ -z "$TARGET_VERSION" ]; then
+            expected="$(sed -n 's/^var GAS_API_VERSION = \([0-9][0-9]*\);/\1/p' gas/Code.gs)"
+            test -n "$expected" || { echo "GAS_API_VERSION não encontrada"; exit 1; }
+            url="$GAS_WEB_APP_URL?action=status&run=$GITHUB_RUN_ID"
+
+            for attempt in 1 2 3 4 5 6; do
+              if payload="$(curl --fail --location --silent --show-error "$url")"; then
+                if STATUS_JSON="$payload" EXPECTED_API_VERSION="$expected" node -e '
+                  const data = JSON.parse(process.env.STATUS_JSON);
+                  const expected = Number(process.env.EXPECTED_API_VERSION);
+                  if (!data.ok || data.service !== "satelite-gas" || Number(data.apiVersion) < expected) process.exit(1);
+                  console.log(`GAS v${data.apiVersion} validado com sucesso`);
+                '; then
+                  verified=true
+                  break
+                fi
+              fi
+              echo "Tentativa $attempt ainda não refletiu a nova versão; aguardando..."
+              sleep 5
+            done
+          else
+            for attempt in 1 2 3 4 5 6; do
+              if payload="$(curl --fail --location --silent --show-error "$GAS_WEB_APP_URL")"; then
+                if STATUS_JSON="$payload" node -e '
+                  const data = JSON.parse(process.env.STATUS_JSON);
+                  if (!data.ok) process.exit(1);
+                  console.log("Endpoint base validado após rollback");
+                '; then
+                  verified=true
+                  break
+                fi
+              fi
+              echo "Tentativa $attempt ainda não respondeu corretamente; aguardando..."
+              sleep 5
+            done
+          fi
+
+          test "$verified" = true || { echo "A implantação não passou no teste final"; exit 1; }
