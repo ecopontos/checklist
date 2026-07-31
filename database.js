@@ -245,7 +245,18 @@ class AppDatabase {
             skipEmptyLines: true,
             dynamicTyping: true
         });
-        const data = results.data;
+
+        const comOrdemValida = results.data.filter(row => {
+            const ordem = this._getCsvVal(row, 'Ordem');
+            return ordem !== null && ordem !== undefined && ordem !== '' && Number(ordem) !== 0;
+        });
+
+        const semDuplicataRoteiroCliente = new Map();
+        comOrdemValida.forEach(row => {
+            const chave = this._getCsvVal(row, 'Roteiro') + '||' + this._getCsvVal(row, 'Cliente');
+            semDuplicataRoteiroCliente.set(chave, row);
+        });
+        const data = [...semDuplicataRoteiroCliente.values()];
 
         const uniqueRoteiros = [...new Set(data.map(r => this._getCsvVal(r, 'Roteiro')).filter(Boolean))];
         uniqueRoteiros.forEach(name => this.addRoteiro(name));
