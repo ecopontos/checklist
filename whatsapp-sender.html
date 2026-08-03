@@ -664,11 +664,16 @@ function navigate(dir) {
   renderCurrentContact();
 }
 
-function openWA() {
+async function openWA() {
   const row = rows[current];
   const phone = getPhone(row);
   const text  = encodeURIComponent(buildMsg(row));
-  window.open(`https://wa.me/${phone}?text=${text}`, '_blank');
+  const url = `https://wa.me/${phone}?text=${text}`;
+  if (window.__TAURI_INTERNALS__) {
+    await window.__TAURI_INTERNALS__.invoke('plugin:shell|open', { url });
+  } else {
+    window.open(url, '_blank');
+  }
   // auto-mark sent after opening
   setTimeout(() => { if (statuses[current] === 'pending') markSent(); }, 1200);
 }

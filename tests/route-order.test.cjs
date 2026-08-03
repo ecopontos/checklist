@@ -40,6 +40,7 @@ function createContext() {
       assert.strictEqual(body.action, 'routeChanges');
       assert.ok(body.changes.length > 0 && body.changes.length <= 100);
       return {
+        ok: true,
         json: async () => ({
           ok: true,
           acceptedIds: body.changes.map(change => change.change_id),

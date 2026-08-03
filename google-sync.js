@@ -8,8 +8,12 @@ const LAST_DRIVE_SYNC_KEY = 'app3_last_drive_sync';
 const GAS_ROUTE_TOKEN_KEY = 'app3_gas_route_token';
 export const REQUIRED_GAS_API_VERSION = 3;
 
+function getAppConfig_() {
+    return (typeof window !== 'undefined' && window.APP_CONFIG) || {};
+}
+
 export function getGasUrl() {
-    return localStorage.getItem(GAS_URL_KEY) || '';
+    return localStorage.getItem(GAS_URL_KEY) || getAppConfig_().gasUrl || '';
 }
 
 export function setGasUrl(url) {
@@ -17,7 +21,7 @@ export function setGasUrl(url) {
 }
 
 export function getGasRouteToken() {
-    return localStorage.getItem(GAS_ROUTE_TOKEN_KEY) || '';
+    return localStorage.getItem(GAS_ROUTE_TOKEN_KEY) || getAppConfig_().gasRouteToken || '';
 }
 
 export function setGasRouteToken(token) {
@@ -62,6 +66,9 @@ export async function pushColetas(coletas) {
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify({ coletas })
         });
+        if (!res.ok) {
+            return { ok: false, error: `Falha HTTP ${res.status}` };
+        }
         return await res.json();
     } catch (e) {
         return { ok: false, error: e.message };
@@ -74,6 +81,10 @@ export async function checkAndImportRoteiros(db) {
 
     try {
         const res = await fetch(url, { method: 'GET' });
+        if (!res.ok) {
+            return { checked: true, updated: false, error: `Falha HTTP ${res.status}` };
+        }
+
         const data = await res.json();
 
         if (!data.ok) {
@@ -86,6 +97,11 @@ export async function checkAndImportRoteiros(db) {
         }
 
         const result = db.importRoteirosCsv(data.content);
+
+        if (result.roteiros === 0 && result.clientes === 0) {
+            return { checked: true, updated: false, warning: 'CSV vazio ou formato inválido' };
+        }
+
         localStorage.setItem(LAST_DRIVE_SYNC_KEY, data.modifiedTime);
         return { checked: true, updated: true, ...result };
     } catch (e) {
@@ -118,6 +134,9 @@ export async function sendChecklistToDrive(filename, pdfBase64) {
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify({ checklist: { filename, pdfBase64 } })
         });
+        if (!res.ok) {
+            return { ok: false, error: `Falha HTTP ${res.status}` };
+        }
         return await res.json();
     } catch (e) {
         return { ok: false, error: e.message };
@@ -144,6 +163,9 @@ export async function pushRoteiroChanges(changes) {
                 changes
             })
         });
+        if (!res.ok) {
+            return { ok: false, error: `Falha HTTP ${res.status}` };
+        }
         return await res.json();
     } catch (e) {
         return { ok: false, error: e.message };

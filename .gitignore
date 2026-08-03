@@ -9,8 +9,10 @@ Thumbs.db
 .worktrees/
 node_modules/
 dist/
+src-tauri/target/
 package-lock.json
 .clasp.json
 .clasprc.json
+config.local.js
 .playwright-mcp/
 legado/*.accdb

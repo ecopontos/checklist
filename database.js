@@ -240,7 +240,8 @@ class AppDatabase {
     }
 
     importRoteirosCsv(csvText) {
-        const results = Papa.parse(csvText, {
+        const cleanText = csvText.replace(/^\uFEFF/, '');
+        const results = Papa.parse(cleanText, {
             header: true,
             skipEmptyLines: true,
             dynamicTyping: true

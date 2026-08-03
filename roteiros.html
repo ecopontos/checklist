@@ -323,6 +323,8 @@
     </style>
     <link rel="stylesheet" href="theme.css">
     <script src="theme.js"></script>
+    <script src="config.js"></script>
+    <script src="config.local.js"></script>
 </head>
 <body>
     <div class="container">
@@ -872,7 +874,11 @@
                 alert('Selecione um roteiro no filtro para imprimir o checklist.');
                 return;
             }
-            window.open(`imprimir.html?id=${routeId}`, '_blank');
+            if (window.__TAURI_INTERNALS__) {
+                window.location.href = `imprimir.html?id=${routeId}`;
+            } else {
+                window.open(`imprimir.html?id=${routeId}`, '_blank');
+            }
         };
 
         async function queueAndSyncAccessChange(idRota) {

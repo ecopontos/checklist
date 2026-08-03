@@ -248,6 +248,8 @@
     </style>
     <link rel="stylesheet" href="theme.css">
     <script src="theme.js"></script>
+    <script src="config.js"></script>
+    <script src="config.local.js"></script>
 </head>
 <body>
     <div class="container">
@@ -601,6 +603,12 @@
             if (result.error) {
                 dot.className = 'status-dot status-offline';
                 text.textContent = `Erro: ${result.error}`;
+                return;
+            }
+
+            if (result.warning) {
+                dot.className = 'status-dot status-offline';
+                text.textContent = result.warning;
                 return;
             }
 
