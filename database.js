@@ -394,6 +394,15 @@ class AppDatabase {
         return id;
     }
 
+    getUltimaQuantidade(idRota) {
+        const res = this.db.exec(
+            "SELECT quantidade FROM coletas WHERE id_rota = ? ORDER BY id DESC LIMIT 1",
+            [String(idRota)]
+        );
+        if (!res.length || !res[0].values.length) return null;
+        return res[0].values[0][0];
+    }
+
     getColetasByDate(data) {
         const res = this.db.exec(`
             SELECT c.*, cl.cliente

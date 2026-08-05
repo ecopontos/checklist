@@ -113,14 +113,43 @@ export async function getUltimaColeta(roteiroNome) {
     const url = getGasUrl();
     if (!url) return { ok: false, error: 'URL do GAS não configurada' };
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000);
     try {
-        const res = await fetch(`${url}?action=ultimaColeta&roteiro=${encodeURIComponent(roteiroNome)}`);
+        const res = await fetch(
+            `${url}?action=ultimaColeta&roteiro=${encodeURIComponent(roteiroNome)}`,
+            { signal: controller.signal }
+        );
         if (!res.ok) {
             return { ok: false, error: `Falha HTTP ${res.status}` };
         }
         return await res.json();
     } catch (e) {
         return { ok: false, error: e.message };
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+export async function getUltimasQuantidades(roteiroNome) {
+    const url = getGasUrl();
+    if (!url) return { ok: false, error: 'URL do GAS não configurada' };
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000);
+    try {
+        const res = await fetch(
+            `${url}?action=ultimaColetaDetalhada&roteiro=${encodeURIComponent(roteiroNome)}`,
+            { signal: controller.signal }
+        );
+        if (!res.ok) {
+            return { ok: false, error: `Falha HTTP ${res.status}` };
+        }
+        return await res.json();
+    } catch (e) {
+        return { ok: false, error: e.message };
+    } finally {
+        clearTimeout(timeout);
     }
 }
 

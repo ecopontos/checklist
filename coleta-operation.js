@@ -1,5 +1,5 @@
 import db from './database.js';
-import { pushColetas, sendChecklistToDrive, getUltimaColeta } from './google-sync.js';
+import { pushColetas, sendChecklistToDrive, getUltimaColeta, getUltimasQuantidades } from './google-sync.js';
 
 let currentClients = [];
 let sessionData = {};
@@ -11,6 +11,8 @@ let operationSaved = false;
 let syncState = 'idle';
 let ultimaColetaData = null;
 let ultimaColetaRequestId = 0;
+let ultimasQuantidades = {};
+let checklistDataReady = null;
 
 async function init() {
     await db.init();
@@ -104,6 +106,7 @@ function loadRoute(routeId) {
     previousRouteId = routeId;
     currentClients = routeId ? db.getClientesByRoteiro(routeId) : [];
     sessionData = {};
+    ultimasQuantidades = {};
     activeClientId = null;
     currentSort = 'ordem';
     currentFilter = 'all';
@@ -548,21 +551,36 @@ function openChecklistModal() {
     requestAnimationFrame(() => document.getElementById('proxData').focus());
 
     const roteiroNome = routeSelect.options[routeSelect.selectedIndex]?.textContent || '';
-    loadUltimaColeta(roteiroNome);
+    ultimasQuantidades = {};
+    // Carrega os dois dados do GAS SEQUENCIALMENTE (data da última coleta e
+    // quantidades por ponto). Em paralelo, o GAS enfileira as duas execuções
+    // e o tempo total dispara (medido ~154s), estourando o timeout do cliente
+    // e resultando em "Não foi possível buscar". A promessa é guardada para
+    // que a geração do PDF aguarde ambos antes de montar o documento (senão
+    // "Qtd. Ant." sai em branco e "Recipientes Previstos: 0").
+    checklistDataReady = (async () => {
+        await loadUltimaColeta(roteiroNome);
+        await loadUltimasQuantidades(roteiroNome);
+    })();
+}
+
+async function waitForChecklistData() {
+    if (!checklistDataReady) return;
+    await checklistDataReady;
 }
 
 async function loadUltimaColeta(roteiroNome) {
     const requestId = ++ultimaColetaRequestId;
     ultimaColetaData = null;
     const field = document.getElementById('ultimaColeta');
-    const downloadBtn = document.getElementById('btnChecklistDownload');
     const sendBtn = document.getElementById('btnChecklistSend');
 
     field.value = 'Buscando...';
-    downloadBtn.disabled = true;
     sendBtn.disabled = true;
 
     const result = await getUltimaColeta(roteiroNome);
+
+    sendBtn.disabled = false;
     if (requestId !== ultimaColetaRequestId) return;
 
     if (result.ok && result.data) {
@@ -571,11 +589,32 @@ async function loadUltimaColeta(roteiroNome) {
     } else if (result.ok) {
         field.value = 'Nenhuma coleta anterior registrada';
     } else {
-        field.value = 'Não foi possível buscar (verifique a conexão)';
+        field.value = `Não foi possível buscar: ${result.error || 'verifique a conexão'}`;
+    }
+}
+
+async function loadUltimasQuantidades(roteiroNome) {
+    const requestId = ultimaColetaRequestId;
+    const result = await getUltimasQuantidades(roteiroNome);
+    if (requestId !== ultimaColetaRequestId) return;
+    if (!result.ok || !Array.isArray(result.data)) {
+        const errMsg = result.error || 'resposta inesperada';
+        console.warn('getUltimasQuantidades falhou:', errMsg, result);
+        const field = document.getElementById('ultimaColeta');
+        const dateText = field ? field.value : '';
+        if (!dateText.includes('Não foi possível')) {
+            field.value = dateText + ` | Qtd. Ant.: ${errMsg}`;
+        }
+        return;
     }
 
-    downloadBtn.disabled = false;
-    sendBtn.disabled = false;
+    const next = {};
+    result.data.forEach(item => {
+        const idRota = String(item.id_rota);
+        if (idRota) next[idRota] = item.quantidade;
+    });
+    ultimasQuantidades = next;
+    console.log('ultimasQuantidades carregadas:', result.data, '-> chaves:', Object.keys(next));
 }
 
 function closeChecklistModal() {
@@ -601,11 +640,14 @@ function buildChecklistDoc() {
     const motorista = document.getElementById('checklistMotorista').value.trim();
     const veiculo = document.getElementById('checklistVeiculo').value.trim();
 
+    console.log('buildChecklistDoc ultimasQuantidades:', ultimasQuantidades);
     let totalPrevisto = 0;
     const rows = currentClients.map((client, index) => {
         const session = sessionData[clientKey(client)] || {};
-        const quantity = session.qty > 0 ? session.qty : '';
-        if (session.qty > 0) totalPrevisto += session.qty;
+        const qtdAnt = ultimasQuantidades[clientKey(client)]
+            ?? db.getUltimaQuantidade(client.id_rota)
+            ?? 0;
+        if (qtdAnt > 0) totalPrevisto += qtdAnt;
         return [
             client.ordem || index + 1,
             client.cliente,
@@ -613,8 +655,8 @@ function buildChecklistDoc() {
             client.numero || '',
             client.cep || '',
             client.id_rota,
-            quantity,
-            quantity,
+            qtdAnt || '',
+            '',
             session.issue || ''
         ];
     });
@@ -685,8 +727,17 @@ function buildChecklistDoc() {
     };
 }
 
-function downloadChecklist() {
+async function downloadChecklist() {
+    await waitForChecklistData();
     const { doc, filename } = buildChecklistDoc();
+    const tauri = window.__TAURI__;
+    if (tauri && tauri.core && typeof tauri.core.invoke === 'function') {
+        const pdfBase64 = doc.output('datauristring').split(',')[1];
+        tauri.core.invoke('save_checklist_pdf', { pdfBase64, filename })
+            .then(path => alert(`PDF baixado: ${path}`))
+            .catch(error => alert(`Não foi possível baixar o PDF: ${error}`));
+        return;
+    }
     doc.save(filename);
 }
 
@@ -696,6 +747,7 @@ async function sendChecklistToDriveHandler() {
         return;
     }
 
+    await waitForChecklistData();
     const { doc, filename } = buildChecklistDoc();
     const pdfBase64 = doc.output('datauristring').split(',')[1];
     const result = await sendChecklistToDrive(filename, pdfBase64);
