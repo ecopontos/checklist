@@ -602,14 +602,13 @@
 
             if (result.error) {
                 dot.className = 'status-dot status-offline';
-                // Assinatura de implantação obsoleta/substituída do GAS: o
-                // endpoint responde ao ?action=status (resposta pequena, servida
-                // inline) mas retorna HTTP 404 no import do CSV (resposta grande,
-                // que passa pela etapa de redirecionamento de conteúdo do Google).
-                // Nesse caso a URL aponta para uma implantação antiga.
-                const deployObsoleta = gasStatus.ok && /Falha HTTP 404/.test(result.error);
-                text.textContent = deployObsoleta
-                    ? 'Erro: a URL responde ao status mas retorna HTTP 404 no import — implantação do GAS provavelmente obsoleta/substituída. Confirme se a URL corresponde à implantação atual (campo acima) ou reimplante o Code.gs na mesma implantação.'
+                // status responde (resposta pequena, inline) mas o import do CSV
+                // deu 404 mesmo após as tentativas. Isso pode ser um 404
+                // transitório do Google em respostas grandes OU uma implantação
+                // obsoleta. Mensagem sugere tentar de novo antes de suspeitar da URL.
+                const importe404 = gasStatus.ok && /Falha HTTP 404/.test(result.error);
+                text.textContent = importe404
+                    ? 'Erro: HTTP 404 no import do CSV (o status responde normalmente). Costuma ser falha temporária do Google em respostas grandes — clique em "Verificar agora" novamente. Se persistir, confirme se a URL é a da implantação atual (campo acima) ou reimplante o Code.gs na mesma implantação.'
                     : `Erro: ${result.error}`;
                 return;
             }

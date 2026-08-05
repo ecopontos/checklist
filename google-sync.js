@@ -79,12 +79,29 @@ export async function checkAndImportRoteiros(db) {
     const url = getGasUrl();
     if (!url) return { checked: false, reason: 'no-url' };
 
-    try {
-        const res = await fetch(url, { method: 'GET' });
-        if (!res.ok) {
-            return { checked: true, updated: false, error: `Falha HTTP ${res.status}` };
+    // O import do CSV é uma resposta grande (~150 KB) que passa pela etapa de
+    // redirecionamento de conteúdo do Google; essa etapa às vezes devolve um
+    // 404 transitório. Tenta algumas vezes antes de desistir, para não
+    // confundir uma falha passageira com uma implantação obsoleta.
+    let res = null;
+    let lastError = '';
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            res = await fetch(url, { method: 'GET' });
+            if (res.ok) break;
+            lastError = `Falha HTTP ${res.status}`;
+            res = null;
+        } catch (e) {
+            lastError = e.message;
+            res = null;
         }
+        if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 1200));
+    }
+    if (!res) {
+        return { checked: true, updated: false, error: lastError };
+    }
 
+    try {
         const data = await res.json();
 
         if (!data.ok) {
