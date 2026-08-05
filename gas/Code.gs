@@ -19,6 +19,11 @@ var ROUTE_CHANGES_HEADERS = [
 var ROUTE_CHANGES_MAX_DELIVERY = 2000;
 var GAS_API_VERSION = 3;
 var CSV_DECODE_SYNC_OFFSET_MS = 1;
+// Consultas de última coleta varrem apenas as linhas mais recentes da aba
+// Coletas (append-only, cronológica). Varrer a aba inteira chega a ~37s e pode
+// estourar o limite do GAS. Se o roteiro não aparecer na janela, há fallback
+// para varredura completa.
+var COLETAS_RECENT_ROWS = 8000;
 
 function getConfig_() {
     var props = PropertiesService.getScriptProperties();
@@ -54,6 +59,11 @@ function doGet(e) {
     if (params.action === 'ultimaColeta') {
         return getUltimaColeta_(params.roteiro || '');
     }
+
+    if (params.action === 'ultimaColetaDetalhada') {
+        return getUltimaColetaDetalhada_(params.roteiro || '');
+    }
+
 
     var config = getConfig_();
     if (!config.folderId) {
@@ -143,33 +153,60 @@ function getUltimaColeta_(roteiroNome) {
     try {
         var ss = SpreadsheetApp.openById(config.spreadsheetId);
         var sheet = ss.getSheetByName(COLETAS_SHEET_NAME);
-        if (!sheet) {
-            return jsonResponse_({ ok: true, data: null });
-        }
-        if (sheet.getLastRow() === 0) {
+        if (!sheet || sheet.getLastRow() < 2) {
             return jsonResponse_({ ok: true, data: null });
         }
 
-        var values = sheet.getDataRange().getValues();
-        var header = values[0];
+        var roteiroAlvo = roteiroNome.trim();
+        var lastRow = sheet.getLastRow();
+
+        // Cache com chave que inclui lastRow: novas coletas mudam lastRow e
+        // invalidam a entrada automaticamente. Evita revarrer a aba Coletas
+        // (que pode ter milhares de linhas) a cada geração de checklist.
+        var cache = CacheService.getScriptCache();
+        var cacheKey = 'uc:' + lastRow + ':' + roteiroAlvo;
+        var cached = cache.get(cacheKey);
+        if (cached !== null) {
+            return jsonResponse_({ ok: true, data: cached === '' ? null : cached });
+        }
+
+        var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
         var colData = header.indexOf('Data');
         var colRoteiro = header.indexOf('Roteiro');
         if (colData === -1 || colRoteiro === -1) {
             return jsonResponse_({ ok: false, error: 'Colunas Data/Roteiro não encontradas na aba ' + COLETAS_SHEET_NAME });
         }
 
-        var roteiroAlvo = roteiroNome.trim();
-        var lastDate = null;
-        for (var i = 1; i < values.length; i++) {
-            var row = values[i];
-            if (String(row[colRoteiro]).trim() !== roteiroAlvo) continue;
+        // Lê apenas o intervalo de colunas necessário (Data..Roteiro) e apenas
+        // as linhas mais recentes.
+        var minCol = Math.min(colData, colRoteiro);
+        var width = Math.max(colData, colRoteiro) - minCol + 1;
+        var dOff = colData - minCol;
+        var rOff = colRoteiro - minCol;
 
-            var normalized = normalizeDateValue_(row[colData]);
-            if (normalized && (!lastDate || normalized > lastDate)) {
-                lastDate = normalized;
+        function scanLastDate(startRow) {
+            var num = lastRow - startRow + 1;
+            if (num < 1) return null;
+            var values = sheet.getRange(startRow, minCol + 1, num, width).getValues();
+            var ld = null;
+            for (var i = 0; i < values.length; i++) {
+                if (String(values[i][rOff]).trim() !== roteiroAlvo) continue;
+                var normalized = normalizeDateValue_(values[i][dOff]);
+                if (normalized && (!ld || normalized > ld)) {
+                    ld = normalized;
+                }
             }
+            return ld;
         }
 
+        var recentStart = Math.max(2, lastRow - COLETAS_RECENT_ROWS + 1);
+        var lastDate = scanLastDate(recentStart);
+        // Fallback: roteiro não coletado dentro da janela recente — varre tudo.
+        if (!lastDate && recentStart > 2) {
+            lastDate = scanLastDate(2);
+        }
+
+        cache.put(cacheKey, lastDate || '', 21600);
         return jsonResponse_({ ok: true, data: lastDate });
     } catch (err) {
         return jsonResponse_({ ok: false, error: err.message });
@@ -183,6 +220,96 @@ function normalizeDateValue_(value) {
     }
     var match = String(value).trim().match(/^(\d{4}-\d{2}-\d{2})/);
     return match ? match[1] : null;
+}
+
+function getUltimaColetaDetalhada_(roteiroNome) {
+    var config = getConfig_();
+    if (!config.spreadsheetId) {
+        return jsonResponse_({ ok: false, error: 'SPREADSHEET_ID não configurado' });
+    }
+    if (!roteiroNome) {
+        return jsonResponse_({ ok: false, error: 'Parâmetro roteiro ausente' });
+    }
+
+    try {
+        var ss = SpreadsheetApp.openById(config.spreadsheetId);
+        var sheet = ss.getSheetByName(COLETAS_SHEET_NAME);
+        if (!sheet || sheet.getLastRow() < 2) {
+            return jsonResponse_({ ok: true, data: [] });
+        }
+
+        var roteiroAlvo = roteiroNome.trim();
+        var lastRow = sheet.getLastRow();
+
+        var cache = CacheService.getScriptCache();
+        var cacheKey = 'ucd:' + lastRow + ':' + roteiroAlvo;
+        var cached = cache.get(cacheKey);
+        if (cached !== null) {
+            return jsonResponse_({ ok: true, data: JSON.parse(cached) });
+        }
+
+        var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+        var colIdRota = header.indexOf('ID Rota');
+        var colData = header.indexOf('Data');
+        var colRoteiro = header.indexOf('Roteiro');
+        var colQuantidade = header.indexOf('Quantidade');
+        if (colIdRota === -1 || colData === -1 || colRoteiro === -1 || colQuantidade === -1) {
+            return jsonResponse_({ ok: false, error: 'Colunas ID Rota/Data/Roteiro/Quantidade não encontradas na aba ' + COLETAS_SHEET_NAME });
+        }
+
+        var wanted = [colIdRota, colData, colRoteiro, colQuantidade];
+        var minCol = Math.min.apply(null, wanted);
+        var width = Math.max.apply(null, wanted) - minCol + 1;
+        var iOff = colIdRota - minCol;
+        var dOff = colData - minCol;
+        var rOff = colRoteiro - minCol;
+        var qOff = colQuantidade - minCol;
+
+        // Varre apenas as linhas recentes (ver getUltimaColeta_). Retorna os
+        // recipientes coletados na data mais recente do roteiro, ou null se o
+        // roteiro não aparecer no intervalo (dispara o fallback completo).
+        function computeFromRange(startRow) {
+            var num = lastRow - startRow + 1;
+            if (num < 1) return null;
+            var values = sheet.getRange(startRow, minCol + 1, num, width).getValues();
+            var ld = null;
+            for (var i = 0; i < values.length; i++) {
+                if (String(values[i][rOff]).trim() !== roteiroAlvo) continue;
+                var normalized = normalizeDateValue_(values[i][dOff]);
+                if (normalized && (!ld || normalized > ld)) {
+                    ld = normalized;
+                }
+            }
+            if (!ld) return null;
+            var pontos = {};
+            for (var j = 0; j < values.length; j++) {
+                if (String(values[j][rOff]).trim() !== roteiroAlvo) continue;
+                if (normalizeDateValue_(values[j][dOff]) !== ld) continue;
+                var idRota = String(values[j][iOff]).trim();
+                if (!idRota) continue;
+                var quantidade = Number(values[j][qOff]) || 0;
+                if (quantidade > 0) {
+                    pontos[idRota] = quantidade;
+                }
+            }
+            return Object.keys(pontos).map(function (idRota) {
+                return { id_rota: idRota, quantidade: pontos[idRota] };
+            });
+        }
+
+        var recentStart = Math.max(2, lastRow - COLETAS_RECENT_ROWS + 1);
+        var data = computeFromRange(recentStart);
+        // Fallback: roteiro não coletado dentro da janela recente — varre tudo.
+        if (data === null && recentStart > 2) {
+            data = computeFromRange(2);
+        }
+        if (data === null) data = [];
+
+        cache.put(cacheKey, JSON.stringify(data), 21600);
+        return jsonResponse_({ ok: true, data: data });
+    } catch (err) {
+        return jsonResponse_({ ok: false, error: err.message });
+    }
 }
 
 function doPost(e) {
