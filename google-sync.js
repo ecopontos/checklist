@@ -126,48 +126,44 @@ export async function checkAndImportRoteiros(db) {
     }
 }
 
+// GET com timeout e retry para os endpoints JSON do GAS. O redirecionamento
+// de conteúdo do Google às vezes devolve 404 transitório (ou a conexão
+// oscila); tentar de novo evita erros esporádicos como "Falha HTTP 404". Só
+// repete em falha de HTTP/rede — uma resposta {ok:false} legítima é devolvida
+// na hora. Timeout por tentativa cobre o fallback de varredura completa do GAS.
+async function gasGetJsonWithRetry_(url, { attempts = 3, timeoutMs = 45000 } = {}) {
+    let lastError = 'erro desconhecido';
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const res = await fetch(url, { signal: controller.signal });
+            if (res.ok) return await res.json();
+            lastError = `Falha HTTP ${res.status}`;
+        } catch (e) {
+            lastError = e.name === 'AbortError' ? 'tempo esgotado' : e.message;
+        } finally {
+            clearTimeout(timeout);
+        }
+        if (attempt < attempts) await new Promise(r => setTimeout(r, attempt * 1200));
+    }
+    return { ok: false, error: lastError };
+}
+
 export async function getUltimaColeta(roteiroNome) {
     const url = getGasUrl();
     if (!url) return { ok: false, error: 'URL do GAS não configurada' };
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 45000);
-    try {
-        const res = await fetch(
-            `${url}?action=ultimaColeta&roteiro=${encodeURIComponent(roteiroNome)}`,
-            { signal: controller.signal }
-        );
-        if (!res.ok) {
-            return { ok: false, error: `Falha HTTP ${res.status}` };
-        }
-        return await res.json();
-    } catch (e) {
-        return { ok: false, error: e.message };
-    } finally {
-        clearTimeout(timeout);
-    }
+    return gasGetJsonWithRetry_(
+        `${url}?action=ultimaColeta&roteiro=${encodeURIComponent(roteiroNome)}`
+    );
 }
 
 export async function getUltimasQuantidades(roteiroNome) {
     const url = getGasUrl();
     if (!url) return { ok: false, error: 'URL do GAS não configurada' };
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 45000);
-    try {
-        const res = await fetch(
-            `${url}?action=ultimaColetaDetalhada&roteiro=${encodeURIComponent(roteiroNome)}`,
-            { signal: controller.signal }
-        );
-        if (!res.ok) {
-            return { ok: false, error: `Falha HTTP ${res.status}` };
-        }
-        return await res.json();
-    } catch (e) {
-        return { ok: false, error: e.message };
-    } finally {
-        clearTimeout(timeout);
-    }
+    return gasGetJsonWithRetry_(
+        `${url}?action=ultimaColetaDetalhada&roteiro=${encodeURIComponent(roteiroNome)}`
+    );
 }
 
 export async function sendChecklistToDrive(filename, pdfBase64) {
