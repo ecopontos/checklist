@@ -1,0 +1,56 @@
+<!-- Fonte editável do ícone do SATELITE Checklist.
+     Para regerar todos os formatos: rasterize para 1024x1024 PNG e rode `tauri icon <png>`. -->
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00f2fe"/>
+      <stop offset="1" stop-color="#4facfe"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.30" cy="0.22" r="0.95">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.30"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="20" flood-color="#062f45" flood-opacity="0.32"/>
+    </filter>
+  </defs>
+
+  <!-- full-bleed tile -->
+  <rect x="0" y="0" width="1024" height="1024" fill="url(#bg)"/>
+  <rect x="0" y="0" width="1024" height="1024" fill="url(#glow)"/>
+
+  <!-- orbit ring -->
+  <g transform="rotate(-25 512 512)">
+    <ellipse cx="512" cy="512" rx="366" ry="152" fill="none"
+             stroke="#ffffff" stroke-opacity="0.40" stroke-width="22"/>
+  </g>
+
+  <!-- satellite (separated, upper area) -->
+  <g transform="translate(694 250) rotate(-25)" filter="url(#soft)">
+    <!-- signal waves -->
+    <g fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round">
+      <path d="M 40 -44 A 60 60 0 0 1 86 4"  stroke-opacity="0.55"/>
+      <path d="M 60 -66 A 92 92 0 0 1 122 8" stroke-opacity="0.32"/>
+    </g>
+    <!-- solar panels -->
+    <g fill="#ffffff" fill-opacity="0.92">
+      <rect x="-136" y="-24" width="82" height="48" rx="7"/>
+      <rect x="54" y="-24" width="82" height="48" rx="7"/>
+    </g>
+    <g stroke="#4facfe" stroke-width="4.5" stroke-opacity="0.85">
+      <line x1="-108" y1="-24" x2="-108" y2="24"/>
+      <line x1="-82" y1="-24" x2="-82" y2="24"/>
+      <line x1="82" y1="-24" x2="82" y2="24"/>
+      <line x1="108" y1="-24" x2="108" y2="24"/>
+    </g>
+    <!-- body -->
+    <rect x="-40" y="-34" width="80" height="68" rx="16" fill="#ffffff"/>
+    <!-- dish -->
+    <circle cx="0" cy="0" r="17" fill="none" stroke="#4facfe" stroke-width="8"/>
+  </g>
+
+  <!-- hero checkmark -->
+  <path d="M 336 552 L 458 678 L 690 452"
+        fill="none" stroke="#ffffff" stroke-width="98"
+        stroke-linecap="round" stroke-linejoin="round" filter="url(#soft)"/>
+</svg>
