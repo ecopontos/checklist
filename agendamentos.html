@@ -967,7 +967,7 @@
         async function gerarPdfDaData(data) {
             setBusy(true);
             try {
-                showToast('Gerando PDF...');
+                showToast('Gerando PDF, aguarde...');
                 const result = await getAgendamentos(data);
                 if (!result.ok) {
                     showToast(`Não foi possível buscar: ${result.error || 'erro desconhecido'}`, true);
@@ -1045,24 +1045,23 @@
                     }
                 });
 
-                if (fotoFalhou) {
-                    showToast('PDF gerado — algumas fotos não puderam ser carregadas.', true);
-                }
-
                 const filename = `Agendamentos_${data}.pdf`;
                 const pdfBase64 = doc.output('datauristring').split(',')[1];
+                const sufixoFotos = fotoFalhou ? ' (algumas fotos não carregaram)' : '';
                 const tauri = window.__TAURI__;
                 if (tauri && tauri.core && typeof tauri.core.invoke === 'function') {
                     try {
                         const path = await tauri.core.invoke('save_checklist_pdf', { pdfBase64, filename });
-                        showToast(`PDF salvo em: ${path}`);
+                        showToast(`✅ PDF gerado e salvo em: ${path}${sufixoFotos}`, fotoFalhou);
                     } catch (e) {
                         showToast(`Não foi possível salvar o PDF: ${e}`, true);
                     }
                     return;
                 }
                 doc.save(filename);
-                if (!fotoFalhou) showToast('PDF gerado.');
+                showToast(`✅ PDF gerado${sufixoFotos}.`, fotoFalhou);
+            } catch (e) {
+                showToast(`Falha ao gerar o PDF: ${e.message || e}`, true);
             } finally {
                 setBusy(false);
             }
