@@ -306,6 +306,19 @@
         }
         .note { font-size: 0.8rem; color: var(--text-dim); }
 
+        .card-full { margin-top: 30px; }
+        .badge-hoje {
+            display: inline-block;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: #001018;
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 999px;
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+
         @media (max-width: 760px) {
             h1 { font-size: 1.8rem; }
             body { padding: 24px 14px; }
@@ -408,6 +421,31 @@
                     </div>
                     <div class="loading" id="listLoading" style="display: none;">Carregando agendamentos...</div>
                 </div>
+            </div>
+        </div>
+
+        <div class="card card-full">
+            <h2>📆 Próximas datas com agendamentos</h2>
+            <p>Gere o roteiro em PDF direto pela data. Mostra a data de hoje e as futuras que têm agendamentos.</p>
+            <div id="upcomingArea">
+                <div class="empty-state" id="upcomingEmpty">
+                    <h3>Sem datas futuras</h3>
+                    <p>Não há agendamentos para hoje ou datas futuras.</p>
+                </div>
+                <div id="upcomingWrap" class="table-container" style="display: none;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Dia</th>
+                                <th>Agendamentos</th>
+                                <th>Roteiro</th>
+                            </tr>
+                        </thead>
+                        <tbody id="upcomingBody"></tbody>
+                    </table>
+                </div>
+                <div class="loading" id="upcomingLoading" style="display: none;">Carregando datas...</div>
             </div>
         </div>
     </div>
@@ -598,6 +636,8 @@
         function setBusy(busy) {
             ['btnAdd', 'btnSaveEdit', 'btnCancelEdit', 'btnPdf', 'btnFilter']
                 .forEach(id => { $(id).disabled = busy; });
+            document.querySelectorAll('#upcomingBody button')
+                .forEach(btn => { btn.disabled = busy; });
         }
 
         function setFormFields(ag) {
@@ -711,6 +751,83 @@
             });
         }
 
+        function weekdayBR(dateStr) {
+            const p = (dateStr || '').split('-');
+            if (p.length !== 3) return '';
+            const d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+            const wd = d.toLocaleDateString('pt-BR', { weekday: 'long' });
+            return wd.charAt(0).toUpperCase() + wd.slice(1);
+        }
+
+        async function loadUpcoming() {
+            $('upcomingLoading').style.display = 'block';
+            $('upcomingEmpty').style.display = 'none';
+            $('upcomingWrap').style.display = 'none';
+
+            const result = await getAgendamentos('');
+            $('upcomingLoading').style.display = 'none';
+
+            if (!result.ok) {
+                $('upcomingEmpty').style.display = 'block';
+                $('upcomingEmpty').querySelector('h3').textContent = 'Erro ao carregar';
+                $('upcomingEmpty').querySelector('p').textContent =
+                    result.error || 'Não foi possível carregar as datas.';
+                return;
+            }
+
+            const hoje = today();
+            const counts = new Map();
+            (result.data || []).forEach(item => {
+                const d = item.dataPrevista;
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(d || '')) return;
+                if (d < hoje) return; // comparação lexicográfica funciona p/ ISO
+                counts.set(d, (counts.get(d) || 0) + 1);
+            });
+
+            renderUpcoming([...counts.keys()].sort(), counts, hoje);
+        }
+
+        function renderUpcoming(datas, counts, hoje) {
+            const body = $('upcomingBody');
+            body.innerHTML = '';
+
+            if (!datas.length) {
+                $('upcomingEmpty').style.display = 'block';
+                $('upcomingEmpty').querySelector('h3').textContent = 'Sem datas futuras';
+                $('upcomingEmpty').querySelector('p').textContent =
+                    'Não há agendamentos para hoje ou datas futuras.';
+                $('upcomingWrap').style.display = 'none';
+                return;
+            }
+
+            $('upcomingEmpty').style.display = 'none';
+            $('upcomingWrap').style.display = 'block';
+
+            datas.forEach(d => {
+                const tr = document.createElement('tr');
+
+                const tdData = document.createElement('td');
+                tdData.innerHTML = escapeHTML(formatDateBR(d))
+                    + (d === hoje ? ' <span class="badge-hoje">Hoje</span>' : '');
+
+                const tdDia = document.createElement('td');
+                tdDia.textContent = weekdayBR(d);
+
+                const tdQtd = document.createElement('td');
+                tdQtd.textContent = String(counts.get(d));
+
+                const tdAcao = document.createElement('td');
+                tdAcao.className = 'actions';
+                const btn = document.createElement('button');
+                btn.textContent = '📄 PDF';
+                btn.addEventListener('click', () => gerarPdfDaData(d));
+                tdAcao.appendChild(btn);
+
+                tr.append(tdData, tdDia, tdQtd, tdAcao);
+                body.appendChild(tr);
+            });
+        }
+
         async function addAgendamento() {
             const form = readForm();
             const err = validateForm(form);
@@ -745,6 +862,7 @@
 
                 clearForm();
                 await loadList();
+                await loadUpcoming();
             } finally {
                 setBusy(false);
             }
@@ -783,6 +901,7 @@
 
                 clearForm();
                 await loadList();
+                await loadUpcoming();
             } finally {
                 setBusy(false);
             }
@@ -797,6 +916,7 @@
             }
             showToast('Agendamento excluído.');
             await loadList();
+            await loadUpcoming();
         }
 
         // Redimensiona um data-URL para JPEG (largura máx. maxW) e devolve
@@ -841,7 +961,10 @@
                 showToast('Selecione uma data para gerar o PDF.', true);
                 return;
             }
+            await gerarPdfDaData(data);
+        }
 
+        async function gerarPdfDaData(data) {
             setBusy(true);
             try {
                 showToast('Gerando PDF...');
@@ -958,6 +1081,7 @@
         $('agData').value = today();
         $('filterData').value = today();
         loadList();
+        loadUpcoming();
     </script>
 </body>
 </html>
