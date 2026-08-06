@@ -198,3 +198,40 @@ curl -X POST "<URL>" -H "Content-Type: text/plain;charset=utf-8" \
 ```
 
 Esperado: `{"ok":true,"upserts":1,"deletes":1}`.
+
+## Fotos dos agendamentos (Drive)
+
+Cada agendamento pode ter até **3 fotos** (`.jpg`/`.jpeg`/`.png`, até ~8 MB
+cada). As fotos ficam no Drive, dentro da pasta já configurada em
+`CHECKLISTS_FOLDER_ID`, no layout:
+
+```
+<CHECKLISTS_FOLDER_ID>/AgendamentosFotos/<idDoAgendamento>/foto_1.jpg
+                                                          /foto_2.png
+                                                          /foto_3.jpg
+```
+
+Os slots são fixos (`foto_1`, `foto_2`, `foto_3`), então reenviar um slot
+**substitui** o arquivo anterior (idempotente). A planilha `verdesagendados`
+**não muda** — as fotos são vinculadas pelo `ID` do agendamento.
+
+Enviar/substituir fotos e remover slots (em lote):
+
+```bash
+curl -X POST "<URL>" -H "Content-Type: text/plain;charset=utf-8" \
+  -d '{"action":"uploadAgendamentoFotos","id":"abc-123","fotos":[{"nome":"foto_1.jpg","base64":"<base64-sem-prefixo-data>"}],"remover":["foto_2.png"]}'
+```
+
+Esperado: `{"ok":true,"count":1}` (`count` = fotos gravadas).
+
+Listar as fotos de um agendamento (metadados; use `incluirBase64=true` para
+receber o conteúdo):
+
+```bash
+curl "<URL>?action=agendamentoFotos&id=abc-123"
+curl "<URL>?action=agendamentoFotos&id=abc-123&incluirBase64=true"
+```
+
+Esperado: `{"ok":true,"fotos":[{"nome":"foto_1.jpg","slot":"foto_1"}]}`
+(com `base64` e `mime` por foto quando `incluirBase64=true`). Se o agendamento
+não tiver pasta de fotos, retorna `{"ok":true,"fotos":[]}`.

@@ -186,6 +186,38 @@ export async function syncAgendamentos(ops) {
     }
 }
 
+export async function uploadAgendamentoFotos(id, fotos, remover = []) {
+    const url = getGasUrl();
+    if (!url) return { ok: false, error: 'URL do GAS não configurada' };
+
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+                action: 'uploadAgendamentoFotos',
+                id,
+                fotos: fotos || [],
+                remover: remover || []
+            })
+        });
+        if (!res.ok) {
+            return { ok: false, error: `Falha HTTP ${res.status}` };
+        }
+        return await res.json();
+    } catch (e) {
+        return { ok: false, error: e.message };
+    }
+}
+
+export async function getAgendamentoFotos(id, incluirBase64 = false) {
+    const url = getGasUrl();
+    if (!url) return { ok: false, error: 'URL do GAS não configurada' };
+    const query = `?action=agendamentoFotos&id=${encodeURIComponent(id)}`
+        + `&incluirBase64=${incluirBase64 ? 'true' : 'false'}`;
+    return gasGetJsonWithRetry_(`${url}${query}`);
+}
+
 export async function sendChecklistToDrive(filename, pdfBase64) {
     const url = getGasUrl();
     if (!url) return { ok: false, error: 'URL do GAS não configurada' };

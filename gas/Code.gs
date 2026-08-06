@@ -15,6 +15,10 @@ var AGENDAMENTOS_SHEET_NAME = 'verdesagendados';
 var AGENDAMENTOS_HEADERS = [
     'ID', 'Cliente', 'Endereço', 'Materiais', 'Data Prevista', 'Sincronizado Em'
 ];
+var AGENDAMENTOS_FOTOS_SUBFOLDER = 'AgendamentosFotos';
+var AGENDAMENTO_FOTO_NOME_RE = /^foto_[123]\.(jpg|jpeg|png)$/i;
+var AGENDAMENTO_ID_RE = /^[A-Za-z0-9-]{8,64}$/;
+var AGENDAMENTO_FOTO_MAX_BYTES = 8 * 1024 * 1024;
 var ROUTE_CHANGES_SHEET_NAME = 'AlteracoesRoteiros';
 var ROUTE_CHANGES_HEADERS = [
     'Change ID', 'ID Rota', 'Inativo', 'Ordem', 'Roteiro', 'Alterado Em',
@@ -70,6 +74,10 @@ function doGet(e) {
 
     if (params.action === 'agendamentos') {
         return getAgendamentos_(params.data || '');
+    }
+
+    if (params.action === 'agendamentoFotos') {
+        return getAgendamentoFotos_(params.id || '', params.incluirBase64 === 'true');
     }
 
 
@@ -342,6 +350,10 @@ function doPost(e) {
 
         if (body.action === 'syncAgendamentos') {
             return syncAgendamentos_(body.ops || []);
+        }
+
+        if (body.action === 'uploadAgendamentoFotos') {
+            return uploadAgendamentoFotos_(body.id || '', body.fotos || [], body.remover || []);
         }
 
         if (body.checklist) {
@@ -847,6 +859,161 @@ function syncAgendamentos_(ops) {
         } finally {
             lock.releaseLock();
         }
+    } catch (err) {
+        return jsonResponse_({ ok: false, error: err.message });
+    }
+}
+
+// Obtém/cria a subpasta "AgendamentosFotos" dentro de CHECKLISTS_FOLDER_ID.
+// O ID resolvido é guardado no cache para evitar re-resolução a cada chamada.
+function getAgendamentosFotosFolder_() {
+    var config = getConfig_();
+    if (!config.checklistsFolderId) {
+        throw new Error('CHECKLISTS_FOLDER_ID não configurado');
+    }
+
+    var cache = CacheService.getScriptCache();
+    var cacheKey = 'agefotos:root:' + config.checklistsFolderId;
+    var cachedId = cache.get(cacheKey);
+    if (cachedId) {
+        try {
+            return DriveApp.getFolderById(cachedId);
+        } catch (e) {
+            // Pasta em cache não existe mais: recria abaixo.
+        }
+    }
+
+    var parent = DriveApp.getFolderById(config.checklistsFolderId);
+    var it = parent.getFoldersByName(AGENDAMENTOS_FOTOS_SUBFOLDER);
+    var folder = it.hasNext() ? it.next() : parent.createFolder(AGENDAMENTOS_FOTOS_SUBFOLDER);
+    cache.put(cacheKey, folder.getId(), 21600);
+    return folder;
+}
+
+// Obtém/cria a subpasta "AgendamentosFotos/<id>".
+function getAgendamentoFotosFolder_(id, criar) {
+    if (!AGENDAMENTO_ID_RE.test(id)) {
+        throw new Error('ID de agendamento inválido');
+    }
+    var root = getAgendamentosFotosFolder_();
+    var it = root.getFoldersByName(id);
+    if (it.hasNext()) return it.next();
+    return criar ? root.createFolder(id) : null;
+}
+
+function uploadAgendamentoFotos_(id, fotos, remover) {
+    var config = getConfig_();
+    if (!config.checklistsFolderId) {
+        return jsonResponse_({ ok: false, error: 'CHECKLISTS_FOLDER_ID não configurado' });
+    }
+    if (!AGENDAMENTO_ID_RE.test(String(id || '').trim())) {
+        return jsonResponse_({ ok: false, error: 'ID de agendamento inválido' });
+    }
+    if (!Array.isArray(fotos) || fotos.length > 3) {
+        return jsonResponse_({ ok: false, error: 'Máximo de 3 fotos por agendamento' });
+    }
+    if (!Array.isArray(remover)) {
+        remover = [];
+    }
+
+    id = String(id).trim();
+
+    // Valida tudo antes de tocar no Drive.
+    var validas = [];
+    for (var i = 0; i < fotos.length; i++) {
+        var foto = fotos[i] || {};
+        var nome = String(foto.nome || '').trim();
+        if (!AGENDAMENTO_FOTO_NOME_RE.test(nome)) {
+            return jsonResponse_({ ok: false, error: 'Nome de foto inválido: ' + nome });
+        }
+        var base64 = String(foto.base64 || '');
+        if (!base64) {
+            return jsonResponse_({ ok: false, error: 'base64 ausente para ' + nome });
+        }
+        var bytes;
+        try {
+            bytes = Utilities.base64Decode(base64);
+        } catch (e) {
+            return jsonResponse_({ ok: false, error: 'base64 inválido para ' + nome });
+        }
+        if (bytes.length > AGENDAMENTO_FOTO_MAX_BYTES) {
+            return jsonResponse_({ ok: false, error: 'Foto ' + nome + ' excede 8 MB' });
+        }
+        var mime = /\.png$/i.test(nome) ? 'image/png' : 'image/jpeg';
+        validas.push({ nome: nome, bytes: bytes, mime: mime });
+    }
+
+    var removerValidos = [];
+    for (var r = 0; r < remover.length; r++) {
+        var rn = String(remover[r] || '').trim();
+        if (AGENDAMENTO_FOTO_NOME_RE.test(rn)) removerValidos.push(rn);
+    }
+
+    try {
+        var lock = LockService.getScriptLock();
+        lock.waitLock(30000);
+        try {
+            var folder = getAgendamentoFotosFolder_(id, true);
+
+            // Remoções explícitas + substituição de mesmo nome: descarta os
+            // arquivos existentes cujo nome está em remover ou vai ser regravado.
+            var descartar = {};
+            removerValidos.forEach(function (n) { descartar[n] = true; });
+            validas.forEach(function (f) { descartar[f.nome] = true; });
+
+            Object.keys(descartar).forEach(function (nome) {
+                var existing = folder.getFilesByName(nome);
+                while (existing.hasNext()) {
+                    existing.next().setTrashed(true);
+                }
+            });
+
+            validas.forEach(function (f) {
+                var blob = Utilities.newBlob(f.bytes, f.mime, f.nome);
+                folder.createFile(blob);
+            });
+
+            return jsonResponse_({ ok: true, count: validas.length });
+        } finally {
+            lock.releaseLock();
+        }
+    } catch (err) {
+        return jsonResponse_({ ok: false, error: err.message });
+    }
+}
+
+function getAgendamentoFotos_(id, incluirBase64) {
+    var config = getConfig_();
+    if (!config.checklistsFolderId) {
+        return jsonResponse_({ ok: false, error: 'CHECKLISTS_FOLDER_ID não configurado' });
+    }
+    if (!AGENDAMENTO_ID_RE.test(String(id || '').trim())) {
+        return jsonResponse_({ ok: false, error: 'ID de agendamento inválido' });
+    }
+
+    try {
+        var folder = getAgendamentoFotosFolder_(String(id).trim(), false);
+        if (!folder) {
+            return jsonResponse_({ ok: true, fotos: [] });
+        }
+
+        var fotos = [];
+        ['foto_1', 'foto_2', 'foto_3'].forEach(function (slot) {
+            ['jpg', 'jpeg', 'png'].forEach(function (ext) {
+                var nome = slot + '.' + ext;
+                var it = folder.getFilesByName(nome);
+                if (!it.hasNext()) return;
+                var file = it.next();
+                var item = { nome: nome, slot: slot };
+                if (incluirBase64) {
+                    item.base64 = Utilities.base64Encode(file.getBlob().getBytes());
+                    item.mime = /\.png$/i.test(nome) ? 'image/png' : 'image/jpeg';
+                }
+                fotos.push(item);
+            });
+        });
+
+        return jsonResponse_({ ok: true, fotos: fotos });
     } catch (err) {
         return jsonResponse_({ ok: false, error: err.message });
     }
