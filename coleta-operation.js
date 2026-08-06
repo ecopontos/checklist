@@ -463,11 +463,13 @@ async function saveOperation() {
     try {
         const savedColetas = entries.map(([id, entry]) => {
             const client = currentClients.find(item => clientKey(item) === id);
+            const syncId = crypto.randomUUID();
             const localId = db.addColeta({
                 id_rota: id,
                 data: date,
                 quantidade: entry.qty,
-                intercorrencia: entry.issue || ''
+                intercorrencia: entry.issue || '',
+                sync_id: syncId
             });
             return {
                 id: localId,
@@ -477,7 +479,7 @@ async function saveOperation() {
                 intercorrencia: entry.issue || '',
                 cliente: client ? client.cliente : '',
                 roteiro: roteiroNome,
-                sync_id: crypto.randomUUID()
+                sync_id: syncId
             };
         });
 

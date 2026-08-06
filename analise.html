@@ -274,6 +274,9 @@
             const pending = db.getUnsyncedColetas();
             if (!pending.length) { alert('Nenhuma coleta pendente de sincronização!'); return; }
 
+            // Reusa o sync_id já persistido no insert. Assim o reenvio tem o
+            // mesmo id da 1ª tentativa e o GAS deduplica em vez de duplicar a
+            // coleta. Só gera um novo para linhas antigas sem sync_id.
             const payload = pending.map(c => ({
                 id: c.id,
                 id_rota: c.id_rota,
@@ -282,7 +285,7 @@
                 intercorrencia: c.intercorrencia,
                 cliente: c.cliente,
                 roteiro: c.roteiro,
-                sync_id: crypto.randomUUID()
+                sync_id: c.sync_id || crypto.randomUUID()
             }));
 
             const result = await pushColetas(payload);

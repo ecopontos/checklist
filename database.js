@@ -385,10 +385,14 @@ class AppDatabase {
 
     // --- Coletas ---
     addColeta(coleta) {
+        // O sync_id é gerado e persistido já no insert (estável). Assim um
+        // reenvio após falha de resposta carrega o MESMO id, e o GAS
+        // deduplica por ele em vez de gravar a coleta duas vezes.
+        const syncId = coleta.sync_id || crypto.randomUUID();
         this.db.run(`
-            INSERT INTO coletas (id_rota, data, quantidade, intercorrencia)
-            VALUES (?, ?, ?, ?)
-        `, [coleta.id_rota, coleta.data, coleta.quantidade, coleta.intercorrencia]);
+            INSERT INTO coletas (id_rota, data, quantidade, intercorrencia, sync_id)
+            VALUES (?, ?, ?, ?, ?)
+        `, [coleta.id_rota, coleta.data, coleta.quantidade, coleta.intercorrencia, syncId]);
         const id = this.db.exec("SELECT last_insert_rowid() AS id")[0].values[0][0];
         this.save();
         return id;
@@ -426,7 +430,7 @@ class AppDatabase {
 
     getUnsyncedColetas() {
         const res = this.db.exec(`
-            SELECT c.id, c.id_rota, c.data, c.quantidade, c.intercorrencia, cl.cliente, r.nome as roteiro
+            SELECT c.id, c.id_rota, c.data, c.quantidade, c.intercorrencia, cl.cliente, r.nome as roteiro, c.sync_id
             FROM coletas c
             JOIN clientes cl ON c.id_rota = cl.id_rota
             JOIN roteiros r ON cl.roteiro_id = r.id

@@ -1025,28 +1025,62 @@ function saveColetas_(coletas) {
         return jsonResponse_({ ok: false, error: 'SPREADSHEET_ID não configurado' });
     }
 
-    var ss = SpreadsheetApp.openById(config.spreadsheetId);
-    var sheet = ss.getSheetByName(COLETAS_SHEET_NAME);
-    if (!sheet) {
-        sheet = ss.insertSheet(COLETAS_SHEET_NAME);
-        sheet.appendRow(['ID Rota', 'Data', 'Cliente', 'Roteiro', 'Quantidade', 'Intercorrência', 'Sincronizado Em', 'Sync ID']);
+    if (!Array.isArray(coletas)) {
+        return jsonResponse_({ ok: false, error: 'coletas deve ser uma lista' });
     }
 
-    var now = new Date().toISOString();
-    coletas.forEach(function (c) {
-        sheet.appendRow([
-            c.id_rota || '',
-            c.data || '',
-            c.cliente || '',
-            c.roteiro || '',
-            c.quantidade || 0,
-            c.intercorrencia || '',
-            now,
-            c.sync_id || ''
-        ]);
-    });
+    var lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+    try {
+        var ss = SpreadsheetApp.openById(config.spreadsheetId);
+        var sheet = ss.getSheetByName(COLETAS_SHEET_NAME);
+        if (!sheet) {
+            sheet = ss.insertSheet(COLETAS_SHEET_NAME);
+            sheet.appendRow(['ID Rota', 'Data', 'Cliente', 'Roteiro', 'Quantidade', 'Intercorrência', 'Sincronizado Em', 'Sync ID']);
+        }
 
-    return jsonResponse_({ ok: true, count: coletas.length });
+        // Dedup por Sync ID (8ª coluna). Um reenvio após falha de resposta
+        // traz o mesmo sync_id da 1ª tentativa; ignora os que já estão na aba
+        // (e também repetidos dentro do próprio lote) para não duplicar.
+        var lastRow = sheet.getLastRow();
+        var vistos = {};
+        if (lastRow > 1) {
+            var ids = sheet.getRange(2, 8, lastRow - 1, 1).getValues();
+            for (var i = 0; i < ids.length; i++) {
+                var existente = String(ids[i][0] || '').trim();
+                if (existente) vistos[existente] = true;
+            }
+        }
+
+        var now = new Date().toISOString();
+        var novos = [];
+        var duplicados = 0;
+        coletas.forEach(function (c) {
+            var sid = String(c.sync_id || '').trim();
+            if (sid) {
+                if (vistos[sid]) { duplicados++; return; }
+                vistos[sid] = true;
+            }
+            novos.push([
+                c.id_rota || '',
+                c.data || '',
+                c.cliente || '',
+                c.roteiro || '',
+                c.quantidade || 0,
+                c.intercorrencia || '',
+                now,
+                sid
+            ]);
+        });
+
+        if (novos.length) {
+            sheet.getRange(sheet.getLastRow() + 1, 1, novos.length, 8).setValues(novos);
+        }
+
+        return jsonResponse_({ ok: true, count: novos.length, duplicates: duplicados });
+    } finally {
+        lock.releaseLock();
+    }
 }
 
 function saveChecklist_(checklist) {
