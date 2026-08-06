@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agendamentos de Coleta - SATELITE v3</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00f2fe;
+            --secondary: #4facfe;
+            --bg: #0b0e14;
+            --surface: #161b22;
+            --text: #e6edf3;
+            --text-dim: #8b949e;
+            --accent: #79c0ff;
+            --danger: #ff7b72;
+            --success: #3fb950;
+            --glass: rgba(22, 27, 34, 0.8);
+            --card-border: rgba(255, 255, 255, 0.1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 40px 20px;
+            background-image: radial-gradient(circle at top right, rgba(0, 242, 254, 0.05), transparent 400px);
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; }
+
+        .header-nav {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+
+        .nav-wrapper { position: relative; }
+        .nav-toggle { display: none; }
+
+        .hamburger-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 34px;
+            height: 34px;
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            color: var(--text-dim);
+            cursor: pointer;
+            font-size: 1.1rem;
+            transition: all 0.3s;
+            position: relative;
+            z-index: 210;
+        }
+        .hamburger-icon:hover { border-color: var(--primary); color: var(--primary); }
+
+        .nav-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 190;
+            cursor: default;
+        }
+        .nav-toggle:checked ~ .nav-overlay { display: block; }
+
+        .page-nav {
+            display: none;
+            flex-direction: column;
+            gap: 4px;
+            position: absolute;
+            top: 44px;
+            right: 0;
+            background: var(--surface);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 10px;
+            min-width: 180px;
+            z-index: 200;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        }
+        .nav-toggle:checked ~ .page-nav { display: flex; }
+
+        .page-nav a, .page-nav .active {
+            padding: 8px 10px;
+            border-radius: 8px;
+            color: var(--text-dim);
+            text-decoration: none;
+            transition: background 0.2s, color 0.2s;
+        }
+        .page-nav a:hover { background: rgba(255, 255, 255, 0.05); color: var(--primary); }
+        .page-nav .active { color: var(--primary); font-weight: 600; }
+
+        h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: 10px; }
+        .subtitle { color: var(--text-dim); margin-bottom: 40px; }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            align-items: start;
+        }
+        @media (max-width: 900px) {
+            .grid-2 { grid-template-columns: 1fr; }
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--card-border);
+            border-radius: 24px;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .card h2 { font-size: 1.4rem; display: flex; align-items: center; gap: 12px; }
+        .card p { color: var(--text-dim); font-size: 0.9rem; line-height: 1.6; }
+
+        .field { display: flex; flex-direction: column; gap: 6px; }
+        .field label { font-size: 0.85rem; color: var(--text-dim); font-weight: 600; }
+        .field input {
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            color: var(--text);
+            padding: 11px 14px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.95rem;
+            transition: border-color 0.2s;
+            width: 100%;
+        }
+        .field input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .form-row { display: flex; flex-direction: column; gap: 14px; }
+
+        .foto-slots { display: flex; gap: 10px; flex-wrap: wrap; }
+        .foto-slot {
+            width: 92px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .foto-pick {
+            width: 92px;
+            height: 92px;
+            border: 1px dashed var(--card-border);
+            border-radius: 12px;
+            background: rgba(0, 0, 0, 0.25);
+            color: var(--text-dim);
+            cursor: pointer;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.8rem;
+            line-height: 1.3;
+            transition: all 0.2s;
+        }
+        .foto-pick:hover { border-color: var(--primary); color: var(--primary); }
+        .foto-pick:disabled { opacity: 0.4; cursor: not-allowed; }
+        .foto-thumb-wrap { position: relative; width: 92px; height: 92px; }
+        .foto-thumb {
+            width: 92px;
+            height: 92px;
+            object-fit: cover;
+            border-radius: 12px;
+            border: 1px solid var(--card-border);
+            display: block;
+        }
+        .foto-remove {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: none;
+            background: var(--danger);
+            color: #1a0000;
+            font-size: 0.9rem;
+            font-weight: 700;
+            cursor: pointer;
+            line-height: 1;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+        }
+        .foto-remove:hover { filter: brightness(1.1); }
+
+        .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+
+        .btn {
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 11px 18px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.04);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn:hover { border-color: var(--primary); color: var(--primary); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: #001018;
+            border: none;
+        }
+        .btn-primary:hover { color: #001018; filter: brightness(1.1); }
+
+        .btn-danger { border-color: var(--danger); color: var(--danger); }
+        .btn-danger:hover { background: rgba(255, 123, 114, 0.1); }
+
+        .btn-hidden { display: none; }
+
+        .filter-bar {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+        .filter-bar .field { flex: 1; min-width: 180px; }
+
+        .table-container {
+            max-height: 420px;
+            overflow-y: auto;
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+        }
+
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th {
+            position: sticky;
+            top: 0;
+            background: #1c2230;
+            color: var(--text-dim);
+            text-align: left;
+            padding: 10px 12px;
+            font-size: 0.8rem;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            border-bottom: 1px solid var(--card-border);
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--card-border);
+            vertical-align: middle;
+        }
+        tr:hover td { background: rgba(255, 255, 255, 0.03); }
+
+        .actions { display: flex; gap: 8px; }
+        .actions button {
+            border: 1px solid var(--card-border);
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text);
+            border-radius: 8px;
+            padding: 6px 10px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-family: 'Outfit', sans-serif;
+            transition: all 0.2s;
+        }
+        .actions button:hover { border-color: var(--primary); color: var(--primary); }
+        .actions button.del:hover { border-color: var(--danger); color: var(--danger); }
+        .actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-dim);
+        }
+        .empty-state h3 { margin-bottom: 8px; color: var(--text); }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--surface);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 14px 24px;
+            color: var(--text);
+            font-size: 0.95rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+            z-index: 300;
+            max-width: 90vw;
+        }
+        .toast.show { opacity: 1; }
+        .toast.error { border-color: var(--danger); color: var(--danger); }
+
+        .loading {
+            color: var(--text-dim);
+            font-size: 0.9rem;
+            padding: 12px 4px;
+        }
+        .note { font-size: 0.8rem; color: var(--text-dim); }
+
+        @media (max-width: 760px) {
+            h1 { font-size: 1.8rem; }
+            body { padding: 24px 14px; }
+        }
+    </style>
+    <link rel="stylesheet" href="theme.css">
+    <script src="theme.js"></script>
+    <script src="config.js"></script>
+    <script src="config.local.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="header-nav">
+            <div class="nav-wrapper">
+                <input type="checkbox" id="navToggle" class="nav-toggle">
+                <label for="navToggle" class="hamburger-icon">☰</label>
+                <label for="navToggle" class="nav-overlay"></label>
+                <nav class="page-nav">
+                    <a href="index.html">🏠 Início</a>
+                    <a href="roteiros.html">📍 Roteiros</a>
+                    <a href="coleta-checklist.html">✅ Coleta</a>
+                    <a href="analise.html">📊 Análise</a>
+                    <span class="active">📅 Agendamentos</span>
+                    <a href="admin.html">⚙️ Admin</a>
+                    <a href="ajuda-coleta.html" target="_blank">❓ Ajuda</a>
+                </nav>
+            </div>
+        </div>
+
+        <h1>Agendamentos de Coleta</h1>
+        <p class="subtitle">Registre coletas futuras na planilha "verdesagendados" e gere o roteiro em PDF por data.</p>
+
+        <div class="grid-2">
+            <div class="card">
+                <h2>➕ Novo Agendamento</h2>
+                <p>Os dados são enviados direto para a planilha sincronizada com o GAS.</p>
+                <div class="form-row">
+                    <div class="field">
+                        <label for="agCliente">Cliente</label>
+                        <input type="text" id="agCliente" placeholder="Nome do cliente" autocomplete="off">
+                    </div>
+                    <div class="field">
+                        <label for="agEndereco">Endereço</label>
+                        <input type="text" id="agEndereco" placeholder="Rua, número, bairro..." autocomplete="off">
+                    </div>
+                    <div class="field">
+                        <label for="agMateriais">Materiais</label>
+                        <input type="text" id="agMateriais" placeholder="Ex.: Plástico, Papelão" autocomplete="off">
+                    </div>
+                    <div class="field">
+                        <label for="agData">Data Prevista</label>
+                        <input type="date" id="agData">
+                    </div>
+                    <div class="field">
+                        <label>Fotos (até 3)</label>
+                        <div class="foto-slots" id="fotoSlots"></div>
+                        <p class="note">JPG ou PNG, até 8 MB cada. As fotos vão para o Drive e aparecem no PDF.</p>
+                    </div>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" id="btnAdd">Adicionar</button>
+                    <button class="btn btn-hidden" id="btnSaveEdit">Salvar alterações</button>
+                    <button class="btn btn-hidden" id="btnCancelEdit">Cancelar</button>
+                </div>
+                <p class="note">Campos obrigatórios: Cliente e Data Prevista.</p>
+            </div>
+
+            <div class="card">
+                <h2>📋 Agendamentos</h2>
+                <p>Consulte por data e gere o roteiro em PDF para a operação.</p>
+                <div class="filter-bar">
+                    <div class="field">
+                        <label for="filterData">Data</label>
+                        <input type="date" id="filterData">
+                    </div>
+                    <button class="btn" id="btnFilter">Buscar</button>
+                </div>
+                <p class="note">Deixe a data vazia para listar todos os agendamentos.</p>
+                <div class="btn-row">
+                    <button class="btn btn-primary" id="btnPdf">📄 Gerar PDF da data</button>
+                </div>
+                <div id="listArea">
+                    <div class="empty-state" id="emptyState">
+                        <h3>Nenhum agendamento</h3>
+                        <p>Escolha uma data e clique em "Buscar" para carregar os agendamentos.</p>
+                    </div>
+                    <div id="tableWrap" class="table-container" style="display: none;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Cliente</th>
+                                    <th>Endereço</th>
+                                    <th>Materiais</th>
+                                    <th>Data Prevista</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="listBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="loading" id="listLoading" style="display: none;">Carregando agendamentos...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="vendor/jspdf.umd.min.js"></script>
+    <script src="vendor/jspdf.plugin.autotable.min.js"></script>
+    <script type="module">
+        import {
+            getAgendamentos,
+            syncAgendamentos,
+            uploadAgendamentoFotos,
+            getAgendamentoFotos
+        } from './google-sync.js';
+
+        const $ = id => document.getElementById(id);
+
+        const SLOT_COUNT = 3;
+        let currentList = [];
+        let editingId = null;
+        // Cada slot: { dataUrl, novoNome, existiaNome }
+        //  - dataUrl:    preview atual (vazio = slot vazio)
+        //  - novoNome:   foto_{n}.ext de um arquivo recém-selecionado (upload)
+        //  - existiaNome: nome do arquivo que já está no Drive neste slot
+        let slots = emptySlots();
+
+        function emptySlots() {
+            return Array.from({ length: SLOT_COUNT }, () => ({
+                dataUrl: '', novoNome: '', existiaNome: ''
+            }));
+        }
+
+        function today() {
+            const d = new Date();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return `${d.getFullYear()}-${mm}-${dd}`;
+        }
+
+        function escapeHTML(value) {
+            return String(value ?? '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#039;');
+        }
+
+        function formatDateBR(dateStr) {
+            if (!dateStr) return '—';
+            const parts = dateStr.split('-');
+            return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateStr;
+        }
+
+        function showToast(message, isError = false) {
+            const toast = $('toast');
+            toast.textContent = message;
+            toast.classList.toggle('error', isError);
+            toast.classList.add('show');
+            clearTimeout(toast._timer);
+            toast._timer = setTimeout(() => toast.classList.remove('show'), 3500);
+        }
+
+        function extFromMime(mime, fallbackName) {
+            if (/png/i.test(mime || '')) return 'png';
+            if (/(jpe?g)/i.test(mime || '')) return 'jpg';
+            if (/\.png$/i.test(fallbackName || '')) return 'png';
+            return 'jpg';
+        }
+
+        function readFileAsDataUrl(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(reader.error);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function renderSlots() {
+            const wrap = $('fotoSlots');
+            wrap.innerHTML = '';
+            slots.forEach((slot, i) => {
+                const el = document.createElement('div');
+                el.className = 'foto-slot';
+
+                if (slot.dataUrl) {
+                    const thumbWrap = document.createElement('div');
+                    thumbWrap.className = 'foto-thumb-wrap';
+
+                    const img = document.createElement('img');
+                    img.className = 'foto-thumb';
+                    img.src = slot.dataUrl;
+                    img.alt = `Foto ${i + 1}`;
+
+                    const rm = document.createElement('button');
+                    rm.type = 'button';
+                    rm.className = 'foto-remove';
+                    rm.title = 'Remover';
+                    rm.textContent = '✕';
+                    rm.addEventListener('click', () => removeSlot(i));
+
+                    thumbWrap.append(img, rm);
+                    el.appendChild(thumbWrap);
+                } else {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.jpg,.jpeg,.png,image/jpeg,image/png';
+                    input.hidden = true;
+                    input.addEventListener('change', event => pickSlot(i, event.target.files[0]));
+
+                    const pick = document.createElement('button');
+                    pick.type = 'button';
+                    pick.className = 'foto-pick';
+                    pick.textContent = `+ Foto ${i + 1}`;
+                    pick.addEventListener('click', () => input.click());
+
+                    el.append(pick, input);
+                }
+                wrap.appendChild(el);
+            });
+        }
+
+        async function pickSlot(i, file) {
+            if (!file) return;
+            if (!/(jpe?g|png)$/i.test(file.type) && !/\.(jpe?g|png)$/i.test(file.name)) {
+                showToast('Use apenas arquivos JPG ou PNG.', true);
+                return;
+            }
+            if (file.size > 8 * 1024 * 1024) {
+                showToast('Cada foto deve ter no máximo 8 MB.', true);
+                return;
+            }
+            try {
+                const dataUrl = await readFileAsDataUrl(file);
+                const ext = extFromMime(file.type, file.name);
+                slots[i].dataUrl = dataUrl;
+                slots[i].novoNome = `foto_${i + 1}.${ext}`;
+                renderSlots();
+            } catch (e) {
+                showToast('Não foi possível ler a foto.', true);
+            }
+        }
+
+        function removeSlot(i) {
+            // Se havia foto no Drive, mantém existiaNome para enviar a remoção
+            // ao salvar; limpa preview e qualquer seleção nova.
+            slots[i].dataUrl = '';
+            slots[i].novoNome = '';
+            renderSlots();
+        }
+
+        // Monta { fotos, remover } a partir do estado atual dos slots.
+        function collectFotos() {
+            const fotos = [];
+            const remover = [];
+            slots.forEach(slot => {
+                if (slot.novoNome && slot.dataUrl) {
+                    fotos.push({ nome: slot.novoNome, base64: slot.dataUrl.split(',')[1] });
+                    if (slot.existiaNome && slot.existiaNome !== slot.novoNome) {
+                        remover.push(slot.existiaNome);
+                    }
+                } else if (slot.existiaNome && !slot.dataUrl) {
+                    remover.push(slot.existiaNome);
+                }
+            });
+            return { fotos, remover };
+        }
+
+        async function loadFotosParaEdicao(id) {
+            slots = emptySlots();
+            renderSlots();
+            if (!id) return;
+            const res = await getAgendamentoFotos(id, true);
+            if (!res.ok || !Array.isArray(res.fotos)) return;
+            res.fotos.forEach(foto => {
+                const match = /^foto_([123])\./i.exec(foto.nome || '');
+                if (!match) return;
+                const idx = Number(match[1]) - 1;
+                if (idx < 0 || idx >= SLOT_COUNT) return;
+                slots[idx].existiaNome = foto.nome;
+                slots[idx].dataUrl = `data:${foto.mime || 'image/jpeg'};base64,${foto.base64}`;
+            });
+            renderSlots();
+        }
+
+        function setBusy(busy) {
+            ['btnAdd', 'btnSaveEdit', 'btnCancelEdit', 'btnPdf', 'btnFilter']
+                .forEach(id => { $(id).disabled = busy; });
+        }
+
+        function setFormFields(ag) {
+            $('agCliente').value = ag.cliente || '';
+            $('agEndereco').value = ag.endereco || '';
+            $('agMateriais').value = ag.materiais || '';
+            $('agData').value = ag.dataPrevista || '';
+        }
+
+        function clearForm() {
+            setFormFields({});
+            editingId = null;
+            slots = emptySlots();
+            renderSlots();
+            $('btnAdd').classList.remove('btn-hidden');
+            $('btnSaveEdit').classList.add('btn-hidden');
+            $('btnCancelEdit').classList.add('btn-hidden');
+            $('agCliente').focus();
+        }
+
+        async function startEdit(ag) {
+            editingId = ag.id;
+            setFormFields(ag);
+            $('btnAdd').classList.add('btn-hidden');
+            $('btnSaveEdit').classList.remove('btn-hidden');
+            $('btnCancelEdit').classList.remove('btn-hidden');
+            $('agCliente').focus();
+            await loadFotosParaEdicao(ag.id);
+        }
+
+        function readForm() {
+            return {
+                cliente: $('agCliente').value.trim(),
+                endereco: $('agEndereco').value.trim(),
+                materiais: $('agMateriais').value.trim(),
+                dataPrevista: $('agData').value
+            };
+        }
+
+        function validateForm(form) {
+            if (!form.cliente) return 'Informe o cliente.';
+            if (!form.dataPrevista) return 'Informe a data prevista.';
+            return '';
+        }
+
+        async function loadList() {
+            const data = $('filterData').value;
+            $('listLoading').style.display = 'block';
+            $('emptyState').style.display = 'none';
+            $('tableWrap').style.display = 'none';
+
+            const result = await getAgendamentos(data);
+            $('listLoading').style.display = 'none';
+
+            if (!result.ok) {
+                showToast(`Não foi possível buscar: ${result.error || 'erro desconhecido'}`, true);
+                $('emptyState').style.display = 'block';
+                $('emptyState').querySelector('h3').textContent = 'Erro ao carregar';
+                return;
+            }
+
+            currentList = result.data || [];
+            renderList();
+        }
+
+        function renderList() {
+            const body = $('listBody');
+            body.innerHTML = '';
+
+            if (!currentList.length) {
+                $('emptyState').style.display = 'block';
+                $('emptyState').querySelector('h3').textContent = 'Nenhum agendamento';
+                $('emptyState').querySelector('p').textContent =
+                    $('filterData').value
+                        ? 'Não há agendamentos para esta data.'
+                        : 'Não há agendamentos cadastrados.';
+                $('tableWrap').style.display = 'none';
+                return;
+            }
+
+            $('emptyState').style.display = 'none';
+            $('tableWrap').style.display = 'block';
+
+            currentList.forEach(ag => {
+                const tr = document.createElement('tr');
+                const hasId = Boolean(ag.id);
+                const actions = document.createElement('td');
+                actions.className = 'actions';
+
+                const btnEdit = document.createElement('button');
+                btnEdit.textContent = '✏️ Editar';
+                btnEdit.disabled = !hasId;
+                btnEdit.addEventListener('click', () => startEdit(ag));
+
+                const btnDel = document.createElement('button');
+                btnDel.className = 'del';
+                btnDel.textContent = '🗑️ Excluir';
+                btnDel.disabled = !hasId;
+                btnDel.addEventListener('click', () => confirmDelete(ag));
+
+                actions.append(btnEdit, btnDel);
+
+                tr.innerHTML = `
+                    <td>${escapeHTML(ag.cliente) || '—'}</td>
+                    <td>${escapeHTML(ag.endereco) || '—'}</td>
+                    <td>${escapeHTML(ag.materiais) || '—'}</td>
+                    <td>${escapeHTML(formatDateBR(ag.dataPrevista))}</td>
+                `;
+                tr.appendChild(actions);
+                body.appendChild(tr);
+            });
+        }
+
+        async function addAgendamento() {
+            const form = readForm();
+            const err = validateForm(form);
+            if (err) {
+                showToast(err, true);
+                return;
+            }
+
+            const id = crypto.randomUUID();
+            const op = { op: 'upsert', id, ...form };
+
+            setBusy(true);
+            try {
+                const result = await syncAgendamentos([op]);
+                if (!result.ok) {
+                    showToast(`Falha ao enviar: ${result.error || 'erro desconhecido'}`, true);
+                    return;
+                }
+
+                const { fotos } = collectFotos();
+                if (fotos.length) {
+                    showToast('Enviando fotos...');
+                    const up = await uploadAgendamentoFotos(id, fotos, []);
+                    if (!up.ok) {
+                        showToast(`Agendamento salvo, mas as fotos falharam: ${up.error || 'erro'}`, true);
+                    } else {
+                        showToast('Agendamento e fotos enviados.');
+                    }
+                } else {
+                    showToast('Agendamento enviado para a planilha.');
+                }
+
+                clearForm();
+                await loadList();
+            } finally {
+                setBusy(false);
+            }
+        }
+
+        async function saveEdit() {
+            if (!editingId) return;
+            const form = readForm();
+            const err = validateForm(form);
+            if (err) {
+                showToast(err, true);
+                return;
+            }
+
+            const id = editingId;
+            setBusy(true);
+            try {
+                const result = await syncAgendamentos([{ op: 'upsert', id, ...form }]);
+                if (!result.ok) {
+                    showToast(`Falha ao salvar: ${result.error || 'erro desconhecido'}`, true);
+                    return;
+                }
+
+                const { fotos, remover } = collectFotos();
+                if (fotos.length || remover.length) {
+                    showToast('Atualizando fotos...');
+                    const up = await uploadAgendamentoFotos(id, fotos, remover);
+                    if (!up.ok) {
+                        showToast(`Alterações salvas, mas as fotos falharam: ${up.error || 'erro'}`, true);
+                    } else {
+                        showToast('Alterações e fotos salvas.');
+                    }
+                } else {
+                    showToast('Alterações salvas na planilha.');
+                }
+
+                clearForm();
+                await loadList();
+            } finally {
+                setBusy(false);
+            }
+        }
+
+        async function confirmDelete(ag) {
+            if (!confirm(`Excluir o agendamento de "${ag.cliente}"?`)) return;
+            const result = await syncAgendamentos([{ op: 'delete', id: ag.id }]);
+            if (!result.ok) {
+                showToast(`Falha ao excluir: ${result.error || 'erro desconhecido'}`, true);
+                return;
+            }
+            showToast('Agendamento excluído.');
+            await loadList();
+        }
+
+        // Redimensiona um data-URL para JPEG (largura máx. maxW) e devolve
+        // { url, w, h } com as dimensões finais (para manter proporção no PDF).
+        function resizeToJpeg(dataUrl, maxW, quality) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => {
+                    const scale = Math.min(1, maxW / img.width);
+                    const w = Math.max(1, Math.round(img.width * scale));
+                    const h = Math.max(1, Math.round(img.height * scale));
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w;
+                    canvas.height = h;
+                    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                    resolve({ url: canvas.toDataURL('image/jpeg', quality), w, h });
+                };
+                img.onerror = () => reject(new Error('falha ao carregar imagem'));
+                img.src = dataUrl;
+            });
+        }
+
+        async function loadFotosParaPdf(item) {
+            if (!item.id) return [];
+            const res = await getAgendamentoFotos(item.id, true);
+            if (!res.ok || !Array.isArray(res.fotos) || !res.fotos.length) return [];
+            const out = [];
+            for (const foto of res.fotos) {
+                const src = `data:${foto.mime || 'image/jpeg'};base64,${foto.base64}`;
+                try {
+                    out.push(await resizeToJpeg(src, 300, 0.7));
+                } catch (e) {
+                    // Ignora fotos individuais que não carregam.
+                }
+            }
+            return out;
+        }
+
+        async function generatePdf() {
+            const data = $('filterData').value;
+            if (!data) {
+                showToast('Selecione uma data para gerar o PDF.', true);
+                return;
+            }
+
+            setBusy(true);
+            try {
+                showToast('Gerando PDF...');
+                const result = await getAgendamentos(data);
+                if (!result.ok) {
+                    showToast(`Não foi possível buscar: ${result.error || 'erro desconhecido'}`, true);
+                    return;
+                }
+
+                const items = (result.data || []).filter(item => item.cliente);
+
+                // Busca as fotos de cada item (online-only). Se falhar, o PDF é
+                // gerado sem as fotos daquele item.
+                const fotoMap = new Map();
+                let fotoFalhou = false;
+                await Promise.all(items.map(async item => {
+                    try {
+                        const fotos = await loadFotosParaPdf(item);
+                        if (fotos.length) fotoMap.set(item, fotos);
+                    } catch (e) {
+                        fotoFalhou = true;
+                    }
+                }));
+
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+                doc.setFontSize(16);
+                doc.text('Roteiro de Coletas - Agendamentos', 14, 15);
+                doc.setFontSize(10);
+                doc.text(`Data: ${formatDateBR(data)}   Total de Clientes: ${items.length}`, 14, 22);
+
+                doc.autoTable({
+                    startY: 28,
+                    head: [['Cliente', 'Endereço', 'Materiais', 'Fotos']],
+                    body: items.map(item => [item.cliente, item.endereco || '', item.materiais || '', '']),
+                    theme: 'grid',
+                    styles: {
+                        fontSize: 9,
+                        cellPadding: 2.2,
+                        lineColor: [40, 40, 40],
+                        lineWidth: 0.3
+                    },
+                    headStyles: { fillColor: [26, 58, 92], textColor: 255, fontStyle: 'bold' },
+                    alternateRowStyles: { fillColor: [222, 230, 238] },
+                    columnStyles: { 3: { cellWidth: 66 } },
+                    didParseCell: cellData => {
+                        if (cellData.section !== 'body' || cellData.column.index !== 3) return;
+                        const item = items[cellData.row.index];
+                        if (fotoMap.has(item)) cellData.cell.styles.minCellHeight = 24;
+                    },
+                    didDrawCell: cellData => {
+                        if (cellData.section !== 'body' || cellData.column.index !== 3) return;
+                        const item = items[cellData.row.index];
+                        const fotos = fotoMap.get(item);
+                        if (!fotos || !fotos.length) return;
+
+                        const pad = 1.5;
+                        const gap = 1.5;
+                        const cell = cellData.cell;
+                        const availH = cell.height - 2 * pad;
+                        const n = fotos.length;
+                        const slotW = (cell.width - 2 * pad - (n - 1) * gap) / n;
+                        let x = cell.x + pad;
+                        const y = cell.y + pad;
+                        fotos.forEach(f => {
+                            const ar = f.w / f.h;
+                            let w = slotW;
+                            let h = w / ar;
+                            if (h > availH) { h = availH; w = h * ar; }
+                            try {
+                                doc.addImage(f.url, 'JPEG', x, y, w, h);
+                            } catch (e) {
+                                // ignora imagem que não pôde ser desenhada
+                            }
+                            x += slotW + gap;
+                        });
+                    }
+                });
+
+                if (fotoFalhou) {
+                    showToast('PDF gerado — algumas fotos não puderam ser carregadas.', true);
+                }
+
+                const filename = `Agendamentos_${data}.pdf`;
+                const pdfBase64 = doc.output('datauristring').split(',')[1];
+                const tauri = window.__TAURI__;
+                if (tauri && tauri.core && typeof tauri.core.invoke === 'function') {
+                    try {
+                        const path = await tauri.core.invoke('save_checklist_pdf', { pdfBase64, filename });
+                        showToast(`PDF salvo em: ${path}`);
+                    } catch (e) {
+                        showToast(`Não foi possível salvar o PDF: ${e}`, true);
+                    }
+                    return;
+                }
+                doc.save(filename);
+                if (!fotoFalhou) showToast('PDF gerado.');
+            } finally {
+                setBusy(false);
+            }
+        }
+
+        $('btnAdd').addEventListener('click', addAgendamento);
+        $('btnSaveEdit').addEventListener('click', saveEdit);
+        $('btnCancelEdit').addEventListener('click', clearForm);
+        $('btnFilter').addEventListener('click', loadList);
+        $('btnPdf').addEventListener('click', generatePdf);
+        $('filterData').addEventListener('change', event => {
+            if (event.target.value) loadList();
+        });
+
+        renderSlots();
+        $('agData').value = today();
+        $('filterData').value = today();
+        loadList();
+    </script>
+</body>
+</html>

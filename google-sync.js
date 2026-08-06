@@ -32,27 +32,18 @@ export async function getGasStatus() {
     const url = getGasUrl();
     if (!url) return { ok: false, error: 'URL do GAS não configurada' };
 
-    try {
-        const res = await fetch(`${url}?action=status`);
-        if (!res.ok) {
-            return { ok: false, error: `Falha HTTP ${res.status}` };
-        }
-
-        const data = await res.json();
-        if (!data.ok) return data;
-        if (!Object.prototype.hasOwnProperty.call(data, 'apiVersion')) {
-            return { ok: true, service: 'satelite-gas-legado', apiVersion: 1, legacy: true };
-        }
-
-        const apiVersion = Number(data.apiVersion);
-        if (data.service !== 'satelite-gas' || !Number.isInteger(apiVersion) || apiVersion < 1) {
-            return { ok: false, error: 'Resposta de status do GAS inválida' };
-        }
-
-        return { ...data, apiVersion };
-    } catch (e) {
-        return { ok: false, error: e.message };
+    const data = await gasGetJsonWithRetry_(`${url}?action=status`);
+    if (!data.ok) return data;
+    if (!Object.prototype.hasOwnProperty.call(data, 'apiVersion')) {
+        return { ok: true, service: 'satelite-gas-legado', apiVersion: 1, legacy: true };
     }
+
+    const apiVersion = Number(data.apiVersion);
+    if (data.service !== 'satelite-gas' || !Number.isInteger(apiVersion) || apiVersion < 1) {
+        return { ok: false, error: 'Resposta de status do GAS inválida' };
+    }
+
+    return { ...data, apiVersion };
 }
 
 export async function pushColetas(coletas) {
@@ -164,6 +155,67 @@ export async function getUltimasQuantidades(roteiroNome) {
     return gasGetJsonWithRetry_(
         `${url}?action=ultimaColetaDetalhada&roteiro=${encodeURIComponent(roteiroNome)}`
     );
+}
+
+export async function getAgendamentos(data = '') {
+    const url = getGasUrl();
+    if (!url) return { ok: false, error: 'URL do GAS não configurada' };
+    const query = data
+        ? `?action=agendamentos&data=${encodeURIComponent(data)}`
+        : `?action=agendamentos`;
+    return gasGetJsonWithRetry_(`${url}${query}`);
+}
+
+export async function syncAgendamentos(ops) {
+    const url = getGasUrl();
+    if (!url) return { ok: false, error: 'URL do GAS não configurada' };
+    if (!Array.isArray(ops) || !ops.length) return { ok: true, upserts: 0, deletes: 0 };
+
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'syncAgendamentos', ops })
+        });
+        if (!res.ok) {
+            return { ok: false, error: `Falha HTTP ${res.status}` };
+        }
+        return await res.json();
+    } catch (e) {
+        return { ok: false, error: e.message };
+    }
+}
+
+export async function uploadAgendamentoFotos(id, fotos, remover = []) {
+    const url = getGasUrl();
+    if (!url) return { ok: false, error: 'URL do GAS não configurada' };
+
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+                action: 'uploadAgendamentoFotos',
+                id,
+                fotos: fotos || [],
+                remover: remover || []
+            })
+        });
+        if (!res.ok) {
+            return { ok: false, error: `Falha HTTP ${res.status}` };
+        }
+        return await res.json();
+    } catch (e) {
+        return { ok: false, error: e.message };
+    }
+}
+
+export async function getAgendamentoFotos(id, incluirBase64 = false) {
+    const url = getGasUrl();
+    if (!url) return { ok: false, error: 'URL do GAS não configurada' };
+    const query = `?action=agendamentoFotos&id=${encodeURIComponent(id)}`
+        + `&incluirBase64=${incluirBase64 ? 'true' : 'false'}`;
+    return gasGetJsonWithRetry_(`${url}${query}`);
 }
 
 export async function sendChecklistToDrive(filename, pdfBase64) {
