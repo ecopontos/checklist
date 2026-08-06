@@ -11,6 +11,10 @@
 
 var CSV_FILE_NAME = 'cstExportaCheckList.csv';
 var COLETAS_SHEET_NAME = 'Coletas';
+var AGENDAMENTOS_SHEET_NAME = 'verdesagendados';
+var AGENDAMENTOS_HEADERS = [
+    'ID', 'Cliente', 'Endereço', 'Materiais', 'Data Prevista', 'Sincronizado Em'
+];
 var ROUTE_CHANGES_SHEET_NAME = 'AlteracoesRoteiros';
 var ROUTE_CHANGES_HEADERS = [
     'Change ID', 'ID Rota', 'Inativo', 'Ordem', 'Roteiro', 'Alterado Em',
@@ -62,6 +66,10 @@ function doGet(e) {
 
     if (params.action === 'ultimaColetaDetalhada') {
         return getUltimaColetaDetalhada_(params.roteiro || '');
+    }
+
+    if (params.action === 'agendamentos') {
+        return getAgendamentos_(params.data || '');
     }
 
 
@@ -332,6 +340,10 @@ function doPost(e) {
             );
         }
 
+        if (body.action === 'syncAgendamentos') {
+            return syncAgendamentos_(body.ops || []);
+        }
+
         if (body.checklist) {
             return saveChecklist_(body.checklist);
         }
@@ -599,6 +611,239 @@ function confirmRouteChanges_(changeIds, token, message) {
                 ).setValues(values);
             }
             return jsonResponse_({ ok: true, count: count });
+        } finally {
+            lock.releaseLock();
+        }
+    } catch (err) {
+        return jsonResponse_({ ok: false, error: err.message });
+    }
+}
+
+function getAgendamentosSheet_() {
+    var config = getConfig_();
+    if (!config.spreadsheetId) {
+        throw new Error('SPREADSHEET_ID não configurado');
+    }
+
+    var spreadsheet = SpreadsheetApp.openById(config.spreadsheetId);
+    var sheet = spreadsheet.getSheetByName(AGENDAMENTOS_SHEET_NAME);
+
+    if (sheet && sheet.getLastRow() > 0) {
+        var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+        var hasId = String(header[0]).trim() === 'ID';
+        var missing = AGENDAMENTOS_HEADERS.filter(function (name, i) {
+            return !hasId && i === 0
+                ? false
+                : String(header[i] || '').trim() !== name;
+        });
+        if (hasId && !missing.length) {
+            return sheet;
+        }
+        // Aba existente sem o formato esperado: reescreve o cabeçalho com a
+        // coluna ID. Linhas antigas digitadas manualmente ficam com ID vazio
+        // (somente-leitura na UI, mas aparecem no PDF).
+        sheet.getRange(1, 1, 1, AGENDAMENTOS_HEADERS.length)
+            .setValues([AGENDAMENTOS_HEADERS]);
+        sheet.setFrozenRows(1);
+        return sheet;
+    }
+
+    if (sheet) {
+        sheet.getRange(1, 1, 1, AGENDAMENTOS_HEADERS.length)
+            .setValues([AGENDAMENTOS_HEADERS]);
+        sheet.setFrozenRows(1);
+        return sheet;
+    }
+
+    sheet = spreadsheet.insertSheet(AGENDAMENTOS_SHEET_NAME);
+    sheet.getRange(1, 1, 1, AGENDAMENTOS_HEADERS.length)
+        .setValues([AGENDAMENTOS_HEADERS]);
+    sheet.setFrozenRows(1);
+    return sheet;
+}
+
+function getAgendamentos_(data) {
+    var config = getConfig_();
+    if (!config.spreadsheetId) {
+        return jsonResponse_({ ok: false, error: 'SPREADSHEET_ID não configurado' });
+    }
+
+    var dataAlvo = String(data || '').trim();
+    if (dataAlvo && !/^\d{4}-\d{2}-\d{2}$/.test(dataAlvo)) {
+        return jsonResponse_({ ok: false, error: 'Data inválida' });
+    }
+
+    try {
+        var sheet = getAgendamentosSheet_();
+        var lastRow = sheet.getLastRow();
+        if (lastRow < 2) {
+            return jsonResponse_({ ok: true, data: [] });
+        }
+
+        var cache = CacheService.getScriptCache();
+        var cacheKey = 'age:' + lastRow + ':' + (dataAlvo || '*');
+        var cached = cache.get(cacheKey);
+        if (cached !== null) {
+            return jsonResponse_({ ok: true, data: JSON.parse(cached) });
+        }
+
+        var values = sheet.getRange(
+            2,
+            1,
+            lastRow - 1,
+            AGENDAMENTOS_HEADERS.length
+        ).getValues();
+        var rows = [];
+        for (var i = 0; i < values.length; i++) {
+            var row = values[i];
+            // O Sheets converte "YYYY-MM-DD" para data interna ao gravar;
+            // normaliza Date/string para "YYYY-MM-DD" antes de comparar.
+            var dataPrevista = normalizeDateValue_(row[4]) || '';
+            if (dataAlvo && dataPrevista !== dataAlvo) continue;
+            rows.push({
+                id: String(row[0] || '').trim(),
+                cliente: String(row[1] || ''),
+                endereco: String(row[2] || ''),
+                materiais: String(row[3] || ''),
+                dataPrevista: dataPrevista,
+                sincronizadoEm: String(row[5] || '')
+            });
+        }
+
+        cache.put(cacheKey, JSON.stringify(rows), 600);
+        return jsonResponse_({ ok: true, data: rows });
+    } catch (err) {
+        return jsonResponse_({ ok: false, error: err.message });
+    }
+}
+
+function normalizeAgendamento_(op) {
+    if (op.op !== 'upsert' && op.op !== 'delete') {
+        throw new Error('Operação inválida (esperado upsert ou delete)');
+    }
+
+    var id = String(op.id || '').trim();
+    if (!/^[A-Za-z0-9-]{8,64}$/.test(id)) {
+        throw new Error('ID de agendamento inválido');
+    }
+
+    if (op.op === 'delete') {
+        return { op: 'delete', id: id };
+    }
+
+    var cliente = String(op.cliente || '').trim();
+    if (!cliente) {
+        throw new Error('Cliente é obrigatório para ' + id);
+    }
+    if (cliente.length > 255 || /[\t\r\n]/.test(cliente)) {
+        throw new Error('Cliente inválido para ' + id);
+    }
+
+    var endereco = String(op.endereco || '').trim();
+    if (endereco.length > 255 || /[\t\r\n]/.test(endereco)) {
+        throw new Error('Endereço inválido para ' + id);
+    }
+
+    var materiais = String(op.materiais || '').trim();
+    if (materiais.length > 500 || /[\t\r\n]/.test(materiais)) {
+        throw new Error('Materiais inválidos para ' + id);
+    }
+
+    var dataPrevista = String(op.dataPrevista || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataPrevista)) {
+        throw new Error('Data Prevista inválida para ' + id);
+    }
+
+    return {
+        op: 'upsert',
+        id: id,
+        cliente: cliente,
+        endereco: endereco,
+        materiais: materiais,
+        dataPrevista: dataPrevista
+    };
+}
+
+function syncAgendamentos_(ops) {
+    var config = getConfig_();
+    if (!config.spreadsheetId) {
+        return jsonResponse_({ ok: false, error: 'SPREADSHEET_ID não configurado' });
+    }
+    if (!Array.isArray(ops) || ops.length > 200) {
+        return jsonResponse_({ ok: false, error: 'O lote deve conter no máximo 200 operações' });
+    }
+
+    try {
+        var normalized = ops.map(normalizeAgendamento_);
+        var lock = LockService.getScriptLock();
+        lock.waitLock(30000);
+        try {
+            var sheet = getAgendamentosSheet_();
+            var lastRow = sheet.getLastRow();
+            var values = lastRow > 1
+                ? sheet.getRange(2, 1, lastRow - 1, AGENDAMENTOS_HEADERS.length).getValues()
+                : [];
+
+            var byId = {};
+            values.forEach(function (row) {
+                var id = String(row[0] || '').trim();
+                if (id) byId[id] = row;
+            });
+
+            var now = new Date().toISOString();
+            var upserts = 0;
+            var deletes = 0;
+            var updated = [];
+            normalized.forEach(function (op) {
+                if (op.op === 'delete') {
+                    var target = byId[op.id];
+                    if (!target) return;
+                    target[0] = '__DELETE__';
+                    deletes++;
+                    return;
+                }
+
+                var existing = byId[op.id];
+                if (existing) {
+                    existing[1] = op.cliente;
+                    existing[2] = op.endereco;
+                    existing[3] = op.materiais;
+                    existing[4] = op.dataPrevista;
+                    existing[5] = now;
+                } else {
+                    updated.push([
+                        op.id, op.cliente, op.endereco, op.materiais,
+                        op.dataPrevista, now
+                    ]);
+                }
+                upserts++;
+            });
+
+            var newRows = [];
+            for (var i = 0; i < values.length; i++) {
+                if (values[i][0] === '__DELETE__') continue;
+                newRows.push(values[i]);
+            }
+            updated.forEach(function (row) { newRows.push(row); });
+
+            if (newRows.length) {
+                sheet.getRange(2, 1, newRows.length, AGENDAMENTOS_HEADERS.length)
+                    .setValues(newRows);
+            }
+            if (values.length > newRows.length) {
+                sheet.getRange(
+                    2 + newRows.length,
+                    1,
+                    values.length - newRows.length,
+                    AGENDAMENTOS_HEADERS.length
+                ).clearContent();
+            }
+
+            return jsonResponse_({
+                ok: true,
+                upserts: upserts,
+                deletes: deletes
+            });
         } finally {
             lock.releaseLock();
         }

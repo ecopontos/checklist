@@ -165,3 +165,36 @@ de substituir o existente), o `doGet` pode retornar qualquer um dos dois —
 não necessariamente o mais recente. Sempre **substitua** o arquivo existente
 na pasta (mantendo um único arquivo com esse nome) em vez de fazer upload de
 uma cópia adicional.
+
+## Agendamentos de coleta (aba "verdesagendados")
+
+A aba `verdesagendados` recebe as coletas futuras registradas no app. Ela é
+criada automaticamente pelo GAS com o cabeçalho:
+
+`ID | Cliente | Endereço | Materiais | Data Prevista | Sincronizado Em`
+
+- `ID` é o `sync_id` gerado pelo app e permite editar/excluir uma linha de
+  forma estável (o lote é idempotente por ID).
+- `Data Prevista` é gravada no formato `YYYY-MM-DD`.
+- Se a aba já existir com apenas `Cliente | Endereço | Materiais | Data
+  Prevista`, o cabeçalho é reescrito adicionando as colunas `ID` e
+  `Sincronizado Em`; linhas antigas ficam com `ID` vazio (aparecem no PDF,
+  mas não podem ser editadas/excluídas pelo app).
+
+Buscar agendamentos (opcionalmente filtrados por data):
+
+```bash
+curl "<URL>?action=agendamentos"
+curl "<URL>?action=agendamentos&data=2026-08-10"
+```
+
+Esperado: `{"ok":true,"data":[{...}]}`.
+
+Enviar alterações (upsert/delete em lote):
+
+```bash
+curl -X POST "<URL>" -H "Content-Type: text/plain;charset=utf-8" \
+  -d '{"action":"syncAgendamentos","ops":[{"op":"upsert","id":"abc-123","cliente":"CEPON","endereco":"Rua A, 1","materiais":"Papelão","dataPrevista":"2026-08-10"},{"op":"delete","id":"xyz-456"}]}'
+```
+
+Esperado: `{"ok":true,"upserts":1,"deletes":1}`.
