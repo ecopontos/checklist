@@ -6,7 +6,7 @@
 const GAS_URL_KEY = 'app3_gas_url';
 const LAST_DRIVE_SYNC_KEY = 'app3_last_drive_sync';
 const GAS_ROUTE_TOKEN_KEY = 'app3_gas_route_token';
-export const REQUIRED_GAS_API_VERSION = 3;
+export const REQUIRED_GAS_API_VERSION = 4;
 
 function getAppConfig_() {
     return (typeof window !== 'undefined' && window.APP_CONFIG) || {};
@@ -70,15 +70,20 @@ export async function checkAndImportRoteiros(db) {
     const url = getGasUrl();
     if (!url) return { checked: false, reason: 'no-url' };
 
-    // O import do CSV é uma resposta grande (~150 KB) que passa pela etapa de
-    // redirecionamento de conteúdo do Google; essa etapa às vezes devolve um
-    // 404 transitório. Tenta algumas vezes antes de desistir, para não
-    // confundir uma falha passageira com uma implantação obsoleta.
+    // A resposta de roteiros é grande e passa pela etapa de redirecionamento de
+    // conteúdo do Google, que às vezes devolve um 404 transitório. Tenta algumas
+    // vezes antes de desistir, para não confundir uma falha passageira com uma
+    // implantação obsoleta.
+    //
+    // Compatibilidade durante a transição: o GAS novo devolve as linhas
+    // achatadas em `data.rows` (fonte = abas do Sheets); o GAS antigo, ainda não
+    // reimplantado, responde a esta mesma chamada com o CSV em `data.content`.
+    // Aceitamos os dois para não quebrar apps em uso enquanto o GAS não sobe.
     let res = null;
     let lastError = '';
     for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-            res = await fetch(url, { method: 'GET' });
+            res = await fetch(`${url}?action=roteiros`, { method: 'GET' });
             if (res.ok) break;
             lastError = `Falha HTTP ${res.status}`;
             res = null;
@@ -104,10 +109,12 @@ export async function checkAndImportRoteiros(db) {
             return { checked: true, updated: false };
         }
 
-        const result = db.importRoteirosCsv(data.content);
+        const result = Array.isArray(data.rows)
+            ? db.importRoteirosRows(data.rows)          // GAS novo: abas do Sheets
+            : db.importRoteirosCsv(data.content || ''); // GAS antigo: CSV (fallback)
 
         if (result.roteiros === 0 && result.clientes === 0) {
-            return { checked: true, updated: false, warning: 'CSV vazio ou formato inválido' };
+            return { checked: true, updated: false, warning: 'Nenhum roteiro/cliente retornado' };
         }
 
         localStorage.setItem(LAST_DRIVE_SYNC_KEY, data.modifiedTime);

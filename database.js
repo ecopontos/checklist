@@ -240,14 +240,22 @@ class AppDatabase {
     }
 
     importRoteirosCsv(csvText) {
-        const cleanText = csvText.replace(/^\uFEFF/, '');
+        const cleanText = String(csvText || '').replace(/^\uFEFF/, '');
         const results = Papa.parse(cleanText, {
             header: true,
             skipEmptyLines: true,
             dynamicTyping: true
         });
+        return this.importRoteirosRows(results.data);
+    }
 
-        const comOrdemValida = results.data.filter(row => {
+    // Importa a partir de linhas achatadas ja em objeto (mesmas colunas do CSV).
+    // Usado tanto pelo import manual de CSV quanto pela sincronizacao com o
+    // Sheets (action=roteiros), que entrega as linhas direto em JSON.
+    importRoteirosRows(dataRows) {
+        const rows = Array.isArray(dataRows) ? dataRows : [];
+
+        const comOrdemValida = rows.filter(row => {
             const ordem = this._getCsvVal(row, 'Ordem');
             return ordem !== null && ordem !== undefined && ordem !== '' && Number(ordem) !== 0;
         });
