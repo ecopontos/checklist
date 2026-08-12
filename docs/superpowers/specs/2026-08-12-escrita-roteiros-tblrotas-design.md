@@ -1,7 +1,7 @@
 # Escrita de volta: aplicar reorganização/status direto em tblRotas (Subprojeto A)
 
 **Data:** 2026-08-12
-**Status:** Aprovado — pronto para plano de implementação
+**Status:** Implementado (GAS + polimento), suíte verde — pendente de deploy do GAS e validação no app real
 **Epic:** Escrita de volta ao Sheets. Este é o **subprojeto A** de quatro:
 A (reorg/status · este) → B (edição de cliente) → C (criação de cliente) → D (criação de roteiro).
 
