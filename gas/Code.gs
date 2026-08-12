@@ -26,7 +26,7 @@ var ROUTE_CHANGES_HEADERS = [
     'Origem', 'Status', 'Recebido Em', 'Processado Em', 'Mensagem'
 ];
 var ROUTE_CHANGES_MAX_DELIVERY = 2000;
-var GAS_API_VERSION = 4;
+var GAS_API_VERSION = 5;
 // Consultas de última coleta varrem apenas as linhas mais recentes da aba
 // Coletas (append-only, cronológica). Varrer a aba inteira chega a ~37s e pode
 // estourar o limite do GAS. Se o roteiro não aparecer na janela, há fallback
@@ -566,6 +566,7 @@ function saveRouteChanges_(changes, token) {
             var rows = [];
             var acceptedIds = [];
             var duplicateIds = [];
+            var accepted = [];
             normalized.forEach(function (change) {
                 if (existingIds[change.changeId]) {
                     duplicateIds.push(change.changeId);
@@ -573,6 +574,7 @@ function saveRouteChanges_(changes, token) {
                 }
                 existingIds[change.changeId] = true;
                 acceptedIds.push(change.changeId);
+                accepted.push(change);
                 rows.push([
                     change.changeId,
                     change.idRota,
@@ -588,6 +590,11 @@ function saveRouteChanges_(changes, token) {
                 ]);
             });
 
+            // Aplica em tblRotas ANTES de gravar o log de auditoria: se a
+            // aplicacao falhar, o log nao e escrito e o reenvio reprocessa como
+            // aceito (aplicar Ordem/Inativo e idempotente, repetir e seguro).
+            var applyResult = applyRouteChangesToRotas_(accepted);
+
             if (rows.length) {
                 sheet.getRange(
                     sheet.getLastRow() + 1,
@@ -601,7 +608,8 @@ function saveRouteChanges_(changes, token) {
                 ok: true,
                 count: acceptedIds.length,
                 acceptedIds: acceptedIds,
-                duplicateIds: duplicateIds
+                duplicateIds: duplicateIds,
+                skippedApply: applyResult.skipped.length
             });
         } finally {
             lock.releaseLock();
@@ -609,6 +617,68 @@ function saveRouteChanges_(changes, token) {
     } catch (err) {
         return jsonResponse_({ ok: false, error: err.message });
     }
+}
+
+// Aplica as alteracoes aceitas na aba tblRotas (Ordem/Inativo), por idRota.
+// Escrita direcionada apenas nas celulas alteradas, para nao sobrescrever
+// edicoes manuais concorrentes. Lanca em erro de configuracao/coluna ausente.
+function applyRouteChangesToRotas_(changes) {
+    if (!changes || !changes.length) return { applied: 0, skipped: [] };
+
+    var config = getConfig_();
+    if (!config.spreadsheetId) throw new Error('SPREADSHEET_ID nao configurado');
+    var sheet = SpreadsheetApp.openById(config.spreadsheetId).getSheetByName(TBL_ROTAS);
+    if (!sheet) throw new Error('Aba nao encontrada: ' + TBL_ROTAS);
+
+    var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var colIdRota = header.indexOf('idRota');
+    var colInativo = header.indexOf('Inativo');
+    var colOrdem = header.indexOf('Ordem');
+    if (colIdRota === -1) throw new Error('Coluna idRota nao encontrada em ' + TBL_ROTAS);
+    if (colInativo === -1) throw new Error('Coluna Inativo nao encontrada em ' + TBL_ROTAS);
+    if (colOrdem === -1) throw new Error('Coluna Ordem nao encontrada em ' + TBL_ROTAS);
+
+    var lastRow = sheet.getLastRow();
+    var idRowMap = {};
+    if (lastRow > 1) {
+        var idValues = sheet.getRange(2, colIdRota + 1, lastRow - 1, 1).getValues();
+        for (var i = 0; i < idValues.length; i++) {
+            var key = cleanIntString_(idValues[i][0]);
+            if (key) idRowMap[key] = i + 2; // numero real da linha na planilha
+        }
+    }
+
+    var plan = planRotaWrites_(idRowMap, changes);
+
+    // Inativo e Ordem sao colunas adjacentes em tblRotas: grava as duas de uma
+    // vez quando possivel. Inativo como booleano (respeita o checkbox).
+    var adjacent = (colOrdem === colInativo + 1);
+    plan.writes.forEach(function (w) {
+        if (adjacent) {
+            sheet.getRange(w.row, colInativo + 1, 1, 2).setValues([[w.inativo, w.ordem]]);
+        } else {
+            sheet.getRange(w.row, colInativo + 1).setValue(w.inativo);
+            sheet.getRange(w.row, colOrdem + 1).setValue(w.ordem);
+        }
+    });
+
+    return { applied: plan.writes.length, skipped: plan.skipped };
+}
+
+// Funcao pura (sem chamadas ao Sheets), testavel: dado idRota->linha e as
+// alteracoes aceitas, devolve as escritas {row, ordem, inativo} e os idRota sem
+// linha correspondente (skipped).
+function planRotaWrites_(idRowMap, changes) {
+    var writes = [];
+    var skipped = [];
+    for (var i = 0; i < changes.length; i++) {
+        var ch = changes[i];
+        var key = cleanIntString_(ch.idRota);
+        var row = idRowMap[key];
+        if (!row) { skipped.push(key); continue; }
+        writes.push({ row: row, ordem: Number(ch.ordem), inativo: ch.inativo === 1 });
+    }
+    return { writes: writes, skipped: skipped };
 }
 
 function getPendingRouteChanges_(token) {

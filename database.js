@@ -162,7 +162,7 @@ class AppDatabase {
             throw new Error('A lista reordenada não corresponde ao roteiro selecionado.');
         }
         if (ids.some(id => !/^\d+$/.test(id))) {
-            throw new Error('O roteiro possui pontos locais que ainda não existem no Access.');
+            throw new Error('O roteiro possui pontos locais que ainda não existem na planilha.');
         }
 
         const routeResult = this.db.exec('SELECT nome FROM roteiros WHERE id = ?', [roteiroId]);
@@ -303,7 +303,7 @@ class AppDatabase {
         return key ? row[key] : null;
     }
 
-    // --- Alterações de roteiros pendentes para o Access ---
+    // --- Alterações de roteiros pendentes para a planilha ---
     queueRoteiroChange(idRota) {
         const cliente = this.getClienteByIdRota(idRota);
         if (!cliente || !/^\d+$/.test(String(cliente.id_rota))) {
