@@ -1,7 +1,7 @@
 # Roteiros direto do Google Sheets (substituir o CSV do Access)
 
 **Data:** 2026-08-12
-**Status:** Aprovado — pronto para plano de implementação
+**Status:** Implementado (cliente + GAS), verificado em unidade — pendente de deploy do GAS e validação no app real
 **Escopo desta entrega:** somente leitura (import). Escrita de volta ao Sheets fica para etapas futuras.
 
 ## Contexto
@@ -129,14 +129,19 @@ Não há coluna de logradouro nos dados; o import atual já trata `Logradouro`/`
 
 ### Cliente — `google-sync.js`
 
-- `checkAndImportRoteiros(db)` passa a chamar `gasGetJsonWithRetry_(`${url}?action=roteiros`)` em vez
-  de `fetch` do arquivo cru (aproveita retry/timeout que já existem).
-- Compara `data.modifiedTime` com a chave de última sincronização para manter "só reimporta quando
-  muda". A chave `app3_last_drive_sync` é reaproveitada (semântica muda de "CSV do Drive" para
-  "planilha"); renomear é opcional e só causaria um reimport único inofensivo — decidir no plano.
-- Em sucesso, chama `db.importRoteirosRows(data.rows)` em vez de `importRoteirosCsv`.
+- `checkAndImportRoteiros(db)` passa a chamar `${url}?action=roteiros`, mantendo o laço de retry
+  inline já existente (3 tentativas com backoff — cobre o 404 transitório do redirecionamento de
+  conteúdo do Google, que também vale para a resposta de roteiros).
+- **Aceita os dois formatos** (compatibilidade de transição): se a resposta traz `data.rows`
+  (array) → `db.importRoteirosRows(data.rows)` (GAS novo, abas do Sheets); senão →
+  `db.importRoteirosCsv(data.content || '')` (GAS antigo, ainda servindo CSV). Ver
+  "Estratégia de transição".
+- Compara `data.modifiedTime` com `app3_last_drive_sync` para manter "só reimporta quando muda". A
+  chave é **reaproveitada** (a semântica muda de "CSV do Drive" para "planilha"; sem migração).
 - Guarda de vazio e de erro mantidas: em `{ok:false}`/rede caída ou resultado vazio, **preserva o
   cache local**.
+- `REQUIRED_GAS_API_VERSION` sobe para `4` — usado **apenas** como rótulo de aviso no `admin.html`
+  (`apiVersion < REQUIRED` mostra "atualização necessária"); **não bloqueia** o import.
 
 ### Cliente — `database.js`
 
@@ -146,6 +151,28 @@ Não há coluna de logradouro nos dados; o import atual já trata `Logradouro`/`
 - `importRoteirosCsv(csvText)` passa a: `Papa.parse` → `importRoteirosRows(parsed)`. O botão manual
   "Importar CSV" em `roteiros.html` continua funcionando sem mudança.
 - Sem mudança de schema SQLite.
+
+## Estratégia de transição (rollout sem quebra)
+
+Esta é uma mudança de protocolo: o GAS deixa de devolver `{ content: <csv> }` e passa a devolver
+`{ rows: [...] }`. Como há **apps em uso em várias máquinas** e o GAS é uma **implantação única**
+(uma URL que serve todos ao mesmo tempo), qualquer ordem ingênua abre uma janela de quebra.
+
+**Decisão: app primeiro, com cliente tolerante aos dois formatos; GAS por último.**
+
+1. Chamar `?action=roteiros` funciona **nas duas versões** do GAS: no GAS antigo essa action não é
+   reconhecida e cai no ramo padrão, que devolve o CSV (`content`); no GAS novo devolve `rows`.
+2. O cliente aceita `rows` (novo) **ou** `content` (fallback antigo). Assim o app novo funciona
+   contra o GAS antigo **e** contra o novo.
+3. Ordem de implantação:
+   1. Distribuir o **app novo** para todas as máquinas — cada uma segue importando contra o GAS
+      ainda antigo, via `content`.
+   2. Só então **reimplantar o GAS** — todos os apps já entendem `rows` e viram a chave sozinhos,
+      sem janela de quebra.
+4. O aviso de versão no `admin.html` é **não bloqueante** (só rótulo), então um app novo contra um
+   GAS antigo apenas exibe "atualização v4 necessária" e continua importando normalmente.
+5. **Limpeza futura:** quando não houver mais app antigo em uso, remover o fallback de `content` do
+   cliente e o suporte a resposta CSV (nada mais depende dele).
 
 ## Tratamento de erros / offline
 

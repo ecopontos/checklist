@@ -3,13 +3,14 @@
  * Deploy as Web App (Execute as: Me, Who has access: Anyone).
  *
  * Script Properties required (Project Settings > Script Properties):
- *   SPREADSHEET_ID        - id of the Google Sheet that receives coleta rows
- *   DRIVE_FOLDER_ID        - id of the Drive folder containing cstExportaCheckList.csv
+ *   SPREADSHEET_ID        - id of the Google Sheet (coletas + abas de roteiros)
  *   CHECKLISTS_FOLDER_ID   - id of the Drive folder that receives checklist PDFs
  *   ROUTE_CHANGES_TOKEN    - shared token used by apps and the Access frontend
  */
 
-var CSV_FILE_NAME = 'cstExportaCheckList.csv';
+var TBL_ROTAS = 'tblRotas';
+var TBL_CLIENTES = 'shtClientes';
+var TBL_ROTEIROS = 'tblRoteiros';
 var COLETAS_SHEET_NAME = 'Coletas';
 var AGENDAMENTOS_SHEET_NAME = 'verdesagendados';
 var AGENDAMENTOS_HEADERS = [
@@ -25,8 +26,7 @@ var ROUTE_CHANGES_HEADERS = [
     'Origem', 'Status', 'Recebido Em', 'Processado Em', 'Mensagem'
 ];
 var ROUTE_CHANGES_MAX_DELIVERY = 2000;
-var GAS_API_VERSION = 3;
-var CSV_DECODE_SYNC_OFFSET_MS = 1;
+var GAS_API_VERSION = 4;
 // Consultas de última coleta varrem apenas as linhas mais recentes da aba
 // Coletas (append-only, cronológica). Varrer a aba inteira chega a ~37s e pode
 // estourar o limite do GAS. Se o roteiro não aparecer na janela, há fallback
@@ -37,7 +37,6 @@ function getConfig_() {
     var props = PropertiesService.getScriptProperties();
     return {
         spreadsheetId: props.getProperty('SPREADSHEET_ID'),
-        folderId: props.getProperty('DRIVE_FOLDER_ID'),
         checklistsFolderId: props.getProperty('CHECKLISTS_FOLDER_ID'),
         routeChangesToken: props.getProperty('ROUTE_CHANGES_TOKEN')
     };
@@ -80,81 +79,150 @@ function doGet(e) {
         return getAgendamentoFotos_(params.id || '', params.incluirBase64 === 'true');
     }
 
+    // Fonte de roteiros: antes um CSV no Drive (exportado do Access), agora
+    // montada direto das abas do Sheets. Vale como action=roteiros e como padrão.
+    return getRoteirosFlat_();
+}
 
+// L\u00EA tblRotas + shtClientes + tblRoteiros e devolve a vis\u00E3o achatada que o app
+// j\u00E1 consome (mesmas colunas do antigo CSV). Substitui a leitura do
+// cstExportaCheckList.csv no Drive.
+function getRoteirosFlat_() {
     var config = getConfig_();
-    if (!config.folderId) {
-        return jsonResponse_({ ok: false, error: 'DRIVE_FOLDER_ID não configurado' });
+    if (!config.spreadsheetId) {
+        return jsonResponse_({ ok: false, error: 'SPREADSHEET_ID n\u00E3o configurado' });
+    }
+
+    var ss;
+    try {
+        ss = SpreadsheetApp.openById(config.spreadsheetId);
+    } catch (err) {
+        return jsonResponse_({ ok: false, error: 'N\u00E3o foi poss\u00EDvel abrir a planilha ' + config.spreadsheetId + ': ' + err.message });
+    }
+
+    var sheetRotas = ss.getSheetByName(TBL_ROTAS);
+    var sheetClientes = ss.getSheetByName(TBL_CLIENTES);
+    var sheetRoteiros = ss.getSheetByName(TBL_ROTEIROS);
+
+    var missing = [];
+    if (!sheetRotas) missing.push(TBL_ROTAS);
+    if (!sheetClientes) missing.push(TBL_CLIENTES);
+    if (!sheetRoteiros) missing.push(TBL_ROTEIROS);
+    if (missing.length) {
+        return jsonResponse_({ ok: false, error: 'Aba(s) n\u00E3o encontrada(s): ' + missing.join(', ') });
     }
 
     try {
-        var folder = DriveApp.getFolderById(config.folderId);
-        var files = folder.getFilesByName(CSV_FILE_NAME);
+        var flat = buildFlatRoteiros_(
+            sheetRotas.getDataRange().getValues(),
+            sheetClientes.getDataRange().getValues(),
+            sheetRoteiros.getDataRange().getValues()
+        );
 
-        if (!files.hasNext()) {
-            return jsonResponse_({ ok: false, error: 'Arquivo ' + CSV_FILE_NAME + ' não encontrado na pasta' });
-        }
-
-        var file = files.next();
-        var decoded = decodeCsvBlob_(file.getBlob());
-        var modifiedTime = file.getLastUpdated();
-
-        // Clients that already cached the timestamp while UTF-16 was decoded
-        // as UTF-8 need to import this same Drive revision once more. A stable
-        // 1 ms offset preserves the normal "only when changed" behavior.
-        if (decoded.encoding !== 'UTF-8') {
-            modifiedTime = new Date(modifiedTime.getTime() + CSV_DECODE_SYNC_OFFSET_MS);
+        // "S\u00F3 reimporta quando muda": usa a data de modifica\u00E7\u00E3o da planilha.
+        // Muda a cada edi\u00E7\u00E3o de qualquer aba; reimportar a mais \u00E9 barato (o
+        // upsert \u00E9 idempotente). Se falhar, cai para agora (reimport inofensivo).
+        var modifiedTime;
+        try {
+            modifiedTime = DriveApp.getFileById(config.spreadsheetId).getLastUpdated().toISOString();
+        } catch (e) {
+            modifiedTime = new Date().toISOString();
         }
 
         return jsonResponse_({
             ok: true,
-            content: decoded.content,
-            modifiedTime: modifiedTime.toISOString(),
-            encoding: decoded.encoding
+            apiVersion: GAS_API_VERSION,
+            modifiedTime: modifiedTime,
+            count: flat.rows.length,
+            skipped: flat.skipped,
+            rows: flat.rows
         });
     } catch (err) {
         return jsonResponse_({ ok: false, error: err.message });
     }
 }
 
-function decodeCsvBlob_(blob) {
-    var bytes = blob.getBytes();
-    var encoding = detectCsvEncoding_(bytes);
-    var content = blob.getDataAsString(encoding);
+// Fun\u00E7\u00E3o pura (sem chamadas ao Sheets), test\u00E1vel: recebe as matrizes de
+// getValues() das 3 abas e devolve a vis\u00E3o achatada. Junta tblRotas -> cliente
+// por idPJ e -> roteiro por idRoteiro.
+function buildFlatRoteiros_(rotasValues, clientesValues, roteirosValues) {
+    if (!rotasValues || rotasValues.length < 2) return { rows: [], skipped: 0 };
 
-    // Remove BOM after decoding so Papa Parse sees "Fonte" as the first
-    // header, regardless of the source encoding.
-    content = content.replace(/^\uFEFF/, '');
+    function headerMap_(headers) {
+        var map = {};
+        for (var i = 0; i < headers.length; i++) {
+            var col = String(headers[i]).trim();
+            if (col) map[col] = i;
+        }
+        return map;
+    }
 
-    return { content: content, encoding: encoding };
+    var mapRotas = headerMap_(rotasValues[0]);
+    var mapClientes = headerMap_(clientesValues[0]);
+    var mapRoteiros = headerMap_(roteirosValues[0]);
+
+    var clientesByIdPJ = {};
+    for (var c = 1; c < clientesValues.length; c++) {
+        var rowC = clientesValues[c];
+        var keyPJ = cleanIntString_(rowC[mapClientes['idPJ']]);
+        if (!keyPJ) continue;
+        clientesByIdPJ[keyPJ] = {
+            Cliente: String(rowC[mapClientes['Cliente']] || '').trim(),
+            Numero: cleanIntString_(rowC[mapClientes['N\u00FAmero']]),
+            CEP: cleanIntString_(rowC[mapClientes['CEP']]),
+            Telefone1: formatPhone_(rowC[mapClientes['Telefone1']]),
+            Telefone2: formatPhone_(rowC[mapClientes['Telefone2']])
+        };
+    }
+
+    var roteirosById = {};
+    for (var t = 1; t < roteirosValues.length; t++) {
+        var rowT = roteirosValues[t];
+        var keyRoteiro = cleanIntString_(rowT[mapRoteiros['idRoteiro']]);
+        if (!keyRoteiro) continue;
+        roteirosById[keyRoteiro] = String(rowT[mapRoteiros['Roteiro']] || '').trim();
+    }
+
+    var rows = [];
+    var skipped = 0;
+    for (var r = 1; r < rotasValues.length; r++) {
+        var rowR = rotasValues[r];
+        var cliente = clientesByIdPJ[cleanIntString_(rowR[mapRotas['idPJ']])];
+
+        // Ponto sem cliente correspondente: o app j\u00E1 o descartaria (sem nome).
+        if (!cliente || !cliente.Cliente) { skipped++; continue; }
+
+        var ordemVal = rowR[mapRotas['Ordem']];
+        var inativoVal = rowR[mapRotas['Inativo']];
+
+        rows.push({
+            Roteiro: roteirosById[cleanIntString_(rowR[mapRotas['idRoteiro']])] || '',
+            Cliente: cliente.Cliente,
+            idRota: cleanIntString_(rowR[mapRotas['idRota']]),
+            Ordem: (ordemVal !== '' && ordemVal !== null && !isNaN(ordemVal)) ? Number(ordemVal) : 0,
+            'N\u00FAmero': cliente.Numero,
+            CEP: cliente.CEP,
+            Inativo: (inativoVal === true || String(inativoVal).trim() === '1' || String(inativoVal).toLowerCase() === 'true') ? 1 : 0,
+            Telefone1: cliente.Telefone1,
+            Telefone2: cliente.Telefone2
+        });
+    }
+
+    return { rows: rows, skipped: skipped };
 }
 
-function detectCsvEncoding_(bytes) {
-    if (bytes.length >= 2) {
-        var first = bytes[0] & 255;
-        var second = bytes[1] & 255;
-        if (first === 255 && second === 254) return 'UTF-16LE';
-        if (first === 254 && second === 255) return 'UTF-16BE';
-    }
+// Remove o ".0" artificial que o Sheets pode anexar a inteiros (o app trata
+// N\u00FAmero/CEP/idRota como texto). No Apps Script os n\u00FAmeros normalmente j\u00E1
+// chegam sem o ".0"; o regex cobre o caso de c\u00E9lula textual.
+function cleanIntString_(val) {
+    if (val === undefined || val === null || val === '') return '';
+    return String(val).trim().replace(/\.0+$/, '');
+}
 
-    // Access normally writes a BOM, but also recognize BOM-less UTF-16 by
-    // the alternating NUL bytes in the ASCII CSV header.
-    var sampleSize = Math.min(bytes.length, 200);
-    var evenNulls = 0;
-    var oddNulls = 0;
-    for (var i = 0; i < sampleSize; i++) {
-        if ((bytes[i] & 255) !== 0) continue;
-        if (i % 2 === 0) evenNulls++;
-        else oddNulls++;
-    }
-
-    if (sampleSize >= 8 && oddNulls >= sampleSize / 4 && oddNulls > evenNulls * 2) {
-        return 'UTF-16LE';
-    }
-    if (sampleSize >= 8 && evenNulls >= sampleSize / 4 && evenNulls > oddNulls * 2) {
-        return 'UTF-16BE';
-    }
-
-    return 'UTF-8';
+function formatPhone_(val) {
+    if (val === undefined || val === null || val === '') return '';
+    if (typeof val === 'number') return val.toFixed(0);
+    return String(val).trim().replace(/\.0+$/, '');
 }
 
 function getUltimaColeta_(roteiroNome) {
