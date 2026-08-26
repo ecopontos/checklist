@@ -173,47 +173,6 @@
         .status-online { background: var(--success); box-shadow: 0 0 10px var(--success); }
         .status-offline { background: var(--danger); }
 
-        /* Modal Styles */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.9);
-            backdrop-filter: blur(8px);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-
-        .modal-content {
-            background: var(--surface);
-            padding: 40px;
-            border-radius: 24px;
-            width: 100%;
-            max-width: 900px;
-            max-height: 90vh;
-            overflow-y: auto;
-            border: 1px solid var(--card-border);
-        }
-
-        .point-preview-list {
-            margin-top: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .point-preview-item {
-            display: grid;
-            grid-template-columns: 80px 1fr 1.5fr;
-            gap: 15px;
-            padding: 12px;
-            background: rgba(255,255,255,0.03);
-            border-radius: 8px;
-            align-items: center;
-        }
-
         input {
             background: rgba(0,0,0,0.3);
             border: 1px solid var(--card-border);
@@ -278,27 +237,15 @@
             <!-- MIGRACAO LEGADA -->
             <div class="card">
                 <h2>📦 Migração de Dados Legados</h2>
-                <p>Absorva pontos, rotas e históricos do sistema antigo (Access/Excel) diretamente para o banco de dados local.</p>
-                
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                    <div class="import-zone" onclick="document.getElementById('legacyRota').click()">
-                        <input type="file" id="legacyRota" style="display: none" accept=".xlsx">
-                        <span>Rotas (.xlsx)</span>
-                    </div>
-                    <div class="import-zone" onclick="document.getElementById('legacyRoteiro').click()">
-                        <input type="file" id="legacyRoteiro" style="display: none" accept=".xlsx">
-                        <span>Pontos (.xlsx)</span>
-                    </div>
-                </div>
+                <p>Absorva logradouros do sistema antigo (Access) diretamente para o banco de dados local.</p>
 
-                <div class="import-zone" style="border-color: var(--accent);" onclick="document.getElementById('legacyColeta').click()">
-                    <input type="file" id="legacyColeta" style="display: none" accept=".xlsx">
-                    <span style="color: var(--accent);">Historico de Coletas (tblColeta.xlsx)</span>
+                <div class="import-zone" onclick="document.getElementById('legacyLogradouros').click()">
+                    <input type="file" id="legacyLogradouros" style="display: none" accept=".csv">
+                    <span>Logradouros (cstExportaCheckList.csv)</span>
                 </div>
-
-                <button id="btnOpenLegacyPreview" class="btn btn-primary" disabled>
-                    Visualizar e Incorporar Dados
-                </button>
+                <p style="font-size: 0.75rem; color: var(--text-dim); margin-top: 5px;">
+                    Preenche só o campo de rua dos pontos já cadastrados (casado por ID), sem mexer em ordem, status, complemento ou telefone.
+                </p>
             </div>
 
             <!-- SINCRONIZACAO GOOGLE -->
@@ -367,33 +314,15 @@
         </div>
     </div>
 
-    <!-- MODAL PREVIEW LEGADO -->
-    <div id="legacyPreviewModal" class="modal">
-        <div class="modal-content">
-            <h2 style="margin-bottom: 10px;">Revisão de Pontos Legados</h2>
-            <p class="subtitle" style="font-size: 0.9rem;">Dê nomes amigáveis aos pontos antes de integrá-los ao sistema de coleta.</p>
-            
-            <div class="point-preview-list" id="legacyList">
-                <!-- Injected via JS -->
-            </div>
-
-            <div style="display: flex; justify-content: flex-end; gap: 15px; margin-top: 30px;">
-                <button class="btn btn-outline" onclick="document.getElementById('legacyPreviewModal').style.display='none'">Cancelar</button>
-                <button class="btn btn-primary" onclick="confirmLegacyMigration()">Finalizar Migração</button>
-            </div>
-        </div>
-    </div>
-
     <div class="loader" id="loader">
         <div class="spinner"></div>
         <p id="loaderText">Sincronizando...</p>
     </div>
 
     <script src="vendor/papaparse.min.js"></script>
-    <script src="vendor/xlsx.full.min.js"></script>
     <script src="vendor/sql-wasm.js"></script>
     <script type="module">
-        import db from './database.js';
+        import db, { decodeLegacyCsvBytes } from './database.js';
         import {
             getGasUrl,
             setGasUrl,
@@ -404,8 +333,6 @@
             syncPendingRoteiroChanges,
             REQUIRED_GAS_API_VERSION
         } from './google-sync.js';
-
-        let legacyData = { rotas: [], roteiros: [], coletas: [] };
 
         async function init() {
             await db.init();
@@ -423,119 +350,30 @@
             };
 
             // File listeners
-            document.getElementById('legacyRota').onchange = (e) => handleFile(e, 'rotas');
-            document.getElementById('legacyRoteiro').onchange = (e) => handleFile(e, 'roteiros');
-            document.getElementById('legacyColeta').onchange = (e) => handleFile(e, 'coletas');
-            
-            document.getElementById('btnOpenLegacyPreview').onclick = () => {
-                renderLegacyPreview();
-                document.getElementById('legacyPreviewModal').style.display = 'flex';
-            };
+            document.getElementById('legacyLogradouros').onchange = handleLogradourosFile;
 
             checkDriveUpdate();
         }
 
-        async function handleFile(e, type) {
+        async function handleLogradourosFile(e) {
             const file = e.target.files[0];
             if (!file) return;
-            
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const data = new Uint8Array(event.target.result);
-                const wb = XLSX.read(data, { type: 'array' });
-                const ws = wb.Sheets[wb.SheetNames[0]];
-                legacyData[type] = XLSX.utils.sheet_to_json(ws, { defval: '' });
-                
-                if (type === 'roteiros') {
-                    document.getElementById('btnOpenLegacyPreview').disabled = false;
-                }
-                
-                if (type === 'coletas') {
-                    alert(`${legacyData.coletas.length} registros de histórico carregados. Estarão prontos para incorporação.`);
-                }
-            };
-            reader.readAsArrayBuffer(file);
-        }
 
-        function renderLegacyPreview() {
-            const list = document.getElementById('legacyList');
-            list.innerHTML = '';
-            
-            legacyData.roteiros.forEach((p, i) => {
-                const id = p.ID_Rota || p.id_rota || i;
-                const logr = p.Logradouro || p.Rua || '';
-                const num = p.Numero || p.Nº || '';
-                const suggestedName = p.Cliente || p.Nome || `${p.Bairro || ''} - ${logr} ${num}`.trim() || `Ponto ${id}`;
+            const buffer = await file.arrayBuffer();
+            const text = decodeLegacyCsvBytes(buffer);
 
-                const div = document.createElement('div');
-                div.className = 'point-preview-item';
-                div.innerHTML = `
-                    <div style="font-family: 'JetBrains Mono'; font-weight: 600;">${id}</div>
-                    <div style="color: var(--text-dim); font-size: 0.8rem;">${logr}, ${num}</div>
-                    <input type="text" value="${suggestedName}" class="legacy-name-input" data-idx="${i}">
-                `;
-                list.appendChild(div);
-            });
-        }
-
-        window.confirmLegacyMigration = async () => {
-            showLoader("Incorporando ao SQLite...");
-            
-            // 1. Process Roteiros (Rotas)
-            const routeMap = {};
-            legacyData.rotas.forEach(r => {
-                const nome = r.Nome_Rota || r.Rota || r.Descricao || `Rota ${r.ID_Rota}`;
-                db.addRoteiro(nome);
-            });
-            const dbRoteiros = db.getRoteiros();
-            dbRoteiros.forEach(r => routeMap[r.nome] = r.id);
-
-            // 2. Process Clientes (Pontos)
-            const inputs = document.querySelectorAll('.legacy-name-input');
-            legacyData.roteiros.forEach((p, i) => {
-                const name = inputs[i].value;
-                const idRota = (p.ID_Rota || p.id_rota || i).toString();
-                
-                let roteiroId = null;
-                const rotaIdLegacy = p.ID_Rota_Ref || p.RotaID || p.id_rota;
-                const legacyRota = legacyData.rotas.find(r => r.ID_Rota == rotaIdLegacy);
-                if (legacyRota) {
-                    const rotaNome = legacyRota.Nome_Rota || legacyRota.Rota || legacyRota.Descricao || `Rota ${legacyRota.ID_Rota}`;
-                    roteiroId = routeMap[rotaNome];
-                }
-
-                db.upsertCliente({
-                    idRota: idRota,
-                    Cliente: name,
-                    logradouro: p.Logradouro || p.Rua || '',
-                    Número: p.Numero || p.Nº || '',
-                    CEP: p.CEP || '',
-                    roteiro_id: roteiroId || (dbRoteiros[0]?.id),
-                    Ordem: p.Ordem || (i * 10),
-                    ativo: true
-                });
-            });
-
-            // 3. Process History (Coletas)
-            legacyData.coletas.forEach(c => {
-                const idRota = c.ID_Rota || c.id_rota || c.ID_Ponto;
-                const data = c.Data_Coleta || c.Data || c.data;
-                const qtd = c.Quantidade || c.Qtd || c.Bombonas;
-                if (idRota && data) {
-                    db.addColeta({
-                        id_rota: idRota.toString(),
-                        data: data,
-                        quantidade: parseInt(qtd) || 0,
-                        intercorrencia: c.Intercorrencia || c.Obs || ''
-                    });
-                }
-            });
-
+            showLoader('Atualizando logradouros...');
+            const result = db.importLogradourosCsv(text);
             hideLoader();
-            alert("Migração concluída com sucesso!");
-            document.getElementById('legacyPreviewModal').style.display = 'none';
-            updateStats();
-        };
+
+            alert(
+                `Logradouros atualizados: ${result.updated}\n` +
+                `Sem ponto correspondente no app: ${result.semCorrespondencia}\n` +
+                `Sem logradouro no CSV: ${result.semLogradouro}\n` +
+                `Total de linhas no arquivo: ${result.total}`
+            );
+            e.target.value = '';
+        }
 
         function updateStats() {
             const pCount = db.db.exec("SELECT COUNT(*) FROM clientes")[0]?.values[0][0] || 0;
