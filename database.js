@@ -26,6 +26,36 @@ class AppDatabase {
             this.db = new this.SQL.Database();
         }
         this.createTables();
+        this.migrateSchema();
+    }
+
+    // Migração idempotente: adiciona colunas de cliente em bancos locais já
+    // existentes (o CREATE TABLE IF NOT EXISTS não as adicionaria). Ao incluir
+    // id_cliente pela primeira vez, força um reimport para popular os campos
+    // novos a partir das rows achatadas do Sheets.
+    migrateSchema() {
+        const cols = this._tableColumns('clientes');
+        if (!cols.length) return;
+        const adds = [];
+        if (!cols.includes('id_cliente')) adds.push('id_cliente TEXT');
+        if (!cols.includes('complemento')) adds.push('complemento TEXT');
+        if (!cols.includes('telefone1')) adds.push('telefone1 TEXT');
+        if (!cols.includes('telefone2')) adds.push('telefone2 TEXT');
+        if (!adds.length) return;
+
+        const addedIdCliente = adds.some(def => def.startsWith('id_cliente'));
+        adds.forEach(def => this.db.run(`ALTER TABLE clientes ADD COLUMN ${def}`));
+        if (addedIdCliente) {
+            localStorage.removeItem('app3_last_drive_sync');
+        }
+        this.save();
+    }
+
+    _tableColumns(table) {
+        const res = this.db.exec(`PRAGMA table_info(${table})`);
+        if (!res.length) return [];
+        const nameIdx = res[0].columns.indexOf('name');
+        return res[0].values.map(v => v[nameIdx]);
     }
 
     createTables() {
@@ -39,10 +69,14 @@ class AppDatabase {
 
             CREATE TABLE IF NOT EXISTS clientes (
                 id_rota TEXT PRIMARY KEY,
+                id_cliente TEXT,
                 cliente TEXT NOT NULL,
                 logradouro TEXT,
                 numero TEXT,
+                complemento TEXT,
                 cep TEXT,
+                telefone1 TEXT,
+                telefone2 TEXT,
                 roteiro_id INTEGER,
                 ordem INTEGER,
                 ativo INTEGER DEFAULT 1,
@@ -72,6 +106,20 @@ class AppDatabase {
                 origem TEXT NOT NULL,
                 sent_at TEXT
             );
+
+            CREATE TABLE IF NOT EXISTS cliente_change_outbox (
+                change_id TEXT PRIMARY KEY,
+                id_cliente TEXT NOT NULL,
+                campos TEXT NOT NULL,
+                alterado_em TEXT NOT NULL,
+                origem TEXT NOT NULL,
+                sent_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS logradouro_legado (
+                id_rota TEXT PRIMARY KEY,
+                logradouro TEXT NOT NULL
+            );
         `);
         this.save();
     }
@@ -94,24 +142,38 @@ class AppDatabase {
     }
 
     // --- Clientes ---
+    // Se a planilha nao trouxer logradouro (ela nunca traz — só o CSV legado do
+    // Access tem essa coluna), cai para o valor já salvo e, na falta dele, para
+    // o backfill legado persistido em logradouro_legado. Isso torna o backfill
+    // independente da ordem entre o import do CSV e o primeiro sync de uma rota
+    // nova vinda do Sheets.
     upsertCliente(cliente) {
         this.db.run(`
-            INSERT INTO clientes (id_rota, cliente, logradouro, numero, cep, roteiro_id, ordem, ativo)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO clientes (id_rota, id_cliente, cliente, logradouro, numero, complemento, cep, telefone1, telefone2, roteiro_id, ordem, ativo)
+            VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), (SELECT logradouro FROM logradouro_legado WHERE id_rota = ?)), ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id_rota) DO UPDATE SET
+                id_cliente = COALESCE(NULLIF(excluded.id_cliente, ''), id_cliente),
                 cliente = excluded.cliente,
-                logradouro = excluded.logradouro,
+                logradouro = COALESCE(NULLIF(excluded.logradouro, ''), logradouro),
                 numero = excluded.numero,
+                complemento = excluded.complemento,
                 cep = excluded.cep,
+                telefone1 = excluded.telefone1,
+                telefone2 = excluded.telefone2,
                 roteiro_id = excluded.roteiro_id,
                 ordem = excluded.ordem,
                 ativo = excluded.ativo
         `, [
             cliente.idRota,
+            cliente.idCliente || '',
             cliente.Cliente,
             cliente.logradouro,
+            cliente.idRota,
             this._normalizeNumero(cliente.Número),
+            cliente.Complemento || '',
             cliente.CEP,
+            cliente.Telefone1 || '',
+            cliente.Telefone2 || '',
             cliente.roteiro_id,
             this._normalizeOrdem(cliente.Ordem),
             cliente.ativo ? 1 : 0
@@ -283,10 +345,14 @@ class AppDatabase {
             if (idRota && clienteNome) {
                 this.upsertCliente({
                     idRota: idRota.toString(),
+                    idCliente: this._getCsvVal(row, 'idCliente') || '',
                     Cliente: clienteNome,
                     logradouro: this._getCsvVal(row, 'Logradouro') || this._getCsvVal(row, 'Rua') || '',
                     Número: this._getCsvVal(row, 'Número') || this._getCsvVal(row, 'Num') || this._getCsvVal(row, 'Nº') || '',
+                    Complemento: this._getCsvVal(row, 'Complemento') || '',
                     CEP: this._getCsvVal(row, 'CEP') || '',
+                    Telefone1: this._getCsvVal(row, 'Telefone1') || '',
+                    Telefone2: this._getCsvVal(row, 'Telefone2') || '',
                     roteiro_id: routeMap[roteiroName],
                     Ordem: this._getCsvVal(row, 'Ordem') || 0,
                     ativo: this._getCsvVal(row, 'Inativo') != 1
@@ -301,6 +367,49 @@ class AppDatabase {
     _getCsvVal(row, name) {
         const key = Object.keys(row).find(k => k.toLowerCase().trim() === name.toLowerCase());
         return key ? row[key] : null;
+    }
+
+    // Backfill pontual do logradouro a partir do CSV legado do Access
+    // (cstExportaCheckList.csv), casado por id_rota. Ao contrário de
+    // importRoteirosRows, atualiza SOMENTE a coluna logradouro — não toca em
+    // ordem/ativo/roteiro_id/complemento/telefones, que já vêm do Sheets e
+    // seriam apagados/revertidos se passassem pelo import genérico.
+    //
+    // Toda linha também é gravada em logradouro_legado, mesmo quando o
+    // cliente ainda não existe localmente (rota nova que o Sheets ainda não
+    // sincronizou): upsertCliente consulta essa tabela ao criar o cliente, o
+    // que evita perder o dado por causa da ordem entre este import e o
+    // próximo sync de roteiros.
+    importLogradourosCsv(csvText) {
+        const cleanText = String(csvText || '').replace(/^﻿/, '');
+        const results = Papa.parse(cleanText, { header: true, skipEmptyLines: true });
+        const rows = Array.isArray(results.data) ? results.data : [];
+
+        let updated = 0;
+        let semLogradouro = 0;
+        let semCorrespondencia = 0;
+
+        rows.forEach(row => {
+            const idRota = String(this._getCsvVal(row, 'idRota') || '').trim();
+            const logradouro = String(this._getCsvVal(row, 'logradouro') || '').trim();
+            if (!idRota) return;
+            if (!logradouro) { semLogradouro++; return; }
+
+            this.db.run(`
+                INSERT INTO logradouro_legado (id_rota, logradouro) VALUES (?, ?)
+                ON CONFLICT(id_rota) DO UPDATE SET logradouro = excluded.logradouro
+            `, [idRota, logradouro]);
+
+            this.db.run('UPDATE clientes SET logradouro = ? WHERE id_rota = ?', [logradouro, idRota]);
+            if (this.db.getRowsModified() > 0) {
+                updated++;
+            } else {
+                semCorrespondencia++;
+            }
+        });
+
+        this.save();
+        return { updated, semLogradouro, semCorrespondencia, total: rows.length };
     }
 
     // --- Alterações de roteiros pendentes para a planilha ---
@@ -376,6 +485,92 @@ class AppDatabase {
     getPendingRoteiroChangesCount() {
         const res = this.db.exec(
             "SELECT COUNT(*) FROM roteiro_change_outbox WHERE sent_at IS NULL"
+        );
+        return res.length ? Number(res[0].values[0][0]) : 0;
+    }
+
+    // --- Alterações de cliente pendentes para a planilha (shtClientes) ---
+    queueClienteChange(idCliente, campos) {
+        const id = String(idCliente || '').trim();
+        if (!id || !campos || !Object.keys(campos).length) {
+            return { queued: false, reason: 'no-change' };
+        }
+        let origem = localStorage.getItem('app3_device_id');
+        if (!origem) {
+            origem = this._newChangeId();
+            localStorage.setItem('app3_device_id', origem);
+        }
+        const change = {
+            change_id: this._newChangeId(),
+            id_cliente: id,
+            campos: JSON.stringify(campos),
+            alterado_em: new Date().toISOString(),
+            origem
+        };
+        this.db.run(`
+            INSERT INTO cliente_change_outbox
+                (change_id, id_cliente, campos, alterado_em, origem)
+            VALUES (?, ?, ?, ?, ?)
+        `, [change.change_id, change.id_cliente, change.campos, change.alterado_em, change.origem]);
+        this.save();
+        return { queued: true, change };
+    }
+
+    // Atualiza no cache local todas as linhas do mesmo cliente (id_cliente),
+    // para a edição refletir imediatamente em todos os roteiros dele.
+    updateClienteLocal(idCliente, campos) {
+        const colByField = {
+            Cliente: 'cliente',
+            'Número': 'numero',
+            Complemento: 'complemento',
+            CEP: 'cep',
+            Telefone1: 'telefone1',
+            Telefone2: 'telefone2'
+        };
+        const id = String(idCliente || '').trim();
+        if (!id) return;
+        Object.keys(campos).forEach(field => {
+            const col = colByField[field];
+            if (!col) return;
+            let value = campos[field];
+            if (col === 'numero') value = this._normalizeNumero(value);
+            this.db.run(`UPDATE clientes SET ${col} = ? WHERE id_cliente = ?`, [value, id]);
+        });
+        this.save();
+    }
+
+    getPendingClienteChanges(limit = 50) {
+        const safeLimit = Math.max(1, Math.min(Number(limit) || 50, 100));
+        const res = this.db.exec(`
+            SELECT change_id, id_cliente, campos, alterado_em, origem
+            FROM cliente_change_outbox
+            WHERE sent_at IS NULL
+            ORDER BY alterado_em, change_id
+            LIMIT ?
+        `, [safeLimit]);
+        if (!res.length) return [];
+        return res[0].values.map(values => {
+            const row = {};
+            res[0].columns.forEach((column, index) => { row[column] = values[index]; });
+            try { row.campos = JSON.parse(row.campos); } catch (_) { row.campos = {}; }
+            return row;
+        });
+    }
+
+    markClienteChangesSent(changeIds) {
+        const sentAt = new Date().toISOString();
+        changeIds.forEach(changeId => {
+            this.db.run(
+                "UPDATE cliente_change_outbox SET sent_at = ? WHERE change_id = ?",
+                [sentAt, changeId]
+            );
+        });
+        this.save();
+    }
+
+    getPendingClienteChangesCount() {
+        const res = this.db.exec(
+            "SELECT COUNT(*) FROM cliente_change_outbox WHERE sent_at IS NULL"
         );
         return res.length ? Number(res[0].values[0][0]) : 0;
     }
@@ -467,6 +662,31 @@ class AppDatabase {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
     }
+}
+
+// O export do Access (cstExportaCheckList.csv) sai em UTF-16LE com BOM;
+// detecta pelo BOM em vez de assumir UTF-8, para não corromper acentos.
+// Usado tanto pelo upload manual (admin.html) quanto pela leitura automática
+// da pasta de rede (google-sync.js).
+export function decodeLegacyCsvBytes(buffer) {
+    const bytes = new Uint8Array(buffer);
+    if (bytes[0] === 0xFF && bytes[1] === 0xFE) {
+        const decoded = new TextDecoder('utf-16le').decode(buffer);
+        // TextDecoder removes the BOM bytes, but the BOM character should be preserved
+        if (!decoded.startsWith('﻿')) {
+            return '﻿' + decoded;
+        }
+        return decoded;
+    }
+    if (bytes[0] === 0xFE && bytes[1] === 0xFF) {
+        const decoded = new TextDecoder('utf-16be').decode(buffer);
+        // TextDecoder removes the BOM bytes, but the BOM character should be preserved
+        if (!decoded.startsWith('﻿')) {
+            return '﻿' + decoded;
+        }
+        return decoded;
+    }
+    return new TextDecoder('utf-8').decode(buffer);
 }
 
 const db = new AppDatabase();
