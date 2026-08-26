@@ -32,9 +32,10 @@ async function loadModule(context, filename) {
   const databaseModule = await loadModule(context, 'database.js');
   const { decodeLegacyCsvBytes } = databaseModule;
 
-  // UTF-16LE com BOM (formato real do export do Access).
+  // UTF-16LE com BOM (formato real do export do Access). O TextDecoder
+  // remove o BOM ao decodificar — o texto final nao deve comeca-lo.
   const utf16leBuffer = new Uint8Array(Buffer.from('﻿Fonte;idRota', 'utf16le')).buffer;
-  assert.strictEqual(decodeLegacyCsvBytes(utf16leBuffer), '﻿Fonte;idRota');
+  assert.strictEqual(decodeLegacyCsvBytes(utf16leBuffer), 'Fonte;idRota');
 
   // UTF-8 sem BOM.
   const utf8Buffer = new Uint8Array(Buffer.from('Fonte;idRota', 'utf8')).buffer;
@@ -43,7 +44,7 @@ async function loadModule(context, filename) {
   // Arquivo real do Access (UTF-16LE com BOM, acentos e cedilha).
   const realFile = fs.readFileSync(path.join(process.cwd(), 'legado', 'cstExportaCheckList.csv'));
   const decodedReal = decodeLegacyCsvBytes(new Uint8Array(realFile).buffer);
-  assert.ok(decodedReal.startsWith('﻿Fonte;idRota;Inativo;Ordem;Roteiro;Cliente;logradouro;'));
+  assert.ok(decodedReal.startsWith('Fonte;idRota;Inativo;Ordem;Roteiro;Cliente;logradouro;'));
 
   console.log('decodeLegacyCsvBytes (UTF-16LE com BOM, UTF-8 sem BOM, CSV real do Access): OK');
 })().catch(error => {

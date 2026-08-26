@@ -671,20 +671,10 @@ class AppDatabase {
 export function decodeLegacyCsvBytes(buffer) {
     const bytes = new Uint8Array(buffer);
     if (bytes[0] === 0xFF && bytes[1] === 0xFE) {
-        const decoded = new TextDecoder('utf-16le').decode(buffer);
-        // TextDecoder removes the BOM bytes, but the BOM character should be preserved
-        if (!decoded.startsWith('﻿')) {
-            return '﻿' + decoded;
-        }
-        return decoded;
+        return new TextDecoder('utf-16le').decode(buffer);
     }
     if (bytes[0] === 0xFE && bytes[1] === 0xFF) {
-        const decoded = new TextDecoder('utf-16be').decode(buffer);
-        // TextDecoder removes the BOM bytes, but the BOM character should be preserved
-        if (!decoded.startsWith('﻿')) {
-            return '﻿' + decoded;
-        }
-        return decoded;
+        return new TextDecoder('utf-16be').decode(buffer);
     }
     return new TextDecoder('utf-8').decode(buffer);
 }
