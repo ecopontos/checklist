@@ -41,10 +41,18 @@ async function loadModule(context, filename) {
   const utf8Buffer = new Uint8Array(Buffer.from('Fonte;idRota', 'utf8')).buffer;
   assert.strictEqual(decodeLegacyCsvBytes(utf8Buffer), 'Fonte;idRota');
 
-  // Arquivo real do Access (UTF-16LE com BOM, acentos e cedilha).
-  const realFile = fs.readFileSync(path.join(process.cwd(), 'legado', 'cstExportaCheckList.csv'));
-  const decodedReal = decodeLegacyCsvBytes(new Uint8Array(realFile).buffer);
-  assert.ok(decodedReal.startsWith('Fonte;idRota;Inativo;Ordem;Roteiro;Cliente;logradouro;'));
+  // CSV sintético equivalente ao export real do Access (UTF-16LE com BOM,
+  // acentos e cedilha) — não depende do arquivo legado/*.csv real (gitignored,
+  // dado de cliente real, não deve ser commitado nem existir em CI).
+  const syntheticCsv = [
+    'Fonte;idRota;Inativo;Ordem;Roteiro;Cliente;logradouro;Número;CEP',
+    'SAT01-1;3;0;1,00;SAT01;CEPON;Rodovia Admar Gonzaga;655,00;88034001',
+    'SAT01-2;6;0;2,00;SAT01;HOSPITAL GOVERNADOR CELSO RAMOS;Avenida Professor Othon Gama D\'Eça;0,00;88015240'
+  ].join('\r\n');
+  const syntheticBuffer = new Uint8Array(Buffer.from('﻿' + syntheticCsv, 'utf16le')).buffer;
+  const decodedSynthetic = decodeLegacyCsvBytes(syntheticBuffer);
+  assert.ok(decodedSynthetic.startsWith('Fonte;idRota;Inativo;Ordem;Roteiro;Cliente;logradouro;'));
+  assert.ok(decodedSynthetic.includes('Avenida Professor Othon Gama D\'Eça'));
 
   console.log('decodeLegacyCsvBytes (UTF-16LE com BOM, UTF-8 sem BOM, CSV real do Access): OK');
 })().catch(error => {
