@@ -305,7 +305,7 @@
 
     <script type="module">
         import db from './database.js';
-        import { checkAndImportRoteiros } from './google-sync.js';
+        import { checkAndImportRoteiros, checkAndImportLogradourosRede } from './google-sync.js';
 
         function refreshStats() {
             const roteiros = db.getRoteiros();
@@ -330,6 +330,10 @@
                 checkAndImportRoteiros(db).then(result => {
                     if (result.updated) refreshStats();
                 }).catch(e => console.error("Drive sync check failed", e));
+
+                checkAndImportLogradourosRede(db).then(result => {
+                    if (result.updated) refreshStats();
+                }).catch(e => console.error("Network logradouros sync check failed", e));
             } catch (e) {
                 console.error("Database error", e);
             }
