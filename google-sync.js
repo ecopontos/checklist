@@ -2,10 +2,12 @@
  * Client for the Google Apps Script (GAS) Web App bridge to
  * Google Sheets (push coletas) and Google Drive (pull rotas/pontos CSV).
  */
+import { decodeLegacyCsvBytes } from './database.js';
 
 const GAS_URL_KEY = 'app3_gas_url';
 const LAST_DRIVE_SYNC_KEY = 'app3_last_drive_sync';
 const GAS_ROUTE_TOKEN_KEY = 'app3_gas_route_token';
+const LAST_LOGRADOUROS_SYNC_KEY = 'app3_last_logradouros_sync';
 export const REQUIRED_GAS_API_VERSION = 4;
 
 function getAppConfig_() {
@@ -122,6 +124,39 @@ export async function checkAndImportRoteiros(db) {
     } catch (e) {
         return { checked: true, updated: false, error: e.message };
     }
+}
+
+// Le o CSV legado de logradouros (cstExportaCheckList.csv) direto da pasta
+// de rede fixa do Access, via comando Rust (so existe dentro do app
+// empacotado com Tauri — no navegador comum, ou em testes sem
+// window.__TAURI__, retorna checked:false). So reimporta quando o arquivo
+// mudou (modified_time_ms), e ignora silenciosamente qualquer falha de
+// acesso a rede: a proxima abertura do app tenta de novo. Ver
+// docs/superpowers/specs/2026-08-26-logradouros-rede-design.md.
+export async function checkAndImportLogradourosRede(db) {
+    const tauri = typeof window !== 'undefined' ? window.__TAURI__ : undefined;
+    if (!tauri || !tauri.core || typeof tauri.core.invoke !== 'function') {
+        return { checked: false, reason: 'not-tauri' };
+    }
+
+    let result;
+    try {
+        result = await tauri.core.invoke('read_network_logradouros_csv');
+    } catch (e) {
+        return { checked: true, updated: false, error: typeof e === 'string' ? e : e.message };
+    }
+
+    const lastSync = Number(localStorage.getItem(LAST_LOGRADOUROS_SYNC_KEY) || 0);
+    if (lastSync >= result.modified_time_ms) {
+        return { checked: true, updated: false };
+    }
+
+    const bytes = Uint8Array.from(atob(result.bytes_base64), c => c.charCodeAt(0));
+    const text = decodeLegacyCsvBytes(bytes.buffer);
+    const importResult = db.importLogradourosCsv(text);
+
+    localStorage.setItem(LAST_LOGRADOUROS_SYNC_KEY, String(result.modified_time_ms));
+    return { checked: true, ...importResult, updated: true };
 }
 
 // GET com timeout e retry para os endpoints JSON do GAS. O redirecionamento

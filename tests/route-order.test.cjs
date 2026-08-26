@@ -53,10 +53,17 @@ function createContext() {
   return { context, requests };
 }
 
+const moduleCache = new Map();
 async function loadModule(context, filename) {
+  if (moduleCache.has(filename)) return moduleCache.get(filename).namespace;
   const source = fs.readFileSync(filename, 'utf8');
   const module = new vm.SourceTextModule(source, { context, identifier: filename });
-  await module.link(() => { throw new Error(`Import inesperado em ${filename}`); });
+  moduleCache.set(filename, module);
+  await module.link(async specifier => {
+    const resolved = specifier.replace(/^\.\//, '');
+    if (moduleCache.has(resolved)) return moduleCache.get(resolved);
+    throw new Error(`Import inesperado em ${filename}: ${specifier}`);
+  });
   await module.evaluate();
   return module.namespace;
 }
