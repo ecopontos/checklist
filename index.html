@@ -69,6 +69,12 @@
             font-weight: 300;
         }
 
+        .sync-freshness {
+            color: var(--text-dim);
+            font-size: 0.8rem;
+            margin-top: 8px;
+        }
+
         .grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
@@ -208,6 +214,7 @@
         <header>
             <div class="logo">SATELITE v3</div>
             <div class="subtitle">SISTEMA INTEGRADO DE GESTÃO DE COLETA</div>
+            <p class="sync-freshness" id="syncFreshness"></p>
         </header>
 
         <div class="grid">
@@ -279,7 +286,7 @@
 
     <script type="module">
         import db from './database.js';
-        import { checkAndImportRoteirosRede } from './google-sync.js';
+        import { checkAndImportRoteirosRede, getLastRotasRedeSyncLabel } from './google-sync.js';
 
         function refreshStats() {
             const roteiros = db.getRoteiros();
@@ -300,9 +307,11 @@
                 await db.init();
                 refreshStats();
                 document.getElementById('btnBackup').onclick = () => db.downloadDatabase();
+                document.getElementById('syncFreshness').textContent = getLastRotasRedeSyncLabel();
 
                 checkAndImportRoteirosRede(db).then(result => {
                     if (result.updated) refreshStats();
+                    document.getElementById('syncFreshness').textContent = getLastRotasRedeSyncLabel();
                 }).catch(e => console.error("Network sync check failed", e));
             } catch (e) {
                 console.error("Database error", e);
