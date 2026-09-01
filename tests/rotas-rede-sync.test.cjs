@@ -22,7 +22,7 @@ function createContext() {
   });
   context.globalThis = context;
   vm.runInContext(fs.readFileSync(path.join(process.cwd(), 'vendor', 'papaparse.min.js'), 'utf8'), context);
-  return { context, windowRef };
+  return { context, windowRef, localStorage };
 }
 
 const moduleCache = new Map();
@@ -47,7 +47,7 @@ function csvBase64(rows) {
 }
 
 (async () => {
-  const { context, windowRef } = createContext();
+  const { context, windowRef, localStorage } = createContext();
   const databaseModule = await loadModule(context, 'database.js');
   const syncModule = await loadModule(context, 'google-sync.js');
   const db = databaseModule.default;
@@ -153,6 +153,26 @@ function csvBase64(rows) {
   assert.strictEqual(
     db.getClienteByIdRota('777').telefone1, '9999-9999',
     'edicao de cliente pendente nao deveria ser revertida pelo import do CSV'
+  );
+
+  // getLastRotasRedeSyncLabel: reflete os 3 estados possiveis.
+  windowRef.__TAURI__ = undefined;
+  assert.strictEqual(
+    syncModule.getLastRotasRedeSyncLabel(),
+    'Sincronização automática só funciona no app instalado'
+  );
+
+  windowRef.__TAURI__ = { core: { invoke: async () => ({ bytes_base64: '', modified_time_ms: 0 }) } };
+  localStorage.removeItem('app3_last_rotas_rede_sync');
+  assert.strictEqual(
+    syncModule.getLastRotasRedeSyncLabel(),
+    'Dados: nunca sincronizados automaticamente'
+  );
+
+  localStorage.setItem('app3_last_rotas_rede_sync', '1735732800000');
+  assert.match(
+    syncModule.getLastRotasRedeSyncLabel(),
+    /^Dados atualizados em \d{2}\/\d{2}\/\d{4} às \d{2}:\d{2}$/
   );
 
   // Pasta de rede inacessivel -> erro tratado, sem lancar excecao.
