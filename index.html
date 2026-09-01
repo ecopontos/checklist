@@ -211,19 +211,6 @@
         </header>
 
         <div class="grid">
-            <!-- GESTÃO DE ROTEIROS -->
-            <a href="roteiros.html" class="card">
-                <div>
-                    <div class="card-icon">🗺️</div>
-                    <h2>Gestão de Roteiros</h2>
-                    <p>Substitua o Access. Gerencie pontos de coleta, edite clientes, altere a ordem das rotas e controle o que é ativo no sistema.</p>
-                </div>
-                <div class="card-footer">
-                    Acessar Configurações 
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
-                </div>
-            </a>
-
             <!-- COLETA -->
             <a href="coleta-checklist.html" class="card">
                 <div>
@@ -233,19 +220,6 @@
                 </div>
                 <div class="card-footer">
                     Iniciar Operação 
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
-                </div>
-            </a>
-
-            <!-- ANÁLISE -->
-            <a href="analise.html" class="card">
-                <div>
-                    <div class="card-icon">📊</div>
-                    <h2>Análise e Relatórios</h2>
-                    <p>Consolidação de dados históricos. Importe os CSVs do formulário de terceiros e gere relatórios comparativos entre anos.</p>
-                </div>
-                <div class="card-footer">
-                    Ver Insights 
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
                 </div>
             </a>
@@ -305,7 +279,7 @@
 
     <script type="module">
         import db from './database.js';
-        import { checkAndImportRoteiros, checkAndImportLogradourosRede } from './google-sync.js';
+        import { checkAndImportRoteirosRede } from './google-sync.js';
 
         function refreshStats() {
             const roteiros = db.getRoteiros();
@@ -327,13 +301,9 @@
                 refreshStats();
                 document.getElementById('btnBackup').onclick = () => db.downloadDatabase();
 
-                checkAndImportRoteiros(db).then(result => {
+                checkAndImportRoteirosRede(db).then(result => {
                     if (result.updated) refreshStats();
-                }).catch(e => console.error("Drive sync check failed", e));
-
-                checkAndImportLogradourosRede(db).then(result => {
-                    if (result.updated) refreshStats();
-                }).catch(e => console.error("Network logradouros sync check failed", e));
+                }).catch(e => console.error("Network sync check failed", e));
             } catch (e) {
                 console.error("Database error", e);
             }

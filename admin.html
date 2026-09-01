@@ -219,9 +219,7 @@
                 <label for="navToggle" class="nav-overlay"></label>
                 <nav class="page-nav">
                     <a href="index.html">🏠 Início</a>
-                    <a href="roteiros.html">📍 Roteiros</a>
                     <a href="coleta-checklist.html">✅ Coleta</a>
-                    <a href="analise.html">📊 Análise</a>
                     <a href="agendamentos.html">📅 Agendamentos</a>
                     <span class="active">⚙️ Admin</span>
                     <a href="ajuda-integracao-access.html" target="_blank">🔄 Integração Access</a>
@@ -327,7 +325,7 @@
             getGasUrl,
             setGasUrl,
             getGasStatus,
-            checkAndImportRoteiros,
+            checkAndImportRoteirosRede,
             getGasRouteToken,
             setGasRouteToken,
             syncPendingRoteiroChanges,
@@ -408,7 +406,7 @@
 
             const [gasStatus, result, routeSync] = await Promise.all([
                 getGasStatus(),
-                checkAndImportRoteiros(db),
+                checkAndImportRoteirosRede(db),
                 syncPendingRoteiroChanges(db)
             ]);
 
@@ -439,16 +437,16 @@
                     : 'Alterações de roteiros: fila local sincronizada';
             }
 
+            if (result.reason === 'not-tauri') {
+                dot.className = 'status-dot status-offline';
+                text.textContent = 'Import automático de rotas só funciona no app instalado (não no navegador)';
+                updateStats();
+                return;
+            }
+
             if (result.error) {
                 dot.className = 'status-dot status-offline';
-                // status responde (resposta pequena, inline) mas o import do CSV
-                // deu 404 mesmo após as tentativas. Isso pode ser um 404
-                // transitório do Google em respostas grandes OU uma implantação
-                // obsoleta. Mensagem sugere tentar de novo antes de suspeitar da URL.
-                const importe404 = gasStatus.ok && /Falha HTTP 404/.test(result.error);
-                text.textContent = importe404
-                    ? 'Erro: HTTP 404 no import do CSV (o status responde normalmente). Costuma ser falha temporária do Google em respostas grandes — clique em "Verificar agora" novamente. Se persistir, confirme se a URL é a da implantação atual (campo acima) ou reimplante o Code.gs na mesma implantação.'
-                    : `Erro: ${result.error}`;
+                text.textContent = `Erro ao ler a pasta de rede: ${result.error}`;
                 return;
             }
 
@@ -460,7 +458,7 @@
 
             dot.className = 'status-dot status-online';
             text.textContent = result.updated
-                ? `Atualizado agora: ${result.roteiros} roteiros, ${result.clientes} pontos`
+                ? `Atualizado agora: ${result.roteiros} roteiros, ${result.clientes} pontos${result.pulados ? ` (${result.pulados} pulado(s) por alteração pendente)` : ''}`
                 : 'Rotas e pontos já estão atualizados';
 
             updateStats();

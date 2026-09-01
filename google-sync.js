@@ -7,7 +7,7 @@ import { decodeLegacyCsvBytes } from './database.js';
 const GAS_URL_KEY = 'app3_gas_url';
 const LAST_DRIVE_SYNC_KEY = 'app3_last_drive_sync';
 const GAS_ROUTE_TOKEN_KEY = 'app3_gas_route_token';
-const LAST_LOGRADOUROS_SYNC_KEY = 'app3_last_logradouros_sync';
+const LAST_ROTAS_REDE_SYNC_KEY = 'app3_last_rotas_rede_sync';
 export const REQUIRED_GAS_API_VERSION = 4;
 
 function getAppConfig_() {
@@ -126,14 +126,19 @@ export async function checkAndImportRoteiros(db) {
     }
 }
 
-// Le o CSV legado de logradouros (cstExportaCheckList.csv) direto da pasta
-// de rede fixa do Access, via comando Rust (so existe dentro do app
+// Le o CSV completo de roteiros/clientes (cstExportaCheckList.csv) direto da
+// pasta de rede fixa do Access, via comando Rust (so existe dentro do app
 // empacotado com Tauri — no navegador comum, ou em testes sem
 // window.__TAURI__, retorna checked:false). So reimporta quando o arquivo
 // mudou (modified_time_ms), e ignora silenciosamente qualquer falha de
-// acesso a rede: a proxima abertura do app tenta de novo. Ver
+// acesso a rede: a proxima abertura do app tenta de novo. Substitui o pull
+// de roteiros do Sheets (checkAndImportRoteiros, mantido no código mas sem
+// chamador automático) como fonte de roteiro/cliente/ordem/ativo/logradouro/
+// telefone/complemento — o Sheets continua recebendo só o push de
+// alterações locais pendentes (syncPendingRoteiroChanges/
+// syncPendingClienteChanges). Ver
 // docs/superpowers/specs/2026-08-26-logradouros-rede-design.md.
-export async function checkAndImportLogradourosRede(db) {
+export async function checkAndImportRoteirosRede(db) {
     const tauri = typeof window !== 'undefined' ? window.__TAURI__ : undefined;
     if (!tauri || !tauri.core || typeof tauri.core.invoke !== 'function') {
         return { checked: false, reason: 'not-tauri' };
@@ -146,16 +151,20 @@ export async function checkAndImportLogradourosRede(db) {
         return { checked: true, updated: false, error: typeof e === 'string' ? e : e.message };
     }
 
-    const lastSync = Number(localStorage.getItem(LAST_LOGRADOUROS_SYNC_KEY) || 0);
+    const lastSync = Number(localStorage.getItem(LAST_ROTAS_REDE_SYNC_KEY) || 0);
     if (lastSync >= result.modified_time_ms) {
         return { checked: true, updated: false };
     }
 
     const bytes = Uint8Array.from(atob(result.bytes_base64), c => c.charCodeAt(0));
     const text = decodeLegacyCsvBytes(bytes.buffer);
-    const importResult = db.importLogradourosCsv(text);
+    const importResult = db.importRoteirosCsv(text);
 
-    localStorage.setItem(LAST_LOGRADOUROS_SYNC_KEY, String(result.modified_time_ms));
+    if (importResult.roteiros === 0 && importResult.clientes === 0) {
+        return { checked: true, updated: false, warning: 'Nenhum roteiro/cliente retornado' };
+    }
+
+    localStorage.setItem(LAST_ROTAS_REDE_SYNC_KEY, String(result.modified_time_ms));
     return { checked: true, ...importResult, updated: true };
 }
 

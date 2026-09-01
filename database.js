@@ -172,8 +172,8 @@ class AppDatabase {
             this._normalizeNumero(cliente.Número),
             cliente.Complemento || '',
             cliente.CEP,
-            cliente.Telefone1 || '',
-            cliente.Telefone2 || '',
+            this._normalizeNumero(cliente.Telefone1),
+            this._normalizeNumero(cliente.Telefone2),
             cliente.roteiro_id,
             this._normalizeOrdem(cliente.Ordem),
             cliente.ativo ? 1 : 0
@@ -319,7 +319,11 @@ class AppDatabase {
 
         const comOrdemValida = rows.filter(row => {
             const ordem = this._getCsvVal(row, 'Ordem');
-            return ordem !== null && ordem !== undefined && ordem !== '' && Number(ordem) !== 0;
+            if (ordem === null || ordem === undefined || ordem === '') return false;
+            // Number() nao entende decimal com virgula (formato do export do
+            // Access, ex: "0,00") e vira NaN — que passaria no !== 0 sem
+            // querer. _normalizeOrdem trata a virgula antes de comparar.
+            return this._normalizeOrdem(ordem) !== 0;
         });
 
         const semDuplicataRoteiroCliente = new Map();
@@ -336,32 +340,62 @@ class AppDatabase {
         const routeMap = {};
         roteiros.forEach(r => routeMap[r.nome] = r.id);
 
+        // Preserva localmente qualquer id_rota/id_cliente com alteração ainda
+        // não enviada ao Sheets (fila de push): sem isso, um import automático
+        // (que roda a cada abertura do app) reverteria silenciosamente uma
+        // reordenação de rota ou edição de cliente feita no app antes dela
+        // ser sincronizada.
+        const idRotasPendentes = this._getPendingRoteiroIdRotas();
+        const idClientesPendentes = this._getPendingClienteIds();
+
         let clientesCount = 0;
+        let pulados = 0;
         data.forEach(row => {
             const idRota = this._getCsvVal(row, 'idRota') || this._getCsvVal(row, 'id Rota');
             const clienteNome = this._getCsvVal(row, 'Cliente');
             const roteiroName = this._getCsvVal(row, 'Roteiro');
 
-            if (idRota && clienteNome) {
-                this.upsertCliente({
-                    idRota: idRota.toString(),
-                    idCliente: this._getCsvVal(row, 'idCliente') || '',
-                    Cliente: clienteNome,
-                    logradouro: this._getCsvVal(row, 'Logradouro') || this._getCsvVal(row, 'Rua') || '',
-                    Número: this._getCsvVal(row, 'Número') || this._getCsvVal(row, 'Num') || this._getCsvVal(row, 'Nº') || '',
-                    Complemento: this._getCsvVal(row, 'Complemento') || '',
-                    CEP: this._getCsvVal(row, 'CEP') || '',
-                    Telefone1: this._getCsvVal(row, 'Telefone1') || '',
-                    Telefone2: this._getCsvVal(row, 'Telefone2') || '',
-                    roteiro_id: routeMap[roteiroName],
-                    Ordem: this._getCsvVal(row, 'Ordem') || 0,
-                    ativo: this._getCsvVal(row, 'Inativo') != 1
-                });
-                clientesCount++;
-            }
+            if (!idRota || !clienteNome) return;
+
+            const idRotaStr = idRota.toString();
+            if (idRotasPendentes.has(idRotaStr)) { pulados++; return; }
+
+            const idClienteAtual = this._getIdClienteByIdRota(idRotaStr);
+            if (idClienteAtual && idClientesPendentes.has(idClienteAtual)) { pulados++; return; }
+
+            this.upsertCliente({
+                idRota: idRotaStr,
+                idCliente: this._getCsvVal(row, 'idCliente') || '',
+                Cliente: clienteNome,
+                logradouro: this._getCsvVal(row, 'Logradouro') || this._getCsvVal(row, 'Rua') || '',
+                Número: this._getCsvVal(row, 'Número') || this._getCsvVal(row, 'Num') || this._getCsvVal(row, 'Nº') || '',
+                Complemento: this._getCsvVal(row, 'Complemento') || '',
+                CEP: this._getCsvVal(row, 'CEP') || '',
+                Telefone1: this._getCsvVal(row, 'Telefone1') || '',
+                Telefone2: this._getCsvVal(row, 'Telefone2') || '',
+                roteiro_id: routeMap[roteiroName],
+                Ordem: this._getCsvVal(row, 'Ordem') || 0,
+                ativo: this._getCsvVal(row, 'Inativo') != 1
+            });
+            clientesCount++;
         });
 
-        return { roteiros: uniqueRoteiros.length, clientes: clientesCount };
+        return { roteiros: uniqueRoteiros.length, clientes: clientesCount, pulados };
+    }
+
+    _getPendingRoteiroIdRotas() {
+        const res = this.db.exec("SELECT DISTINCT id_rota FROM roteiro_change_outbox WHERE sent_at IS NULL");
+        return res.length ? new Set(res[0].values.map(v => String(v[0]))) : new Set();
+    }
+
+    _getPendingClienteIds() {
+        const res = this.db.exec("SELECT DISTINCT id_cliente FROM cliente_change_outbox WHERE sent_at IS NULL");
+        return res.length ? new Set(res[0].values.map(v => String(v[0]))) : new Set();
+    }
+
+    _getIdClienteByIdRota(idRota) {
+        const res = this.db.exec("SELECT id_cliente FROM clientes WHERE id_rota = ?", [idRota]);
+        return res.length && res[0].values.length ? String(res[0].values[0][0] || '') : '';
     }
 
     _getCsvVal(row, name) {
