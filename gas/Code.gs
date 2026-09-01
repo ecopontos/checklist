@@ -705,7 +705,21 @@ function saveClientChanges_(changes, token) {
     }
 
     try {
-        var normalized = changes.map(normalizeClientChange_);
+        // Cada alteracao e validada individualmente: uma alteracao invalida
+        // (ex: texto longo demais, com quebra de linha) e descartada sozinha
+        // em vez de travar o lote inteiro - antes, um unico item invalido
+        // fazia o .map() lancar e nenhuma alteracao do lote era aplicada,
+        // inclusive as validas, travando a fila do cliente para sempre.
+        var normalized = [];
+        var invalidIds = [];
+        changes.forEach(function (change) {
+            try {
+                normalized.push(normalizeClientChange_(change));
+            } catch (err) {
+                var fallbackId = String((change && (change.change_id || change.changeId)) || '').trim();
+                if (fallbackId) invalidIds.push(fallbackId);
+            }
+        });
         var lock = LockService.getScriptLock();
         lock.waitLock(30000);
         try {
@@ -758,6 +772,7 @@ function saveClientChanges_(changes, token) {
                 count: acceptedIds.length,
                 acceptedIds: acceptedIds,
                 duplicateIds: duplicateIds,
+                invalidIds: invalidIds,
                 skippedApply: applyResult.skipped.length
             });
         } finally {
@@ -844,6 +859,20 @@ function getClientChangesSheet_() {
     return sheet;
 }
 
+var FORMULA_TRIGGER_CHARS_ = ['=', '+', '-', '@'];
+
+// Previne injecao de formula no Sheets: um valor que comeca com =, +, - ou @
+// seria interpretado como formula se gravado cru. Prefixar com aspa simples
+// forca o Sheets a tratar como texto literal (mesmo efeito de digitar ='foo'
+// na UI) - a aspa nao aparece no valor salvo/exibido.
+function escapeSheetTextValue_(value) {
+    var str = String(value);
+    if (str && FORMULA_TRIGGER_CHARS_.indexOf(str.charAt(0)) !== -1) {
+        return "'" + str;
+    }
+    return str;
+}
+
 // Aplica as alteracoes aceitas em shtClientes, por idUnico2 (UUID). Escrita
 // direcionada apenas nas celulas dos campos enviados. Lanca em coluna ausente.
 function applyClientChangesToClientes_(changes) {
@@ -878,10 +907,14 @@ function applyClientChangesToClientes_(changes) {
     var plan = planClienteWrites_(uuidRowMap, changes);
 
     // Grava so as celulas dos campos enviados (uma por campo alterado).
+    // Formato de texto ('@') evita que CEP/telefone percam zero a esquerda
+    // virando numero; escapeSheetTextValue_ evita injecao de formula.
     plan.writes.forEach(function (w) {
         for (var field in w.campos) {
             if (!Object.prototype.hasOwnProperty.call(w.campos, field)) continue;
-            sheet.getRange(w.row, colByField[field] + 1).setValue(w.campos[field]);
+            var range = sheet.getRange(w.row, colByField[field] + 1);
+            range.setNumberFormat('@');
+            range.setValue(escapeSheetTextValue_(w.campos[field]));
         }
     });
 

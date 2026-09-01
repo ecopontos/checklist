@@ -105,6 +105,30 @@ async function loadModule(context, filename) {
   assert.strictEqual(requests.length, 1);
   assert.strictEqual(db.getPendingClienteChangesCount(), 0);
 
+  // Alteracao marcada invalida pelo GAS e descartada (nao trava a fila).
+  db.queueClienteChange('uuid-x', { Telefone1: '11111111111' });
+  assert.strictEqual(db.getPendingClienteChangesCount(), 1);
+  const pendingInvalid = db.getPendingClienteChanges(1);
+  const invalidChangeId = pendingInvalid[0].change_id;
+
+  context.fetch = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    return {
+      ok: true,
+      json: async () => ({
+        ok: true,
+        acceptedIds: [],
+        duplicateIds: [],
+        invalidIds: [invalidChangeId]
+      })
+    };
+  };
+
+  const resultInvalid = await syncModule.syncPendingClienteChanges(db);
+  assert.strictEqual(resultInvalid.ok, true);
+  assert.strictEqual(resultInvalid.invalidCount, 1);
+  assert.strictEqual(db.getPendingClienteChangesCount(), 0); // descartada, nao fica presa
+
   console.log('Fluxo de edicao de cliente (cadeia local + outbox + sync clientChanges): OK');
 })().catch(error => {
   console.error(error);

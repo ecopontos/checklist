@@ -28,6 +28,11 @@ class RangeMock {
     this.sheet.rows[this.row - 1][this.column - 1] = value;
     return this;
   }
+  setNumberFormat(format) {
+    this.sheet.numberFormatCalls ||= [];
+    this.sheet.numberFormatCalls.push({ row: this.row, column: this.column, format });
+    return this;
+  }
 }
 
 class SheetMock {
@@ -134,5 +139,54 @@ assert.strictEqual(again.duplicateIds.length, 3);
 // Token invalido e recusado.
 const denied = JSON.parse(post({ action: 'clientChanges', token: 'errado', changes: [] }).value);
 assert.strictEqual(denied.ok, false);
+
+// Formato de texto e escape de formula na escrita em shtClientes.
+const changesFormula = [
+  {
+    change_id: 'cli_0004',
+    id_cliente: 'uuid-0001',
+    campos: { CEP: '01000000', Telefone1: '=HYPERLINK("http://evil.com")' },
+    alterado_em: new Date(2026, 7, 12, 10, 0, 3).toISOString(),
+    origem: 'device_test'
+  }
+];
+const savedFormula = JSON.parse(post({ action: 'clientChanges', token: 'token-route-changes-test', changes: changesFormula }).value);
+assert.strictEqual(savedFormula.ok, true);
+assert.strictEqual(savedFormula.skippedApply, 0);
+assert.ok(
+  shtClientes.numberFormatCalls.some(c => c.row === 2 && c.column === 5 && c.format === '@'),
+  'CEP deveria ser gravado com formato de texto'
+);
+assert.ok(
+  shtClientes.numberFormatCalls.some(c => c.row === 2 && c.column === 6 && c.format === '@'),
+  'Telefone1 deveria ser gravado com formato de texto'
+);
+assert.strictEqual(shtClientes.rows[1][4], '01000000'); // CEP preserva zero a esquerda
+assert.strictEqual(shtClientes.rows[1][5], "'=HYPERLINK(\"http://evil.com\")"); // formula escapada com aspa
+
+// Uma alteracao invalida no lote nao trava as demais.
+const longValue = 'x'.repeat(300);
+const changesMixed = [
+  {
+    change_id: 'cli_0005',
+    id_cliente: 'uuid-0002',
+    campos: { Cliente: 'CLIENTE B ATUALIZADO' },
+    alterado_em: new Date(2026, 7, 12, 10, 0, 4).toISOString(),
+    origem: 'device_test'
+  },
+  {
+    change_id: 'cli_0006',
+    id_cliente: 'uuid-0001',
+    campos: { Cliente: longValue },
+    alterado_em: new Date(2026, 7, 12, 10, 0, 5).toISOString(),
+    origem: 'device_test'
+  }
+];
+const savedMixed = JSON.parse(post({ action: 'clientChanges', token: 'token-route-changes-test', changes: changesMixed }).value);
+assert.strictEqual(savedMixed.ok, true);
+assert.strictEqual(savedMixed.acceptedIds.length, 1);
+assert.deepStrictEqual(savedMixed.acceptedIds, ['cli_0005']);
+assert.deepStrictEqual(savedMixed.invalidIds, ['cli_0006']);
+assert.strictEqual(shtClientes.rows[2][1], 'CLIENTE B ATUALIZADO'); // aplicou a valida
 
 console.log('Alteracoes de cliente aplicadas em shtClientes (campos enviados + skippedApply + idempotencia): OK');

@@ -419,11 +419,12 @@ export async function syncPendingClienteChanges(db) {
     let sentCount = 0;
     let acceptedCount = 0;
     let duplicateCount = 0;
+    let invalidCount = 0;
 
     for (let batchNumber = 0; batchNumber < 50; batchNumber++) {
         const changes = db.getPendingClienteChanges(100);
         if (!changes.length) {
-            return { ok: true, count: sentCount, acceptedCount, duplicateCount, pending: 0 };
+            return { ok: true, count: sentCount, acceptedCount, duplicateCount, invalidCount, pending: 0 };
         }
 
         const result = await pushClienteChanges(changes);
@@ -434,8 +435,9 @@ export async function syncPendingClienteChanges(db) {
         const batchIds = new Set(changes.map(change => change.change_id));
         const acceptedIds = (result.acceptedIds || []).filter(id => batchIds.has(id));
         const duplicateIds = (result.duplicateIds || []).filter(id => batchIds.has(id));
+        const invalidIds = (result.invalidIds || []).filter(id => batchIds.has(id));
         const confirmedIds = [...new Set([...acceptedIds, ...duplicateIds])];
-        if (!confirmedIds.length) {
+        if (!confirmedIds.length && !invalidIds.length) {
             return {
                 ok: false,
                 error: 'O GAS não confirmou nenhuma alteração do lote enviado',
@@ -444,10 +446,14 @@ export async function syncPendingClienteChanges(db) {
             };
         }
 
-        db.markClienteChangesSent(confirmedIds);
+        // Alteracoes invalidas (rejeitadas pela validacao do GAS) nunca vao
+        // ter sucesso reenviando - marcadas como enviadas pra nao travar a
+        // fila pra sempre, mas contadas a parte de aceitas/duplicadas.
+        db.markClienteChangesSent([...new Set([...confirmedIds, ...invalidIds])]);
         sentCount += confirmedIds.length;
         acceptedCount += acceptedIds.length;
         duplicateCount += duplicateIds.length;
+        invalidCount += invalidIds.length;
     }
 
     return {
