@@ -1,5 +1,5 @@
 import db from './database.js';
-import { pushColetas, sendChecklistToDrive, getUltimaColeta, getUltimasQuantidades } from './google-sync.js';
+import { pushColetas, sendChecklistToDrive, getUltimaColeta, getUltimasQuantidades, getLastRotasRedeSyncLabel } from './google-sync.js';
 
 let currentClients = [];
 let sessionData = {};
@@ -16,6 +16,7 @@ let checklistDataReady = null;
 
 async function init() {
     await db.init();
+    document.getElementById('syncFreshness').textContent = getLastRotasRedeSyncLabel();
 
     const routeSelect = document.getElementById('routeSelect');
     const idSearch = document.getElementById('idSearch');
