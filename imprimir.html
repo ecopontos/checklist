@@ -197,7 +197,7 @@
                     tr.innerHTML = `
                         <td class="col-ordem">${c.ordem || ''}</td>
                         <td class="col-cliente">${c.cliente || '---'}</td>
-                        <td class="col-rua">${c.logradouro || ''}</td>
+                        <td class="col-rua">${[c.logradouro, c.complemento].filter(Boolean).join(' - ')}</td>
                         <td class="col-num">${c.numero || ''}</td>
                         <td class="col-id">${c.id_rota}</td>
                         <td class="col-media">${media}</td>

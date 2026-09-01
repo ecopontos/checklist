@@ -26,7 +26,13 @@ var ROUTE_CHANGES_HEADERS = [
     'Origem', 'Status', 'Recebido Em', 'Processado Em', 'Mensagem'
 ];
 var ROUTE_CHANGES_MAX_DELIVERY = 2000;
-var GAS_API_VERSION = 5;
+var CLIENT_CHANGES_SHEET_NAME = 'AlteracoesClientes';
+var CLIENT_CHANGES_HEADERS = [
+    'Change ID', 'ID Cliente', 'Campos', 'Alterado Em', 'Origem',
+    'Status', 'Recebido Em', 'Processado Em', 'Mensagem'
+];
+var CLIENT_EDITABLE_FIELDS = ['Cliente', 'Número', 'Complemento', 'CEP', 'Telefone1', 'Telefone2'];
+var GAS_API_VERSION = 6;
 // Consultas de última coleta varrem apenas as linhas mais recentes da aba
 // Coletas (append-only, cronológica). Varrer a aba inteira chega a ~37s e pode
 // estourar o limite do GAS. Se o roteiro não aparecer na janela, há fallback
@@ -167,8 +173,10 @@ function buildFlatRoteiros_(rotasValues, clientesValues, roteirosValues) {
         var keyPJ = cleanIntString_(rowC[mapClientes['idPJ']]);
         if (!keyPJ) continue;
         clientesByIdPJ[keyPJ] = {
+            idCliente: String(rowC[mapClientes['idUnico2']] || '').trim(),
             Cliente: String(rowC[mapClientes['Cliente']] || '').trim(),
             Numero: cleanIntString_(rowC[mapClientes['N\u00FAmero']]),
+            Complemento: String(rowC[mapClientes['Complemento']] || '').trim(),
             CEP: cleanIntString_(rowC[mapClientes['CEP']]),
             Telefone1: formatPhone_(rowC[mapClientes['Telefone1']]),
             Telefone2: formatPhone_(rowC[mapClientes['Telefone2']])
@@ -197,10 +205,12 @@ function buildFlatRoteiros_(rotasValues, clientesValues, roteirosValues) {
 
         rows.push({
             Roteiro: roteirosById[cleanIntString_(rowR[mapRotas['idRoteiro']])] || '',
+            idCliente: cliente.idCliente,
             Cliente: cliente.Cliente,
             idRota: cleanIntString_(rowR[mapRotas['idRota']]),
             Ordem: (ordemVal !== '' && ordemVal !== null && !isNaN(ordemVal)) ? Number(ordemVal) : 0,
             'N\u00FAmero': cliente.Numero,
+            Complemento: cliente.Complemento,
             CEP: cliente.CEP,
             Inativo: (inativoVal === true || String(inativoVal).trim() === '1' || String(inativoVal).toLowerCase() === 'true') ? 1 : 0,
             Telefone1: cliente.Telefone1,
@@ -402,6 +412,10 @@ function doPost(e) {
 
         if (body.action === 'routeChanges') {
             return saveRouteChanges_(body.changes || [], body.token || '');
+        }
+
+        if (body.action === 'clientChanges') {
+            return saveClientChanges_(body.changes || [], body.token || '');
         }
 
         if (body.action === 'getRouteChanges') {
@@ -677,6 +691,214 @@ function planRotaWrites_(idRowMap, changes) {
         var row = idRowMap[key];
         if (!row) { skipped.push(key); continue; }
         writes.push({ row: row, ordem: Number(ch.ordem), inativo: ch.inativo === 1 });
+    }
+    return { writes: writes, skipped: skipped };
+}
+
+// ===== Alteracoes de cliente (subprojeto B): grava campos em shtClientes =====
+
+function saveClientChanges_(changes, token) {
+    var authError = routeChangesAuthError_(token);
+    if (authError) return jsonResponse_({ ok: false, error: authError });
+    if (!Array.isArray(changes) || changes.length > 100) {
+        return jsonResponse_({ ok: false, error: 'O lote deve conter no maximo 100 alteracoes' });
+    }
+
+    try {
+        var normalized = changes.map(normalizeClientChange_);
+        var lock = LockService.getScriptLock();
+        lock.waitLock(30000);
+        try {
+            var sheet = getClientChangesSheet_();
+            var lastRow = sheet.getLastRow();
+            var existingValues = lastRow > 1
+                ? sheet.getRange(2, 1, lastRow - 1, 1).getValues()
+                : [];
+            var existingIds = {};
+            existingValues.forEach(function (row) { existingIds[String(row[0])] = true; });
+
+            var now = new Date().toISOString();
+            var rows = [];
+            var acceptedIds = [];
+            var duplicateIds = [];
+            var accepted = [];
+            normalized.forEach(function (change) {
+                if (existingIds[change.changeId]) {
+                    duplicateIds.push(change.changeId);
+                    return;
+                }
+                existingIds[change.changeId] = true;
+                acceptedIds.push(change.changeId);
+                accepted.push(change);
+                rows.push([
+                    change.changeId,
+                    change.idCliente,
+                    JSON.stringify(change.campos),
+                    change.alteredAt,
+                    change.origem,
+                    'PENDENTE',
+                    now,
+                    '',
+                    ''
+                ]);
+            });
+
+            // Aplica em shtClientes ANTES de gravar o log (mesma logica do A):
+            // se a aplicacao falhar, o log nao e escrito e o reenvio reprocessa
+            // (gravar os mesmos campos e idempotente).
+            var applyResult = applyClientChangesToClientes_(accepted);
+
+            if (rows.length) {
+                sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, CLIENT_CHANGES_HEADERS.length)
+                    .setValues(rows);
+            }
+
+            return jsonResponse_({
+                ok: true,
+                count: acceptedIds.length,
+                acceptedIds: acceptedIds,
+                duplicateIds: duplicateIds,
+                skippedApply: applyResult.skipped.length
+            });
+        } finally {
+            lock.releaseLock();
+        }
+    } catch (err) {
+        return jsonResponse_({ ok: false, error: err.message });
+    }
+}
+
+function normalizeClientChange_(change) {
+    var changeId = String(change.change_id || change.changeId || '').trim();
+    if (!/^[A-Za-z0-9_-]{8,100}$/.test(changeId)) {
+        throw new Error('Change ID invalido');
+    }
+
+    var idCliente = String(change.id_cliente || change.idCliente || '').trim();
+    if (!idCliente || idCliente.length > 100 || /[\t\r\n]/.test(idCliente)) {
+        throw new Error('ID Cliente invalido para ' + changeId);
+    }
+
+    var rawCampos = change.campos;
+    if (!rawCampos || typeof rawCampos !== 'object') {
+        throw new Error('Campos invalidos para ' + changeId);
+    }
+    var campos = {};
+    var count = 0;
+    for (var i = 0; i < CLIENT_EDITABLE_FIELDS.length; i++) {
+        var field = CLIENT_EDITABLE_FIELDS[i];
+        if (Object.prototype.hasOwnProperty.call(rawCampos, field)) {
+            var value = rawCampos[field];
+            if (value === null || value === undefined) value = '';
+            value = String(value);
+            if (value.length > 255 || /[\t\r\n]/.test(value)) {
+                throw new Error('Valor invalido no campo ' + field + ' para ' + changeId);
+            }
+            campos[field] = value;
+            count++;
+        }
+    }
+    if (!count) throw new Error('Nenhum campo editavel para ' + changeId);
+
+    var alteredAt = new Date(change.alterado_em || change.alteradoEm || '');
+    if (isNaN(alteredAt.getTime())) {
+        throw new Error('Data da alteracao invalida para ' + changeId);
+    }
+
+    var origem = String(change.origem || '').trim();
+    if (!origem || origem.length > 100 || /[\t\r\n]/.test(origem)) {
+        throw new Error('Origem invalida para ' + changeId);
+    }
+
+    return {
+        changeId: changeId,
+        idCliente: idCliente,
+        campos: campos,
+        alteredAt: alteredAt.toISOString(),
+        origem: origem
+    };
+}
+
+function getClientChangesSheet_() {
+    var config = getConfig_();
+    if (!config.spreadsheetId) throw new Error('SPREADSHEET_ID nao configurado');
+    var spreadsheet = SpreadsheetApp.openById(config.spreadsheetId);
+    var sheet = spreadsheet.getSheetByName(CLIENT_CHANGES_SHEET_NAME);
+    if (!sheet) {
+        sheet = spreadsheet.insertSheet(CLIENT_CHANGES_SHEET_NAME);
+        sheet.getRange(1, 1, 1, CLIENT_CHANGES_HEADERS.length).setValues([CLIENT_CHANGES_HEADERS]);
+        sheet.setFrozenRows(1);
+        return sheet;
+    }
+    if (sheet.getLastRow() === 0) {
+        sheet.getRange(1, 1, 1, CLIENT_CHANGES_HEADERS.length).setValues([CLIENT_CHANGES_HEADERS]);
+        sheet.setFrozenRows(1);
+        return sheet;
+    }
+    var header = sheet.getRange(1, 1, 1, CLIENT_CHANGES_HEADERS.length).getValues()[0];
+    for (var i = 0; i < CLIENT_CHANGES_HEADERS.length; i++) {
+        if (String(header[i]) !== CLIENT_CHANGES_HEADERS[i]) {
+            throw new Error('Cabecalho invalido na aba ' + CLIENT_CHANGES_SHEET_NAME);
+        }
+    }
+    return sheet;
+}
+
+// Aplica as alteracoes aceitas em shtClientes, por idUnico2 (UUID). Escrita
+// direcionada apenas nas celulas dos campos enviados. Lanca em coluna ausente.
+function applyClientChangesToClientes_(changes) {
+    if (!changes || !changes.length) return { applied: 0, skipped: [] };
+
+    var config = getConfig_();
+    if (!config.spreadsheetId) throw new Error('SPREADSHEET_ID nao configurado');
+    var sheet = SpreadsheetApp.openById(config.spreadsheetId).getSheetByName(TBL_CLIENTES);
+    if (!sheet) throw new Error('Aba nao encontrada: ' + TBL_CLIENTES);
+
+    var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var colUuid = header.indexOf('idUnico2');
+    if (colUuid === -1) throw new Error('Coluna idUnico2 nao encontrada em ' + TBL_CLIENTES);
+    var colByField = {};
+    for (var f = 0; f < CLIENT_EDITABLE_FIELDS.length; f++) {
+        var field = CLIENT_EDITABLE_FIELDS[f];
+        var idx = header.indexOf(field);
+        if (idx === -1) throw new Error('Coluna ' + field + ' nao encontrada em ' + TBL_CLIENTES);
+        colByField[field] = idx;
+    }
+
+    var lastRow = sheet.getLastRow();
+    var uuidRowMap = {};
+    if (lastRow > 1) {
+        var uuidValues = sheet.getRange(2, colUuid + 1, lastRow - 1, 1).getValues();
+        for (var i = 0; i < uuidValues.length; i++) {
+            var key = String(uuidValues[i][0] || '').trim();
+            if (key) uuidRowMap[key] = i + 2;
+        }
+    }
+
+    var plan = planClienteWrites_(uuidRowMap, changes);
+
+    // Grava so as celulas dos campos enviados (uma por campo alterado).
+    plan.writes.forEach(function (w) {
+        for (var field in w.campos) {
+            if (!Object.prototype.hasOwnProperty.call(w.campos, field)) continue;
+            sheet.getRange(w.row, colByField[field] + 1).setValue(w.campos[field]);
+        }
+    });
+
+    return { applied: plan.writes.length, skipped: plan.skipped };
+}
+
+// Funcao pura (sem chamadas ao Sheets), testavel: dado uuid->linha e as
+// alteracoes aceitas, devolve as escritas {row, campos} e os UUID sem linha.
+function planClienteWrites_(uuidRowMap, changes) {
+    var writes = [];
+    var skipped = [];
+    for (var i = 0; i < changes.length; i++) {
+        var ch = changes[i];
+        var key = String(ch.idCliente || '').trim();
+        var row = uuidRowMap[key];
+        if (!row) { skipped.push(key); continue; }
+        writes.push({ row: row, campos: ch.campos });
     }
     return { writes: writes, skipped: skipped };
 }

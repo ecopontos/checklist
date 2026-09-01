@@ -447,10 +447,8 @@
         <div class="modal-content">
             <h2 id="modalTitle">Editar Ponto</h2>
             <p class="subtitle" style="font-size: 0.8rem;">
-                Nesta primeira integração, alterações de ordem e status são salvas na planilha.
-                Nome e endereço permanecem somente neste aplicativo.
-                Para mudar a sequência, feche este formulário e use <strong>Organizar roteiro</strong>.
-                <a href="ajuda-integracao-access.html" target="_blank" style="color: var(--accent);">Ver o procedimento completo.</a>
+                Dados do cliente (nome, endereço, telefone) valem para <strong>todos os roteiros</strong> e são salvos na planilha.
+                Ordem e status são deste roteiro. Para mudar a sequência, feche este formulário e use <strong>Organizar roteiro</strong>.
             </p>
             <form id="editForm">
                 <div class="form-group">
@@ -460,6 +458,27 @@
                 <div class="form-group">
                     <label>Cliente</label>
                     <input type="text" id="f_cliente" required>
+                </div>
+                <input type="hidden" id="f_idCliente">
+                <div class="form-group">
+                    <label>Número</label>
+                    <input type="text" id="f_numero">
+                </div>
+                <div class="form-group">
+                    <label>Complemento</label>
+                    <input type="text" id="f_complemento">
+                </div>
+                <div class="form-group">
+                    <label>CEP</label>
+                    <input type="text" id="f_cep">
+                </div>
+                <div class="form-group">
+                    <label>Telefone 1</label>
+                    <input type="text" id="f_telefone1">
+                </div>
+                <div class="form-group">
+                    <label>Telefone 2</label>
+                    <input type="text" id="f_telefone2">
                 </div>
                 <div class="form-group">
                     <label>Roteiro</label>
@@ -510,7 +529,7 @@
     <script src="vendor/sql-wasm.js"></script>
     <script type="module">
         import db from './database.js';
-        import { syncPendingRoteiroChanges } from './google-sync.js';
+        import { syncPendingRoteiroChanges, syncPendingClienteChanges } from './google-sync.js';
 
         const organizerState = {
             routeId: '',
@@ -846,7 +865,13 @@
 
                 document.getElementById('f_idRota').value = row.id_rota;
                 document.getElementById('f_idRota').disabled = true;
+                document.getElementById('f_idCliente').value = row.id_cliente || '';
                 document.getElementById('f_cliente').value = row.cliente;
+                document.getElementById('f_numero').value = row.numero || '';
+                document.getElementById('f_complemento').value = row.complemento || '';
+                document.getElementById('f_cep').value = row.cep || '';
+                document.getElementById('f_telefone1').value = row.telefone1 || '';
+                document.getElementById('f_telefone2').value = row.telefone2 || '';
                 document.getElementById('f_roteiro').value = row.roteiro_id;
                 document.getElementById('f_ordem').value = row.ordem;
                 document.getElementById('f_ordem').disabled = true;
@@ -860,7 +885,13 @@
         window.openAddModal = () => {
             document.getElementById('f_idRota').value = '';
             document.getElementById('f_idRota').disabled = false;
+            document.getElementById('f_idCliente').value = '';
             document.getElementById('f_cliente').value = '';
+            document.getElementById('f_numero').value = '';
+            document.getElementById('f_complemento').value = '';
+            document.getElementById('f_cep').value = '';
+            document.getElementById('f_telefone1').value = '';
+            document.getElementById('f_telefone2').value = '';
             document.getElementById('f_ordem').value = '100';
             document.getElementById('f_ordem').disabled = false;
             document.getElementById('f_status').value = '1';
@@ -911,23 +942,71 @@
             const existing = isExistingAccessPoint
                 ? db.getClienteByIdRota(idRotaInput.value)
                 : null;
+            const idCliente = document.getElementById('f_idCliente').value;
+            const form = {
+                Cliente: document.getElementById('f_cliente').value,
+                'Número': document.getElementById('f_numero').value,
+                Complemento: document.getElementById('f_complemento').value,
+                CEP: document.getElementById('f_cep').value,
+                Telefone1: document.getElementById('f_telefone1').value,
+                Telefone2: document.getElementById('f_telefone2').value
+            };
             const data = {
                 idRota: idRotaInput.value,
-                Cliente: document.getElementById('f_cliente').value,
+                idCliente,
                 logradouro: existing?.logradouro || '',
-                Número: existing?.numero || '',
-                CEP: existing?.cep || '',
                 roteiro_id: document.getElementById('f_roteiro').value,
                 Ordem: Number(document.getElementById('f_ordem').value),
-                ativo: document.getElementById('f_status').value == '1'
+                ativo: document.getElementById('f_status').value == '1',
+                ...form
             };
             db.upsertCliente(data);
+
+            // Campos de cliente que mudaram (valem para todos os roteiros dele).
+            const originais = {
+                Cliente: existing?.cliente ?? '',
+                'Número': existing?.numero ?? '',
+                Complemento: existing?.complemento ?? '',
+                CEP: existing?.cep ?? '',
+                Telefone1: existing?.telefone1 ?? '',
+                Telefone2: existing?.telefone2 ?? ''
+            };
+            const campos = {};
+            Object.keys(form).forEach(k => {
+                if (String(form[k] ?? '') !== String(originais[k] ?? '')) campos[k] = form[k];
+            });
+            const temCampoCliente = Object.keys(campos).length > 0;
+
+            if (isExistingAccessPoint && idCliente && temCampoCliente) {
+                db.updateClienteLocal(idCliente, campos);
+            }
+
             closeModal('editModal');
             renderClients();
-            if (isExistingAccessPoint) {
-                await queueAndSyncAccessChange(data.idRota);
-            } else {
-                alert('Novo ponto salvo apenas localmente. A inclusão de novos IDs no Access será tratada em uma etapa futura.');
+
+            if (!isExistingAccessPoint) {
+                alert('Novo ponto salvo apenas localmente. O cadastro de clientes novos na planilha será tratado em uma etapa futura.');
+                return;
+            }
+
+            // Ordem/status do ponto (subprojeto A)
+            await queueAndSyncAccessChange(data.idRota);
+
+            // Dados do cliente (subprojeto B)
+            if (temCampoCliente && !idCliente) {
+                alert('Dados do cliente salvos localmente. Este ponto ainda não tem vínculo de cliente na planilha; a sincronização virá quando o cliente existir lá.');
+            } else if (temCampoCliente && idCliente) {
+                const q = db.queueClienteChange(idCliente, campos);
+                if (q.queued) {
+                    const result = await syncPendingClienteChanges(db);
+                    if (!result.ok) {
+                        alert(
+                            'Dados do cliente salvos neste aplicativo, mas ainda não sincronizados: ' +
+                            (result.error || 'erro desconhecido') +
+                            '. Configure a integração na tela Admin.'
+                        );
+                    }
+                }
             }
         };
 

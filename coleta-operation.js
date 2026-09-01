@@ -531,7 +531,9 @@ function clearEntryError() {
 }
 
 function formatAddress(client) {
-    return [client.logradouro, client.numero].filter(Boolean).join(', ') || 'Endereço não informado';
+    const base = [client.logradouro, client.numero].filter(Boolean).join(', ');
+    const completo = [base, client.complemento].filter(Boolean).join(' - ');
+    return completo || 'Endereço não informado';
 }
 
 function escapeHTML(value) {
@@ -651,10 +653,11 @@ function buildChecklistDoc() {
             ?? db.getUltimaQuantidade(client.id_rota)
             ?? 0;
         if (qtdAnt > 0) totalPrevisto += qtdAnt;
+        const logradouroCompleto = [client.logradouro, client.complemento].filter(Boolean).join(' - ');
         return [
             client.ordem || index + 1,
             client.cliente,
-            client.logradouro || '',
+            logradouroCompleto,
             client.numero || '',
             client.cep || '',
             client.id_rota,

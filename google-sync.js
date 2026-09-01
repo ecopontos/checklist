@@ -389,3 +389,71 @@ export async function syncPendingRoteiroChanges(db) {
         pending: db.getPendingRoteiroChangesCount()
     };
 }
+
+export async function pushClienteChanges(changes) {
+    const url = getGasUrl();
+    if (!url) return { ok: false, error: 'URL do GAS não configurada' };
+    if (!changes.length) return { ok: true, count: 0, acceptedIds: [] };
+
+    const token = getGasRouteToken();
+    if (!token) {
+        return { ok: false, error: 'Token de alterações não configurado' };
+    }
+
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'clientChanges', token, changes })
+        });
+        if (!res.ok) {
+            return { ok: false, error: `Falha HTTP ${res.status}` };
+        }
+        return await res.json();
+    } catch (e) {
+        return { ok: false, error: e.message };
+    }
+}
+
+export async function syncPendingClienteChanges(db) {
+    let sentCount = 0;
+    let acceptedCount = 0;
+    let duplicateCount = 0;
+
+    for (let batchNumber = 0; batchNumber < 50; batchNumber++) {
+        const changes = db.getPendingClienteChanges(100);
+        if (!changes.length) {
+            return { ok: true, count: sentCount, acceptedCount, duplicateCount, pending: 0 };
+        }
+
+        const result = await pushClienteChanges(changes);
+        if (!result.ok) {
+            return { ...result, count: sentCount, pending: db.getPendingClienteChangesCount() };
+        }
+
+        const batchIds = new Set(changes.map(change => change.change_id));
+        const acceptedIds = (result.acceptedIds || []).filter(id => batchIds.has(id));
+        const duplicateIds = (result.duplicateIds || []).filter(id => batchIds.has(id));
+        const confirmedIds = [...new Set([...acceptedIds, ...duplicateIds])];
+        if (!confirmedIds.length) {
+            return {
+                ok: false,
+                error: 'O GAS não confirmou nenhuma alteração do lote enviado',
+                count: sentCount,
+                pending: db.getPendingClienteChangesCount()
+            };
+        }
+
+        db.markClienteChangesSent(confirmedIds);
+        sentCount += confirmedIds.length;
+        acceptedCount += acceptedIds.length;
+        duplicateCount += duplicateIds.length;
+    }
+
+    return {
+        ok: false,
+        error: 'A fila excedeu o limite de segurança por sincronização',
+        count: sentCount,
+        pending: db.getPendingClienteChangesCount()
+    };
+}
