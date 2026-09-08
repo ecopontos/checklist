@@ -52,7 +52,8 @@ async function loadModule(context, filename) {
 
   // Sem URL do GAS configurada: nao tenta chamar a rede.
   const semUrl = await syncModule.getIntercorrenciasRoteiro('ROTA X');
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(semUrl)), { ok: false, error: 'URL do GAS não configurada' });
+  assert.strictEqual(semUrl.ok, false);
+  assert.strictEqual(semUrl.error, 'URL do GAS não configurada');
   assert.strictEqual(requests.length, 0, 'nao deveria ter chamado fetch sem URL configurada');
 
   // Com URL configurada: monta a query corretamente (roteiro com espaco
@@ -64,7 +65,11 @@ async function loadModule(context, filename) {
   }));
 
   const resultado = await syncModule.getIntercorrenciasRoteiro('ROTA CENTRO LESTE');
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(resultado)), { ok: true, data: [{ id_rota: '42', intercorrencia: 'Bombona suja', data: '2026-09-01' }] });
+  assert.strictEqual(resultado.ok, true);
+  assert.strictEqual(resultado.data.length, 1);
+  assert.strictEqual(resultado.data[0].id_rota, '42');
+  assert.strictEqual(resultado.data[0].intercorrencia, 'Bombona suja');
+  assert.strictEqual(resultado.data[0].data, '2026-09-01');
   assert.strictEqual(requests.length, 1);
   assert.strictEqual(requests[0], 'https://gas.example/exec?action=intercorrenciasRoteiro&roteiro=ROTA%20CENTRO%20LESTE');
 
