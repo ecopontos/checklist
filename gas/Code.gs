@@ -32,7 +32,7 @@ var CLIENT_CHANGES_HEADERS = [
     'Status', 'Recebido Em', 'Processado Em', 'Mensagem'
 ];
 var CLIENT_EDITABLE_FIELDS = ['Cliente', 'Número', 'Complemento', 'CEP', 'Telefone1', 'Telefone2'];
-var GAS_API_VERSION = 6;
+var GAS_API_VERSION = 7;
 // Consultas de última coleta varrem apenas as linhas mais recentes da aba
 // Coletas (append-only, cronológica). Varrer a aba inteira chega a ~37s e pode
 // estourar o limite do GAS. Se o roteiro não aparecer na janela, há fallback
@@ -75,6 +75,10 @@ function doGet(e) {
 
     if (params.action === 'ultimaColetaDetalhada') {
         return getUltimaColetaDetalhada_(params.roteiro || '');
+    }
+
+    if (params.action === 'intercorrenciasRoteiro') {
+        return getIntercorrenciasRoteiro_(params.roteiro || '');
     }
 
     if (params.action === 'agendamentos') {
@@ -394,6 +398,107 @@ function getUltimaColetaDetalhada_(roteiroNome) {
         var recentStart = Math.max(2, lastRow - COLETAS_RECENT_ROWS + 1);
         var data = computeFromRange(recentStart);
         // Fallback: roteiro não coletado dentro da janela recente — varre tudo.
+        if (data === null && recentStart > 2) {
+            data = computeFromRange(2);
+        }
+        if (data === null) data = [];
+
+        cache.put(cacheKey, JSON.stringify(data), 21600);
+        return jsonResponse_({ ok: true, data: data });
+    } catch (err) {
+        return jsonResponse_({ ok: false, error: err.message });
+    }
+}
+
+// Le a aba Coletas e devolve, por cliente do roteiro pedido, a intercorrencia
+// da coleta MAIS RECENTE desse cliente (nao a data mais recente do roteiro
+// inteiro, como em getUltimaColetaDetalhada_ — um cliente pode ter sido
+// coletado num dia diferente do resto do roteiro). Nao filtra por
+// quantidade: uma intercorrencia tipica ("recusou coleta", "sem bombona") e
+// registrada com quantidade 0, e getUltimaColetaDetalhada_ descartaria
+// exatamente esses registros.
+function getIntercorrenciasRoteiro_(roteiroNome) {
+    var config = getConfig_();
+    if (!config.spreadsheetId) {
+        return jsonResponse_({ ok: false, error: 'SPREADSHEET_ID não configurado' });
+    }
+    if (!roteiroNome) {
+        return jsonResponse_({ ok: false, error: 'Parâmetro roteiro ausente' });
+    }
+
+    try {
+        var ss = SpreadsheetApp.openById(config.spreadsheetId);
+        var sheet = ss.getSheetByName(COLETAS_SHEET_NAME);
+        if (!sheet || sheet.getLastRow() < 2) {
+            return jsonResponse_({ ok: true, data: [] });
+        }
+
+        var roteiroAlvo = roteiroNome.trim();
+        var lastRow = sheet.getLastRow();
+
+        var cache = CacheService.getScriptCache();
+        var cacheKey = 'ic:' + lastRow + ':' + roteiroAlvo;
+        var cached = cache.get(cacheKey);
+        if (cached !== null) {
+            return jsonResponse_({ ok: true, data: JSON.parse(cached) });
+        }
+
+        var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+        var colIdRota = header.indexOf('ID Rota');
+        var colData = header.indexOf('Data');
+        var colRoteiro = header.indexOf('Roteiro');
+        var colIntercorrencia = header.indexOf('Intercorrência');
+        if (colIdRota === -1 || colData === -1 || colRoteiro === -1 || colIntercorrencia === -1) {
+            return jsonResponse_({ ok: false, error: 'Colunas ID Rota/Data/Roteiro/Intercorrência não encontradas na aba ' + COLETAS_SHEET_NAME });
+        }
+
+        var wanted = [colIdRota, colData, colRoteiro, colIntercorrencia];
+        var minCol = Math.min.apply(null, wanted);
+        var width = Math.max.apply(null, wanted) - minCol + 1;
+        var iOff = colIdRota - minCol;
+        var dOff = colData - minCol;
+        var rOff = colRoteiro - minCol;
+        var xOff = colIntercorrencia - minCol;
+
+        function computeFromRange(startRow) {
+            var num = lastRow - startRow + 1;
+            if (num < 1) return null;
+            var values = sheet.getRange(startRow, minCol + 1, num, width).getValues();
+            var ultimaPorPonto = {};
+            var achouRoteiro = false;
+            for (var i = 0; i < values.length; i++) {
+                if (String(values[i][rOff]).trim() !== roteiroAlvo) continue;
+                achouRoteiro = true;
+                var idRota = String(values[i][iOff]).trim();
+                if (!idRota) continue;
+                var normalized = normalizeDateValue_(values[i][dOff]);
+                if (!normalized) continue;
+                var atual = ultimaPorPonto[idRota];
+                if (!atual || normalized > atual.data) {
+                    ultimaPorPonto[idRota] = {
+                        data: normalized,
+                        intercorrencia: String(values[i][xOff] || '').trim()
+                    };
+                }
+            }
+            // achouRoteiro=false sinaliza "roteiro nao aparece nesta janela",
+            // dispara o fallback de varredura completa. achouRoteiro=true com
+            // ultimaPorPonto vazio (ou so intercorrencias vazias) e um
+            // resultado valido: retorna [] em vez de forcar a varredura toda.
+            if (!achouRoteiro) return null;
+            return Object.keys(ultimaPorPonto)
+                .map(function (idRota) {
+                    return {
+                        id_rota: idRota,
+                        data: ultimaPorPonto[idRota].data,
+                        intercorrencia: ultimaPorPonto[idRota].intercorrencia
+                    };
+                })
+                .filter(function (ponto) { return ponto.intercorrencia !== ''; });
+        }
+
+        var recentStart = Math.max(2, lastRow - COLETAS_RECENT_ROWS + 1);
+        var data = computeFromRange(recentStart);
         if (data === null && recentStart > 2) {
             data = computeFromRange(2);
         }

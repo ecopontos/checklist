@@ -96,27 +96,6 @@
     color: var(--text);
   }
 
-  /* ── UPLOAD ZONE ── */
-  .upload-zone {
-    border: 1.5px dashed var(--border);
-    border-radius: 10px;
-    padding: 40px 24px;
-    text-align: center;
-    cursor: pointer;
-    transition: border-color 0.2s, background 0.2s;
-    position: relative;
-  }
-  .upload-zone:hover, .upload-zone.drag { 
-    border-color: var(--green); 
-    background: var(--green-dim);
-  }
-  .upload-zone input[type=file] {
-    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
-  }
-  .upload-icon { font-size: 32px; margin-bottom: 12px; }
-  .upload-zone p { color: var(--text-dim); font-size: 14px; }
-  .upload-zone strong { color: var(--green); }
-
   .hint {
     font-size: 12px;
     color: var(--text-dim);
@@ -332,20 +311,6 @@
   .col-chip:hover { border-color: var(--green); color: var(--green); }
   .col-chip.selected { background: var(--green-dim); border-color: var(--green); color: var(--green); }
 
-  select {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    color: var(--text);
-    font-family: 'DM Sans', sans-serif;
-    font-size: 14px;
-    padding: 8px 12px;
-    outline: none;
-    cursor: pointer;
-    margin-right: 8px;
-  }
-  select:focus { border-color: var(--green); }
-
   label.field-label {
     font-size: 12px;
     color: var(--text-dim);
@@ -391,67 +356,49 @@
   <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
 </div>
 
-<!-- STEP 1: UPLOAD -->
+<!-- STEP 1: SELECT ROUTES -->
 <div class="step active" id="step1">
   <div class="step-label">Passo 01</div>
-  <h2>Importar planilha</h2>
+  <h2>Selecionar roteiro(s)</h2>
 
-  <div class="upload-zone" id="uploadZone">
-    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
-    <div class="upload-icon">📄</div>
-    <p>Arraste o arquivo ou <strong>clique para selecionar</strong></p>
-    <p style="margin-top:6px; font-size:12px;">CSV ou Excel (.xlsx)</p>
-  </div>
-
-  <div class="hint">
-    Exporte a planilha como CSV (Arquivo → Download → CSV) ou use o .xlsx diretamente.<br>
-    A primeira linha deve ser o cabeçalho com os nomes das colunas.
-  </div>
-</div>
-
-<!-- STEP 2: MAP COLUMNS -->
-<div class="step" id="step2">
-  <div class="step-label">Passo 02</div>
-  <h2>Mapear colunas</h2>
-
-  <div class="field">
-    <label class="field-label">Coluna com o número de telefone</label>
-    <select id="colPhone"></select>
-  </div>
-
-  <div class="field">
-    <label class="field-label">Coluna com o nome (opcional)</label>
-    <select id="colName"></select>
-  </div>
+  <div class="hint" id="roteirosLoading">Carregando roteiros...</div>
+  <div class="col-list" id="roteiroChips" style="display:none;"></div>
 
   <div id="previewWrap"></div>
 
+  <div class="field" id="intercorrenciaWrap" style="display:none; margin-bottom:0;">
+    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-dim);">
+      <input type="checkbox" id="chkIntercorrencia" onchange="toggleSomenteIntercorrencia()">
+      Só com intercorrência (última coleta)
+    </label>
+    <div class="hint" id="intercorrenciaStatus" style="display:none; margin-top:8px;"></div>
+  </div>
+
   <div class="actions">
-    <button class="btn btn-primary" id="btnToMsg">Próximo →</button>
-    <button class="btn btn-outline" onclick="goTo(1)">← Voltar</button>
+    <button class="btn btn-primary" id="btnToMsg" disabled>Próximo →</button>
   </div>
 </div>
 
-<!-- STEP 3: MESSAGE -->
-<div class="step" id="step3">
-  <div class="step-label">Passo 03</div>
+<!-- STEP 2: MESSAGE -->
+<div class="step" id="step2">
+  <div class="step-label">Passo 02</div>
   <h2>Mensagem</h2>
 
   <div class="field">
     <label class="field-label">Texto da mensagem</label>
     <textarea id="msgText" placeholder="Digite ou cole a mensagem aqui..."></textarea>
-    <div class="tag-hint">Use <code>{nome}</code> para personalizar com o nome do estabelecimento.</div>
+    <div class="tag-hint">Use <code>{nome}</code> para personalizar com o nome do estabelecimento e <code>{intercorrencia}</code> para citar o problema da última coleta.</div>
   </div>
 
   <div class="actions">
     <button class="btn btn-primary" id="btnStart">Iniciar disparos →</button>
-    <button class="btn btn-outline" onclick="goTo(2)">← Voltar</button>
+    <button class="btn btn-outline" onclick="goTo(1)">← Voltar</button>
   </div>
 </div>
 
-<!-- STEP 4: SEND -->
-<div class="step" id="step4">
-  <div class="step-label">Passo 04</div>
+<!-- STEP 3: SEND -->
+<div class="step" id="step3">
+  <div class="step-label">Passo 03</div>
 
   <div class="nav-row">
     <span class="nav-counter" id="navCounter"></span>
@@ -480,7 +427,7 @@
       <button class="btn btn-outline" onclick="markSkip()">Pular ↷</button>
       <button class="btn btn-outline" onclick="markSent()" style="color:var(--green);border-color:var(--green);">✓ Marcar enviado</button>
     </div>
-    <button class="btn btn-outline" onclick="goTo(3)" style="font-size:12px;">Editar mensagem</button>
+    <button class="btn btn-outline" onclick="goTo(2)" style="font-size:12px;">Editar mensagem</button>
   </div>
 
   <div id="historySection" style="margin-top:28px;">
@@ -489,8 +436,8 @@
   </div>
 </div>
 
-<!-- STEP 5: DONE -->
-<div class="step" id="step5">
+<!-- STEP 4: DONE -->
+<div class="step" id="step4">
   <div class="step-label">Concluído ✓</div>
   <h2>Disparo finalizado!</h2>
   <div class="summary-grid">
@@ -505,97 +452,184 @@
 </div>
 
 <script src="vendor/xlsx.full.min.js"></script>
-<script>
+<script src="vendor/sql-wasm.js"></script>
+<script type="module">
+import db from './database.js';
+import { getIntercorrenciasRoteiro } from './google-sync.js';
+
 // ── STATE ──
-let rows = [];          // array of objects (all columns)
-let headers = [];       // column names
-let colPhone = '';
-let colName  = '';
-let message  = '';
-let statuses = [];      // 'pending' | 'sent' | 'skip'
+let allRoteiros = [];             // [{id, nome}]
+let selectedRoteiroIds = new Set();
+let excludedKeys = new Set();     // chaves "idRota:slot" desmarcadas manualmente no passo 1
+let contacts = [];                // [{idRota, slot, nome, labelSufixo, telefoneExibicao, telefoneDigits, roteiroNome}]
+let statuses = [];                // 'pending' | 'sent' | 'skip', paralelo a contacts
 let current  = 0;
+let message  = '';
+let somenteIntercorrencia = false;
+let intercorrenciasPorIdRota = new Map(); // idRota (string) -> { intercorrencia, data }
+let intercorrenciasCarregadas = new Set(); // nomes de roteiro ja buscados nesta sessao
+
+// ── HELPERS ──
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = String(value ?? '');
+  return div.innerHTML;
+}
 
 // ── NAVIGATION ──
 function goTo(n) {
   document.querySelectorAll('.step').forEach((s,i) => s.classList.toggle('active', i === n-1));
 }
+window.goTo = goTo;
 
-// ── FILE UPLOAD ──
-const fileInput = document.getElementById('fileInput');
-const uploadZone = document.getElementById('uploadZone');
-
-uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag'); });
-uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag'));
-uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('drag'); handleFile(e.dataTransfer.files[0]); });
-fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
-
-function handleFile(file) {
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    const data = new Uint8Array(e.target.result);
-    const wb = XLSX.read(data, { type: 'array' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
-    if (!json.length) { alert('Planilha vazia ou formato inválido.'); return; }
-    rows = json;
-    headers = Object.keys(json[0]);
-    statuses = new Array(rows.length).fill('pending');
-    populateMappingStep();
-    goTo(2);
-  };
-  reader.readAsArrayBuffer(file);
-}
-
-// ── STEP 2: COLUMN MAPPING ──
-function populateMappingStep() {
-  const pSel = document.getElementById('colPhone');
-  const nSel = document.getElementById('colName');
-  pSel.innerHTML = '';
-  nSel.innerHTML = '<option value="">— nenhuma —</option>';
-
-  headers.forEach(h => {
-    pSel.innerHTML += `<option value="${h}">${h}</option>`;
-    nSel.innerHTML += `<option value="${h}">${h}</option>`;
+// ── STEP 1: SELECT ROUTES ──
+function buildPendingContacts() {
+  const list = [];
+  selectedRoteiroIds.forEach(id => {
+    db.getContatosWhatsapp(id).forEach(c => list.push(c));
   });
-
-  // auto-detect common column names
-  const phoneGuess = headers.find(h => /tel|fone|celular|whatsapp|numero|número/i.test(h));
-  const nameGuess  = headers.find(h => /nome|name|estabelecimento|empresa/i.test(h));
-  if (phoneGuess) pSel.value = phoneGuess;
-  if (nameGuess)  nSel.value = nameGuess;
-
-  renderPreview();
-  pSel.onchange = nSel.onchange = renderPreview;
-}
-
-function renderPreview() {
-  const pSel = document.getElementById('colPhone').value;
-  const nSel = document.getElementById('colName').value;
-  const sample = rows.slice(0, 4);
-
-  let html = `<table class="preview-table"><thead><tr>`;
-  if (nSel) html += `<th>${nSel}</th>`;
-  html += `<th>${pSel}</th></tr></thead><tbody>`;
-  sample.forEach(r => {
-    html += '<tr>';
-    if (nSel) html += `<td>${r[nSel] || '—'}</td>`;
-    html += `<td style="font-family:'DM Mono',monospace">${r[pSel] || '—'}</td>`;
-    html += '</tr>';
+  const countByIdRota = {};
+  list.forEach(c => { countByIdRota[c.idRota] = (countByIdRota[c.idRota] || 0) + 1; });
+  list.forEach(c => {
+    c.labelSufixo = countByIdRota[c.idRota] > 1 ? ` (tel ${c.slot})` : '';
+    c.key = `${c.idRota}:${c.slot}`;
   });
-  if (rows.length > 4) html += `<tr><td colspan="2" style="color:var(--text-dim);font-size:12px;padding:8px 12px">... e mais ${rows.length - 4} contatos</td></tr>`;
-  html += '</tbody></table>';
-  document.getElementById('previewWrap').innerHTML = html;
+  return list;
 }
+
+function getVisibleContacts() {
+  return buildPendingContacts().filter(c => !somenteIntercorrencia || intercorrenciasPorIdRota.has(c.idRota));
+}
+
+// Busca no GAS as intercorrencias dos roteiros selecionados que ainda nao
+// foram carregados nesta sessao. Retorna false (e mostra erro) se alguma
+// busca falhar ou vier em formato inesperado — isso acontece quando o GAS
+// ainda nao foi redeployado com a action intercorrenciasRoteiro: o doGet cai
+// no fallback padrao (getRoteirosFlat_, que devolve `rows`, nao `data`), e a
+// checagem Array.isArray(res.data) pega exatamente esse caso.
+async function ensureIntercorrenciasCarregadas() {
+  const statusEl = document.getElementById('intercorrenciaStatus');
+  const faltantes = [...selectedRoteiroIds]
+    .map(id => allRoteiros.find(r => r.id === id))
+    .filter(r => r && !intercorrenciasCarregadas.has(r.nome));
+
+  if (!faltantes.length) return true;
+
+  statusEl.style.display = 'block';
+  statusEl.textContent = 'Buscando intercorrências...';
+  document.getElementById('btnToMsg').disabled = true;
+
+  for (const roteiro of faltantes) {
+    const res = await getIntercorrenciasRoteiro(roteiro.nome);
+    if (!res || res.ok !== true || !Array.isArray(res.data)) {
+      statusEl.textContent = 'Não foi possível buscar intercorrências agora (verifique a conexão ou se o GAS foi atualizado). Tente novamente.';
+      return false;
+    }
+    res.data.forEach(item => {
+      if (item && item.id_rota) {
+        intercorrenciasPorIdRota.set(String(item.id_rota), item);
+      }
+    });
+    intercorrenciasCarregadas.add(roteiro.nome);
+  }
+  statusEl.style.display = 'none';
+  return true;
+}
+
+function renderRoteiroChips() {
+  const wrap = document.getElementById('roteiroChips');
+  wrap.innerHTML = allRoteiros.map(r => {
+    const count = db.getContatosWhatsapp(r.id).length;
+    const selected = selectedRoteiroIds.has(r.id) ? 'selected' : '';
+    return `<div class="col-chip ${selected}" data-id="${r.id}" onclick="toggleRoteiro(${r.id})">${escapeHtml(r.nome)} · ${count}</div>`;
+  }).join('');
+}
+
+function renderContactPreview() {
+  const full = buildPendingContacts();
+  const list = full.filter(c => !somenteIntercorrencia || intercorrenciasPorIdRota.has(c.idRota));
+  const wrap = document.getElementById('previewWrap');
+  const btn = document.getElementById('btnToMsg');
+
+  if (!list.length) {
+    wrap.innerHTML = (somenteIntercorrencia && full.length)
+      ? '<div class="hint">Nenhum cliente com intercorrência registrada neste(s) roteiro(s).</div>'
+      : '';
+    btn.disabled = true;
+    return;
+  }
+
+  const colIntercorrenciaHeader = somenteIntercorrencia ? '<th>Intercorrência</th>' : '';
+  wrap.innerHTML = `<table class="preview-table"><thead><tr>
+      <th></th><th>Nome</th><th>Telefone</th><th>Roteiro</th>${colIntercorrenciaHeader}
+    </tr></thead><tbody>` +
+    list.map(c => {
+      const intercorrenciaCel = somenteIntercorrencia
+        ? `<td>${escapeHtml((intercorrenciasPorIdRota.get(c.idRota) || {}).intercorrencia || '')}</td>`
+        : '';
+      return `<tr>
+      <td><input type="checkbox" ${excludedKeys.has(c.key) ? '' : 'checked'} onchange="toggleContact('${c.key}')"></td>
+      <td>${escapeHtml(c.nome)}${escapeHtml(c.labelSufixo)}</td>
+      <td style="font-family:'DM Mono',monospace">${escapeHtml(c.telefoneExibicao || '—')}</td>
+      <td>${escapeHtml(c.roteiroNome)}</td>${intercorrenciaCel}
+    </tr>`;
+    }).join('') +
+    `</tbody></table>`;
+
+  const incluidos = list.filter(c => !excludedKeys.has(c.key));
+  btn.disabled = incluidos.length === 0;
+}
+
+async function toggleRoteiro(id) {
+  if (selectedRoteiroIds.has(id)) selectedRoteiroIds.delete(id);
+  else selectedRoteiroIds.add(id);
+  renderRoteiroChips();
+  document.getElementById('intercorrenciaWrap').style.display = selectedRoteiroIds.size ? 'block' : 'none';
+
+  if (somenteIntercorrencia) {
+    const ok = await ensureIntercorrenciasCarregadas();
+    if (!ok) {
+      document.getElementById('chkIntercorrencia').checked = false;
+      somenteIntercorrencia = false;
+    }
+  }
+  renderContactPreview();
+}
+window.toggleRoteiro = toggleRoteiro;
+
+async function toggleSomenteIntercorrencia() {
+  const checkbox = document.getElementById('chkIntercorrencia');
+  somenteIntercorrencia = checkbox.checked;
+
+  if (somenteIntercorrencia) {
+    const ok = await ensureIntercorrenciasCarregadas();
+    if (!ok) {
+      checkbox.checked = false;
+      somenteIntercorrencia = false;
+      renderContactPreview();
+      return;
+    }
+  }
+  renderContactPreview();
+}
+window.toggleSomenteIntercorrencia = toggleSomenteIntercorrencia;
+
+function toggleContact(key) {
+  if (excludedKeys.has(key)) excludedKeys.delete(key);
+  else excludedKeys.add(key);
+  renderContactPreview();
+}
+window.toggleContact = toggleContact;
 
 document.getElementById('btnToMsg').onclick = () => {
-  colPhone = document.getElementById('colPhone').value;
-  colName  = document.getElementById('colName').value;
-  if (!colPhone) { alert('Selecione a coluna de telefone.'); return; }
-  goTo(3);
+  const list = getVisibleContacts().filter(c => !excludedKeys.has(c.key));
+  if (!list.length) { alert('Selecione ao menos um contato.'); return; }
+  contacts = list;
+  statuses = new Array(contacts.length).fill('pending');
+  goTo(2);
 };
 
-// ── STEP 3: MESSAGE ──
+// ── STEP 2: MESSAGE ──
 const DEFAULT_MSG = `Boa tarde! 📢
 A partir do dia 07 de abril, iniciaremos a coleta seletiva de orgânicos no Centro Leste, nos períodos vespertino e noturno. Essa iniciativa faz parte do programa Florianópolis Capital Lixo Zero.
 
@@ -615,91 +649,86 @@ document.getElementById('btnStart').onclick = () => {
   current = 0;
   renderSendStep();
   document.getElementById('progressWrap').classList.add('active');
-  goTo(4);
+  goTo(3);
   updateProgress();
 };
 
-// ── STEP 4: SEND ──
+// ── STEP 3: SEND ──
 function renderSendStep() {
   renderCurrentContact();
   renderHistory();
 }
 
-function getPhone(row) {
-  let p = String(row[colPhone] || '').replace(/\D/g, '');
-  // add country code if missing
-  if (p.length <= 11 && !p.startsWith('55')) p = '55' + p;
-  return p;
-}
-
-function getName(row) {
-  if (colName && row[colName]) return String(row[colName]);
-  return '';
-}
-
-function buildMsg(row) {
-  const nome = getName(row) || 'estabelecimento';
-  return message.replace(/\{nome\}/gi, nome);
+function buildMsg(contact) {
+  const nome = contact.nome || 'estabelecimento';
+  const intercorrencia = (intercorrenciasPorIdRota.get(contact.idRota) || {}).intercorrencia || '';
+  return message.replace(/\{nome\}/gi, nome).replace(/\{intercorrencia\}/gi, intercorrencia);
 }
 
 function renderCurrentContact() {
-  if (current >= rows.length) { finishAll(); return; }
-  const row = rows[current];
-  document.getElementById('curName').textContent  = getName(row) || '—';
-  document.getElementById('curPhone').textContent = row[colPhone] || '—';
-  document.getElementById('navCounter').textContent = `${current + 1} / ${rows.length}`;
+  if (current >= contacts.length) { finishAll(); return; }
+  const contact = contacts[current];
+  document.getElementById('curName').textContent  = contact.nome || '—';
+  document.getElementById('curPhone').textContent = contact.telefoneExibicao || '—';
+  document.getElementById('navCounter').textContent = `${current + 1} / ${contacts.length}`;
 
   const s = statuses[current];
   const statusEl = document.getElementById('curStatus');
   statusEl.textContent = s === 'sent' ? 'Enviado ✓' : s === 'skip' ? 'Pulado' : 'Pendente';
   statusEl.className = `contact-status status-${s === 'pending' ? 'pending' : s === 'sent' ? 'sent' : 'skip'}`;
 
-  document.getElementById('msgPreview').textContent = buildMsg(row);
+  document.getElementById('msgPreview').textContent = buildMsg(contact);
   document.getElementById('btnPrev').disabled = current === 0;
-  document.getElementById('btnNext').disabled = current === rows.length - 1;
+  document.getElementById('btnNext').disabled = current === contacts.length - 1;
 }
 
 function navigate(dir) {
-  current = Math.max(0, Math.min(rows.length - 1, current + dir));
+  current = Math.max(0, Math.min(contacts.length - 1, current + dir));
   renderCurrentContact();
 }
+window.navigate = navigate;
 
 async function openWA() {
-  const row = rows[current];
-  const phone = getPhone(row);
-  const text  = encodeURIComponent(buildMsg(row));
-  const url = `https://wa.me/${phone}?text=${text}`;
+  const openedIndex = current;
+  const contact = contacts[openedIndex];
+  const text = encodeURIComponent(buildMsg(contact));
+  const url = `https://wa.me/${contact.telefoneDigits}?text=${text}`;
   if (window.__TAURI_INTERNALS__) {
     await window.__TAURI_INTERNALS__.invoke('plugin:shell|open', { url });
   } else {
     window.open(url, '_blank');
   }
-  // auto-mark sent after opening
-  setTimeout(() => { if (statuses[current] === 'pending') markSent(); }, 1200);
+  // auto-mark sent after opening — só se o usuário ainda estiver no mesmo
+  // contato (senão marcaria como enviado um contato para o qual ele já
+  // navegou, e não o que de fato foi aberto no WhatsApp).
+  setTimeout(() => { if (current === openedIndex && statuses[openedIndex] === 'pending') markSent(); }, 1200);
 }
+window.openWA = openWA;
 
 function markSent() {
   statuses[current] = 'sent';
   renderCurrentContact();
   renderHistory();
   updateProgress();
-  if (current < rows.length - 1) setTimeout(() => { current++; renderCurrentContact(); }, 400);
+  if (current < contacts.length - 1) setTimeout(() => { current++; renderCurrentContact(); }, 400);
   else finishAll();
 }
+window.markSent = markSent;
 
 function markSkip() {
   statuses[current] = 'skip';
   renderCurrentContact();
   renderHistory();
   updateProgress();
-  if (current < rows.length - 1) { current++; renderCurrentContact(); }
+  if (current < contacts.length - 1) { current++; renderCurrentContact(); }
   else finishAll();
 }
+window.markSkip = markSkip;
 
 function updateProgress() {
   const sent  = statuses.filter(s => s === 'sent').length;
   const done  = statuses.filter(s => s !== 'pending').length;
-  const total = rows.length;
+  const total = contacts.length;
   const pct   = total ? Math.round(done / total * 100) : 0;
   document.getElementById('progressLabel').textContent = `${sent} enviados · ${done} / ${total} processados`;
   document.getElementById('progressPct').textContent   = pct + '%';
@@ -708,13 +737,13 @@ function updateProgress() {
 
 function renderHistory() {
   const list = document.getElementById('historyList');
-  list.innerHTML = rows.map((row, i) => {
+  list.innerHTML = contacts.map((contact, i) => {
     const s = statuses[i];
     const active = i === current ? 'border-color:var(--green);' : '';
     return `<div class="contact-card" style="cursor:pointer;${active}" onclick="jumpTo(${i})">
       <div>
-        <div class="contact-name" style="font-size:14px">${getName(row) || '—'}</div>
-        <div class="contact-phone">${row[colPhone] || '—'}</div>
+        <div class="contact-name" style="font-size:14px">${escapeHtml(contact.nome || '—')}${escapeHtml(contact.labelSufixo)}</div>
+        <div class="contact-phone">${escapeHtml(contact.telefoneExibicao || '—')}</div>
       </div>
       <span class="contact-status status-${s === 'pending' ? 'pending' : s === 'sent' ? 'sent' : 'skip'}">
         ${s === 'sent' ? '✓ Enviado' : s === 'skip' ? 'Pulado' : 'Pendente'}
@@ -724,21 +753,24 @@ function renderHistory() {
 }
 
 function jumpTo(i) { current = i; renderCurrentContact(); }
+window.jumpTo = jumpTo;
 
 function finishAll() {
   const allDone = statuses.every(s => s !== 'pending');
   if (allDone) {
     document.getElementById('sumSent').textContent  = statuses.filter(s => s === 'sent').length;
     document.getElementById('sumSkip').textContent  = statuses.filter(s => s === 'skip').length;
-    document.getElementById('sumTotal').textContent = rows.length;
-    setTimeout(() => goTo(5), 600);
+    document.getElementById('sumTotal').textContent = contacts.length;
+    setTimeout(() => goTo(4), 600);
   }
 }
 
 // ── EXPORT ──
 function exportCSV() {
-  const out = rows.map((row, i) => ({
-    ...row,
+  const out = contacts.map((contact, i) => ({
+    nome: contact.nome,
+    telefone: contact.telefoneExibicao,
+    roteiro: contact.roteiroNome,
     status: statuses[i]
   }));
   const ws = XLSX.utils.json_to_sheet(out);
@@ -746,14 +778,34 @@ function exportCSV() {
   XLSX.utils.book_append_sheet(wb, ws, 'Resultado');
   XLSX.writeFile(wb, 'disparo_resultado.xlsx');
 }
+window.exportCSV = exportCSV;
 
 function restart() {
-  rows = []; headers = []; statuses = []; current = 0;
+  selectedRoteiroIds = new Set();
+  excludedKeys = new Set();
+  contacts = []; statuses = []; current = 0;
+  somenteIntercorrencia = false;
+  intercorrenciasPorIdRota = new Map();
+  intercorrenciasCarregadas = new Set();
+  document.getElementById('chkIntercorrencia').checked = false;
+  document.getElementById('intercorrenciaWrap').style.display = 'none';
   document.getElementById('progressWrap').classList.remove('active');
   document.getElementById('progressFill').style.width = '0%';
-  fileInput.value = '';
+  renderRoteiroChips();
+  renderContactPreview();
   goTo(1);
 }
+window.restart = restart;
+
+// ── INIT ──
+(async () => {
+  await db.init();
+  allRoteiros = db.getRoteiros();
+  document.getElementById('roteirosLoading').style.display = 'none';
+  document.getElementById('roteiroChips').style.display = 'flex';
+  renderRoteiroChips();
+  renderContactPreview();
+})();
 </script>
 </body>
 </html>

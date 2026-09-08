@@ -55,7 +55,7 @@ o conteúdo ao aplicativo.
 curl "<URL>?action=status"
 ```
 
-Esperado: `{"ok":true,"service":"satelite-gas","apiVersion":3,"routeChangesConfigured":true}`.
+Esperado: `{"ok":true,"service":"satelite-gas","apiVersion":7,"routeChangesConfigured":true}`.
 
 ```bash
 curl "<URL>"
@@ -81,6 +81,17 @@ curl "<URL>?action=ultimaColeta&roteiro=SAT01"
 
 Esperado: `{"ok":true,"data":"2026-07-21"}` com a data mais recente do
 roteiro, ou `{"ok":true,"data":null}` se ele ainda não tiver coletas.
+
+Para testar a busca de intercorrências da última coleta de cada cliente de
+um roteiro (mesmo nome gravado na coluna `Roteiro`):
+
+```bash
+curl "<URL>?action=intercorrenciasRoteiro&roteiro=SAT01"
+```
+
+Esperado: `{"ok":true,"data":[{"id_rota":"SAT01-1","data":"2026-07-21","intercorrencia":"recusou coleta"}]}`,
+com um item por cliente cuja última coleta no roteiro teve intercorrência
+registrada, ou `{"ok":true,"data":[]}` se nenhum teve.
 
 Para testar o envio de checklist (substitua `<URL>`; o base64 abaixo é o
 texto "teste" codificado, só para confirmar que a rota funciona — não é um
