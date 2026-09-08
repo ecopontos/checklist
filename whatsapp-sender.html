@@ -469,6 +469,13 @@ let somenteIntercorrencia = false;
 let intercorrenciasPorIdRota = new Map(); // idRota (string) -> { intercorrencia, data }
 let intercorrenciasCarregadas = new Set(); // nomes de roteiro ja buscados nesta sessao
 
+// ── HELPERS ──
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = String(value ?? '');
+  return div.innerHTML;
+}
+
 // ── NAVIGATION ──
 function goTo(n) {
   document.querySelectorAll('.step').forEach((s,i) => s.classList.toggle('active', i === n-1));
@@ -534,7 +541,7 @@ function renderRoteiroChips() {
   wrap.innerHTML = allRoteiros.map(r => {
     const count = db.getContatosWhatsapp(r.id).length;
     const selected = selectedRoteiroIds.has(r.id) ? 'selected' : '';
-    return `<div class="col-chip ${selected}" data-id="${r.id}" onclick="toggleRoteiro(${r.id})">${r.nome} · ${count}</div>`;
+    return `<div class="col-chip ${selected}" data-id="${r.id}" onclick="toggleRoteiro(${r.id})">${escapeHtml(r.nome)} · ${count}</div>`;
   }).join('');
 }
 
@@ -558,13 +565,13 @@ function renderContactPreview() {
     </tr></thead><tbody>` +
     list.map(c => {
       const intercorrenciaCel = somenteIntercorrencia
-        ? `<td>${(intercorrenciasPorIdRota.get(c.idRota) || {}).intercorrencia || ''}</td>`
+        ? `<td>${escapeHtml((intercorrenciasPorIdRota.get(c.idRota) || {}).intercorrencia || '')}</td>`
         : '';
       return `<tr>
       <td><input type="checkbox" ${excludedKeys.has(c.key) ? '' : 'checked'} onchange="toggleContact('${c.key}')"></td>
-      <td>${c.nome}${c.labelSufixo}</td>
-      <td style="font-family:'DM Mono',monospace">${c.telefoneExibicao || '—'}</td>
-      <td>${c.roteiroNome}</td>${intercorrenciaCel}
+      <td>${escapeHtml(c.nome)}${escapeHtml(c.labelSufixo)}</td>
+      <td style="font-family:'DM Mono',monospace">${escapeHtml(c.telefoneExibicao || '—')}</td>
+      <td>${escapeHtml(c.roteiroNome)}</td>${intercorrenciaCel}
     </tr>`;
     }).join('') +
     `</tbody></table>`;
@@ -735,8 +742,8 @@ function renderHistory() {
     const active = i === current ? 'border-color:var(--green);' : '';
     return `<div class="contact-card" style="cursor:pointer;${active}" onclick="jumpTo(${i})">
       <div>
-        <div class="contact-name" style="font-size:14px">${contact.nome || '—'}${contact.labelSufixo}</div>
-        <div class="contact-phone">${contact.telefoneExibicao || '—'}</div>
+        <div class="contact-name" style="font-size:14px">${escapeHtml(contact.nome || '—')}${escapeHtml(contact.labelSufixo)}</div>
+        <div class="contact-phone">${escapeHtml(contact.telefoneExibicao || '—')}</div>
       </div>
       <span class="contact-status status-${s === 'pending' ? 'pending' : s === 'sent' ? 'sent' : 'skip'}">
         ${s === 'sent' ? '✓ Enviado' : s === 'skip' ? 'Pulado' : 'Pendente'}
