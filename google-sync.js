@@ -228,6 +228,14 @@ export async function getUltimasQuantidades(roteiroNome) {
     );
 }
 
+export async function getIntercorrenciasRoteiro(roteiroNome) {
+    const url = getGasUrl();
+    if (!url) return { ok: false, error: 'URL do GAS não configurada' };
+    return gasGetJsonWithRetry_(
+        `${url}?action=intercorrenciasRoteiro&roteiro=${encodeURIComponent(roteiroNome)}`
+    );
+}
+
 export async function getAgendamentos(data = '') {
     const url = getGasUrl();
     if (!url) return { ok: false, error: 'URL do GAS não configurada' };
