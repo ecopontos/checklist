@@ -7,7 +7,7 @@
     "dev": "tauri dev",
     "prepare-dist": "node prepare-dist.js",
     "build": "node prepare-dist.js && tauri build",
-    "test": "node --experimental-vm-modules tests/route-order.test.cjs && node tests/gas-route-queue.test.cjs && node tests/gas-client-queue.test.cjs && node --experimental-vm-modules tests/import-logradouros.test.cjs && node --experimental-vm-modules tests/decode-legacy-csv.test.cjs && node --experimental-vm-modules tests/rotas-rede-sync.test.cjs && node --experimental-vm-modules tests/client-edit-flow.test.cjs"
+    "test": "node --experimental-vm-modules tests/route-order.test.cjs && node tests/gas-route-queue.test.cjs && node tests/gas-client-queue.test.cjs && node --experimental-vm-modules tests/import-logradouros.test.cjs && node --experimental-vm-modules tests/decode-legacy-csv.test.cjs && node --experimental-vm-modules tests/rotas-rede-sync.test.cjs && node --experimental-vm-modules tests/client-edit-flow.test.cjs && node --experimental-vm-modules tests/whatsapp-contatos.test.cjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

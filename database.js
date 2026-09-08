@@ -208,6 +208,40 @@ class AppDatabase {
         return obj;
     }
 
+    getContatosWhatsapp(roteiroId) {
+        const roteiro = this.getRoteiros().find(r => r.id === roteiroId);
+        const roteiroNome = roteiro ? roteiro.nome : '';
+        const clientes = this.getClientesByRoteiro(roteiroId).filter(c => c.ativo);
+
+        const contatos = [];
+        clientes.forEach(cliente => {
+            [[1, cliente.telefone1], [2, cliente.telefone2]].forEach(([slot, raw]) => {
+                const digits = this._normalizeTelefoneDigits(raw);
+                if (!digits) return;
+                contatos.push({
+                    idRota: cliente.id_rota,
+                    slot,
+                    nome: cliente.cliente,
+                    telefoneExibicao: raw,
+                    telefoneDigits: digits,
+                    roteiroNome
+                });
+            });
+        });
+        return contatos;
+    }
+
+    // Telefones abaixo de 8 digitos sao lixo (campo vazio, "0", etc.) e nunca
+    // devem virar destinatario de disparo. Numeros com ate 11 digitos que
+    // ainda nao tem DDI recebem o 55 (BR); numeros mais longos presume-se
+    // que ja vieram com codigo de pais.
+    _normalizeTelefoneDigits(value) {
+        const digits = String(value ?? '').replace(/\D/g, '');
+        if (digits.length < 8) return '';
+        if (digits.length <= 11 && !digits.startsWith('55')) return '55' + digits;
+        return digits;
+    }
+
     applyRoteiroOrder(roteiroId, orderedIds) {
         const clientes = this.getClientesByRoteiro(roteiroId);
         if (!clientes.length) {
