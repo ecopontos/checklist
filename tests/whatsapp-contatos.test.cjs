@@ -94,6 +94,49 @@ async function loadModule(context, filename) {
   assert.ok(!contatos.some(c => c.idRota === '4'), 'cliente inativo nunca deve aparecer');
 
   console.log('getContatosWhatsapp: filtra inativos/telefones curtos, expande telefone1+telefone2, normaliza codigo de pais: OK');
+
+  // Teste de regressao: DDD 55 (Rio Grande do Sul) nao deve ser confundido com DDI 55 (Brasil)
+  // Cliente com Telefone1 = '55991234567' (DDD 55 + 9 digitos = 11 digitos total, sem DDI)
+  // deve receber '55' prefixado: '5555991234567' (DDI 55 + DDD 55 + 9 digitos)
+  db.upsertCliente({
+    idRota: '5', idCliente: 'c5', Cliente: 'RS CLIENTE', logradouro: 'Rua E',
+    'Número': '50', Complemento: '', CEP: '95000000',
+    Telefone1: '55991234567', Telefone2: '',
+    roteiro_id: roteiroId, Ordem: 5, ativo: true
+  });
+
+  const contatosComDDD55 = db.getContatosWhatsapp(roteiroId);
+  const clienteRS = contatosComDDD55.find(c => c.idRota === '5');
+  assert.ok(clienteRS, 'cliente com DDD 55 deve estar nos contatos');
+  assert.strictEqual(
+    clienteRS.telefoneDigits,
+    '5555991234567',
+    'DDD 55 (RS) sem DDI (11 digitos) deve receber prefixo 55: resultado esperado 5555991234567'
+  );
+  console.log('Regressao DDD 55: OK');
+
+  // Teste menor: roteiroId desconhecido deve retornar contatos com roteiroNome vazio
+  const contatosRoteiroDesconhecido = db.getContatosWhatsapp(99999);
+  assert.strictEqual(contatosRoteiroDesconhecido.length, 0, 'roteiro desconhecido nao deve ter contatos (nenhum cliente associado)');
+
+  // Alem disso, vamos criar um cliente com roteiro_id desconhecido para testar que
+  // roteiroNome fica vazio e a funcao nao lanca erro
+  db.upsertCliente({
+    idRota: '6', idCliente: 'c6', Cliente: 'ORFAO', logradouro: 'Rua F',
+    'Número': '60', Complemento: '', CEP: '99000000',
+    Telefone1: '48988776655', Telefone2: '',
+    roteiro_id: 99999, Ordem: 6, ativo: true
+  });
+
+  const contatosComRoteiroOrfao = db.getContatosWhatsapp(99999);
+  assert.strictEqual(contatosComRoteiroOrfao.length, 1, 'deve retornar 1 contato mesmo com roteiro desconhecido');
+  assert.strictEqual(
+    contatosComRoteiroOrfao[0].roteiroNome,
+    '',
+    'roteiroNome deve ser string vazia quando roteiro_id nao existe'
+  );
+  assert.strictEqual(contatosComRoteiroOrfao[0].nome, 'ORFAO', 'nome do cliente deve estar presente mesmo com roteiro desconhecido');
+  console.log('Roteiro desconhecido com fallback roteiroNome vazio: OK');
 })().catch(error => {
   console.error(error);
   process.exit(1);

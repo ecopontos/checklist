@@ -232,13 +232,15 @@ class AppDatabase {
     }
 
     // Telefones abaixo de 8 digitos sao lixo (campo vazio, "0", etc.) e nunca
-    // devem virar destinatario de disparo. Numeros com ate 11 digitos que
-    // ainda nao tem DDI recebem o 55 (BR); numeros mais longos presume-se
-    // que ja vieram com codigo de pais.
+    // devem virar destinatario de disparo. Numeros com 10-11 digitos (DDD + numero)
+    // nao possuem DDI e recebem o 55 (BR). Numeros com 12-13 digitos presume-se
+    // que ja possuem codigo de pais (DDI).
+    // Nota: A decisao e baseada em contagem de digitos, nao no prefixo, porque
+    // o DDD 55 (Rio Grande do Sul) coincide com o DDI do Brasil.
     _normalizeTelefoneDigits(value) {
         const digits = String(value ?? '').replace(/\D/g, '');
         if (digits.length < 8) return '';
-        if (digits.length <= 11 && !digits.startsWith('55')) return '55' + digits;
+        if (digits.length <= 11) return '55' + digits;
         return digits;
     }
 
