@@ -595,7 +595,8 @@ function navigate(dir) {
 window.navigate = navigate;
 
 async function openWA() {
-  const contact = contacts[current];
+  const openedIndex = current;
+  const contact = contacts[openedIndex];
   const text = encodeURIComponent(buildMsg(contact));
   const url = `https://wa.me/${contact.telefoneDigits}?text=${text}`;
   if (window.__TAURI_INTERNALS__) {
@@ -603,8 +604,10 @@ async function openWA() {
   } else {
     window.open(url, '_blank');
   }
-  // auto-mark sent after opening
-  setTimeout(() => { if (statuses[current] === 'pending') markSent(); }, 1200);
+  // auto-mark sent after opening — só se o usuário ainda estiver no mesmo
+  // contato (senão marcaria como enviado um contato para o qual ele já
+  // navegou, e não o que de fato foi aberto no WhatsApp).
+  setTimeout(() => { if (current === openedIndex && statuses[openedIndex] === 'pending') markSent(); }, 1200);
 }
 window.openWA = openWA;
 
