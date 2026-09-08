@@ -366,6 +366,14 @@
 
   <div id="previewWrap"></div>
 
+  <div class="field" id="intercorrenciaWrap" style="display:none; margin-bottom:0;">
+    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-dim);">
+      <input type="checkbox" id="chkIntercorrencia" onchange="toggleSomenteIntercorrencia()">
+      Só com intercorrência (última coleta)
+    </label>
+    <div class="hint" id="intercorrenciaStatus" style="display:none; margin-top:8px;"></div>
+  </div>
+
   <div class="actions">
     <button class="btn btn-primary" id="btnToMsg" disabled>Próximo →</button>
   </div>
@@ -379,7 +387,7 @@
   <div class="field">
     <label class="field-label">Texto da mensagem</label>
     <textarea id="msgText" placeholder="Digite ou cole a mensagem aqui..."></textarea>
-    <div class="tag-hint">Use <code>{nome}</code> para personalizar com o nome do estabelecimento.</div>
+    <div class="tag-hint">Use <code>{nome}</code> para personalizar com o nome do estabelecimento e <code>{intercorrencia}</code> para citar o problema da última coleta.</div>
   </div>
 
   <div class="actions">
@@ -447,6 +455,7 @@
 <script src="vendor/sql-wasm.js"></script>
 <script type="module">
 import db from './database.js';
+import { getIntercorrenciasRoteiro } from './google-sync.js';
 
 // ── STATE ──
 let allRoteiros = [];             // [{id, nome}]
@@ -456,6 +465,9 @@ let contacts = [];                // [{idRota, slot, nome, labelSufixo, telefone
 let statuses = [];                // 'pending' | 'sent' | 'skip', paralelo a contacts
 let current  = 0;
 let message  = '';
+let somenteIntercorrencia = false;
+let intercorrenciasPorIdRota = new Map(); // idRota (string) -> { intercorrencia, data }
+let intercorrenciasCarregadas = new Set(); // nomes de roteiro ja buscados nesta sessao
 
 // ── NAVIGATION ──
 function goTo(n) {
@@ -478,6 +490,45 @@ function buildPendingContacts() {
   return list;
 }
 
+function getVisibleContacts() {
+  return buildPendingContacts().filter(c => !somenteIntercorrencia || intercorrenciasPorIdRota.has(c.idRota));
+}
+
+// Busca no GAS as intercorrencias dos roteiros selecionados que ainda nao
+// foram carregados nesta sessao. Retorna false (e mostra erro) se alguma
+// busca falhar ou vier em formato inesperado — isso acontece quando o GAS
+// ainda nao foi redeployado com a action intercorrenciasRoteiro: o doGet cai
+// no fallback padrao (getRoteirosFlat_, que devolve `rows`, nao `data`), e a
+// checagem Array.isArray(res.data) pega exatamente esse caso.
+async function ensureIntercorrenciasCarregadas() {
+  const statusEl = document.getElementById('intercorrenciaStatus');
+  const faltantes = [...selectedRoteiroIds]
+    .map(id => allRoteiros.find(r => r.id === id))
+    .filter(r => r && !intercorrenciasCarregadas.has(r.nome));
+
+  if (!faltantes.length) return true;
+
+  statusEl.style.display = 'block';
+  statusEl.textContent = 'Buscando intercorrências...';
+  document.getElementById('btnToMsg').disabled = true;
+
+  for (const roteiro of faltantes) {
+    const res = await getIntercorrenciasRoteiro(roteiro.nome);
+    if (!res || res.ok !== true || !Array.isArray(res.data)) {
+      statusEl.textContent = 'Não foi possível buscar intercorrências agora (verifique a conexão ou se o GAS foi atualizado). Tente novamente.';
+      return false;
+    }
+    res.data.forEach(item => {
+      if (item && item.id_rota) {
+        intercorrenciasPorIdRota.set(String(item.id_rota), item);
+      }
+    });
+    intercorrenciasCarregadas.add(roteiro.nome);
+  }
+  statusEl.style.display = 'none';
+  return true;
+}
+
 function renderRoteiroChips() {
   const wrap = document.getElementById('roteiroChips');
   wrap.innerHTML = allRoteiros.map(r => {
@@ -488,38 +539,73 @@ function renderRoteiroChips() {
 }
 
 function renderContactPreview() {
-  const list = buildPendingContacts();
+  const full = buildPendingContacts();
+  const list = full.filter(c => !somenteIntercorrencia || intercorrenciasPorIdRota.has(c.idRota));
   const wrap = document.getElementById('previewWrap');
   const btn = document.getElementById('btnToMsg');
 
   if (!list.length) {
-    wrap.innerHTML = '';
+    wrap.innerHTML = (somenteIntercorrencia && full.length)
+      ? '<div class="hint">Nenhum cliente com intercorrência registrada neste(s) roteiro(s).</div>'
+      : '';
     btn.disabled = true;
     return;
   }
 
+  const colIntercorrenciaHeader = somenteIntercorrencia ? '<th>Intercorrência</th>' : '';
   wrap.innerHTML = `<table class="preview-table"><thead><tr>
-      <th></th><th>Nome</th><th>Telefone</th><th>Roteiro</th>
+      <th></th><th>Nome</th><th>Telefone</th><th>Roteiro</th>${colIntercorrenciaHeader}
     </tr></thead><tbody>` +
-    list.map(c => `<tr>
+    list.map(c => {
+      const intercorrenciaCel = somenteIntercorrencia
+        ? `<td>${(intercorrenciasPorIdRota.get(c.idRota) || {}).intercorrencia || ''}</td>`
+        : '';
+      return `<tr>
       <td><input type="checkbox" ${excludedKeys.has(c.key) ? '' : 'checked'} onchange="toggleContact('${c.key}')"></td>
       <td>${c.nome}${c.labelSufixo}</td>
       <td style="font-family:'DM Mono',monospace">${c.telefoneExibicao || '—'}</td>
-      <td>${c.roteiroNome}</td>
-    </tr>`).join('') +
+      <td>${c.roteiroNome}</td>${intercorrenciaCel}
+    </tr>`;
+    }).join('') +
     `</tbody></table>`;
 
   const incluidos = list.filter(c => !excludedKeys.has(c.key));
   btn.disabled = incluidos.length === 0;
 }
 
-function toggleRoteiro(id) {
+async function toggleRoteiro(id) {
   if (selectedRoteiroIds.has(id)) selectedRoteiroIds.delete(id);
   else selectedRoteiroIds.add(id);
   renderRoteiroChips();
+  document.getElementById('intercorrenciaWrap').style.display = selectedRoteiroIds.size ? 'block' : 'none';
+
+  if (somenteIntercorrencia) {
+    const ok = await ensureIntercorrenciasCarregadas();
+    if (!ok) {
+      document.getElementById('chkIntercorrencia').checked = false;
+      somenteIntercorrencia = false;
+    }
+  }
   renderContactPreview();
 }
 window.toggleRoteiro = toggleRoteiro;
+
+async function toggleSomenteIntercorrencia() {
+  const checkbox = document.getElementById('chkIntercorrencia');
+  somenteIntercorrencia = checkbox.checked;
+
+  if (somenteIntercorrencia) {
+    const ok = await ensureIntercorrenciasCarregadas();
+    if (!ok) {
+      checkbox.checked = false;
+      somenteIntercorrencia = false;
+      renderContactPreview();
+      return;
+    }
+  }
+  renderContactPreview();
+}
+window.toggleSomenteIntercorrencia = toggleSomenteIntercorrencia;
 
 function toggleContact(key) {
   if (excludedKeys.has(key)) excludedKeys.delete(key);
@@ -529,7 +615,7 @@ function toggleContact(key) {
 window.toggleContact = toggleContact;
 
 document.getElementById('btnToMsg').onclick = () => {
-  const list = buildPendingContacts().filter(c => !excludedKeys.has(c.key));
+  const list = getVisibleContacts().filter(c => !excludedKeys.has(c.key));
   if (!list.length) { alert('Selecione ao menos um contato.'); return; }
   contacts = list;
   statuses = new Array(contacts.length).fill('pending');
@@ -568,7 +654,8 @@ function renderSendStep() {
 
 function buildMsg(contact) {
   const nome = contact.nome || 'estabelecimento';
-  return message.replace(/\{nome\}/gi, nome);
+  const intercorrencia = (intercorrenciasPorIdRota.get(contact.idRota) || {}).intercorrencia || '';
+  return message.replace(/\{nome\}/gi, nome).replace(/\{intercorrencia\}/gi, intercorrencia);
 }
 
 function renderCurrentContact() {
@@ -690,6 +777,11 @@ function restart() {
   selectedRoteiroIds = new Set();
   excludedKeys = new Set();
   contacts = []; statuses = []; current = 0;
+  somenteIntercorrencia = false;
+  intercorrenciasPorIdRota = new Map();
+  intercorrenciasCarregadas = new Set();
+  document.getElementById('chkIntercorrencia').checked = false;
+  document.getElementById('intercorrenciaWrap').style.display = 'none';
   document.getElementById('progressWrap').classList.remove('active');
   document.getElementById('progressFill').style.width = '0%';
   renderRoteiroChips();
