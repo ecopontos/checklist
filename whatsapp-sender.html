@@ -387,7 +387,7 @@
   <div class="field">
     <label class="field-label">Texto da mensagem</label>
     <textarea id="msgText" placeholder="Digite ou cole a mensagem aqui..."></textarea>
-    <div class="tag-hint">Use <code>{nome}</code> para personalizar com o nome do estabelecimento e <code>{intercorrencia}</code> para citar o problema da última coleta.</div>
+    <div class="tag-hint">Use <code>{nome}</code>, <code>{intercorrencia}</code>, <code>{data}</code> (data da coleta com problema) e <code>{residuo}</code> (tipo de resíduo do roteiro) para personalizar a mensagem.</div>
   </div>
 
   <div class="actions">
@@ -659,10 +659,23 @@ function renderSendStep() {
   renderHistory();
 }
 
+function formatDateBR(dateStr) {
+  if (!dateStr) return '';
+  const [ano, mes, dia] = dateStr.split('-');
+  return `${dia}/${mes}/${ano}`;
+}
+
 function buildMsg(contact) {
   const nome = contact.nome || 'estabelecimento';
-  const intercorrencia = (intercorrenciasPorIdRota.get(contact.idRota) || {}).intercorrencia || '';
-  return message.replace(/\{nome\}/gi, nome).replace(/\{intercorrencia\}/gi, intercorrencia);
+  const registro = intercorrenciasPorIdRota.get(contact.idRota) || {};
+  const intercorrencia = registro.intercorrencia || '';
+  const data = formatDateBR(registro.data || '');
+  const residuo = contact.tipoResiduo || '';
+  return message
+    .replace(/\{nome\}/gi, nome)
+    .replace(/\{intercorrencia\}/gi, intercorrencia)
+    .replace(/\{data\}/gi, data)
+    .replace(/\{residuo\}/gi, residuo);
 }
 
 function renderCurrentContact() {
