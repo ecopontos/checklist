@@ -35,20 +35,27 @@ class AppDatabase {
     // novos a partir das rows achatadas do Sheets.
     migrateSchema() {
         const cols = this._tableColumns('clientes');
-        if (!cols.length) return;
-        const adds = [];
-        if (!cols.includes('id_cliente')) adds.push('id_cliente TEXT');
-        if (!cols.includes('complemento')) adds.push('complemento TEXT');
-        if (!cols.includes('telefone1')) adds.push('telefone1 TEXT');
-        if (!cols.includes('telefone2')) adds.push('telefone2 TEXT');
-        if (!adds.length) return;
-
-        const addedIdCliente = adds.some(def => def.startsWith('id_cliente'));
-        adds.forEach(def => this.db.run(`ALTER TABLE clientes ADD COLUMN ${def}`));
-        if (addedIdCliente) {
-            localStorage.removeItem('app3_last_drive_sync');
+        if (cols.length) {
+            const adds = [];
+            if (!cols.includes('id_cliente')) adds.push('id_cliente TEXT');
+            if (!cols.includes('complemento')) adds.push('complemento TEXT');
+            if (!cols.includes('telefone1')) adds.push('telefone1 TEXT');
+            if (!cols.includes('telefone2')) adds.push('telefone2 TEXT');
+            if (adds.length) {
+                const addedIdCliente = adds.some(def => def.startsWith('id_cliente'));
+                adds.forEach(def => this.db.run(`ALTER TABLE clientes ADD COLUMN ${def}`));
+                if (addedIdCliente) {
+                    localStorage.removeItem('app3_last_drive_sync');
+                }
+                this.save();
+            }
         }
-        this.save();
+
+        const roteirosCols = this._tableColumns('roteiros');
+        if (roteirosCols.length && !roteirosCols.includes('tipo_residuo')) {
+            this.db.run('ALTER TABLE roteiros ADD COLUMN tipo_residuo TEXT');
+            this.save();
+        }
     }
 
     _tableColumns(table) {
@@ -131,14 +138,17 @@ class AppDatabase {
     }
 
     // --- Roteiros ---
-    addRoteiro(nome) {
-        this.db.run("INSERT OR IGNORE INTO roteiros (nome) VALUES (?)", [nome]);
+    addRoteiro(nome, tipoResiduo = '') {
+        this.db.run(`
+            INSERT INTO roteiros (nome, tipo_residuo) VALUES (?, ?)
+            ON CONFLICT(nome) DO UPDATE SET tipo_residuo = excluded.tipo_residuo
+        `, [nome, tipoResiduo]);
         this.save();
     }
 
     getRoteiros() {
-        const res = this.db.exec("SELECT * FROM roteiros ORDER BY nome");
-        return res.length ? res[0].values.map(v => ({ id: v[0], nome: v[1] })) : [];
+        const res = this.db.exec("SELECT id, nome, tipo_residuo FROM roteiros ORDER BY nome");
+        return res.length ? res[0].values.map(v => ({ id: v[0], nome: v[1], tipo_residuo: v[2] || '' })) : [];
     }
 
     // --- Clientes ---
@@ -370,7 +380,14 @@ class AppDatabase {
         const data = [...semDuplicataRoteiroCliente.values()];
 
         const uniqueRoteiros = [...new Set(data.map(r => this._getCsvVal(r, 'Roteiro')).filter(Boolean))];
-        uniqueRoteiros.forEach(name => this.addRoteiro(name));
+        const tipoResiduoPorRoteiro = {};
+        data.forEach(row => {
+            const nome = this._getCsvVal(row, 'Roteiro');
+            if (nome && !(nome in tipoResiduoPorRoteiro)) {
+                tipoResiduoPorRoteiro[nome] = this._getCsvVal(row, 'TipoResiduo') || '';
+            }
+        });
+        uniqueRoteiros.forEach(name => this.addRoteiro(name, tipoResiduoPorRoteiro[name] || ''));
 
         const roteiros = this.getRoteiros();
         const routeMap = {};
