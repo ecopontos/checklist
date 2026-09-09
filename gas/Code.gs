@@ -32,7 +32,7 @@ var CLIENT_CHANGES_HEADERS = [
     'Status', 'Recebido Em', 'Processado Em', 'Mensagem'
 ];
 var CLIENT_EDITABLE_FIELDS = ['Cliente', 'Número', 'Complemento', 'CEP', 'Telefone1', 'Telefone2'];
-var GAS_API_VERSION = 7;
+var GAS_API_VERSION = 8;
 // Consultas de última coleta varrem apenas as linhas mais recentes da aba
 // Coletas (append-only, cronológica). Varrer a aba inteira chega a ~37s e pode
 // estourar o limite do GAS. Se o roteiro não aparecer na janela, há fallback
@@ -192,7 +192,10 @@ function buildFlatRoteiros_(rotasValues, clientesValues, roteirosValues) {
         var rowT = roteirosValues[t];
         var keyRoteiro = cleanIntString_(rowT[mapRoteiros['idRoteiro']]);
         if (!keyRoteiro) continue;
-        roteirosById[keyRoteiro] = String(rowT[mapRoteiros['Roteiro']] || '').trim();
+        roteirosById[keyRoteiro] = {
+            nome: String(rowT[mapRoteiros['Roteiro']] || '').trim(),
+            tipoResiduo: String(rowT[mapRoteiros['Tipo de Resíduo']] || '').trim()
+        };
     }
 
     var rows = [];
@@ -207,8 +210,10 @@ function buildFlatRoteiros_(rotasValues, clientesValues, roteirosValues) {
         var ordemVal = rowR[mapRotas['Ordem']];
         var inativoVal = rowR[mapRotas['Inativo']];
 
+        var roteiroInfo = roteirosById[cleanIntString_(rowR[mapRotas['idRoteiro']])] || { nome: '', tipoResiduo: '' };
         rows.push({
-            Roteiro: roteirosById[cleanIntString_(rowR[mapRotas['idRoteiro']])] || '',
+            Roteiro: roteiroInfo.nome,
+            TipoResiduo: roteiroInfo.tipoResiduo,
             idCliente: cliente.idCliente,
             Cliente: cliente.Cliente,
             idRota: cleanIntString_(rowR[mapRotas['idRota']]),
