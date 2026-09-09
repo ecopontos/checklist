@@ -221,6 +221,7 @@ class AppDatabase {
     getContatosWhatsapp(roteiroId) {
         const roteiro = this.getRoteiros().find(r => r.id === roteiroId);
         const roteiroNome = roteiro ? roteiro.nome : '';
+        const tipoResiduo = roteiro ? roteiro.tipo_residuo : '';
         const clientes = this.getClientesByRoteiro(roteiroId).filter(c => c.ativo);
 
         const contatos = [];
@@ -234,7 +235,8 @@ class AppDatabase {
                     nome: cliente.cliente,
                     telefoneExibicao: raw,
                     telefoneDigits: digits,
-                    roteiroNome
+                    roteiroNome,
+                    tipoResiduo
                 });
             });
         });
