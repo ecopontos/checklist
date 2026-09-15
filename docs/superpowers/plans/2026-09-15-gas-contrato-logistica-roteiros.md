@@ -15,7 +15,8 @@
 - **Formato:** normalizado — `clientes[]` deduplicado + `roteiros[]` com `pontos[]`.
 - **Chaves JSON ascii minúsculas** (`numero`, `cep`, `telefone1`…), não `Número`/`Telefone1`.
 - **Snapshot completo** com `modifiedTime`; sem delta/cursor/tombstones.
-- **Leitura defensiva** de colunas incertas (`logradouro`, `Tipo de Resíduo`): se a coluna não existir na aba, o campo sai `""` — nunca quebra.
+- **Tipo de Resíduo fora do contrato:** o resíduo é configurado client-side (`config.js`), não trafega no snapshot; o builder normalizado **não** lê `Tipo de Resíduo`.
+- **Leitura defensiva** de `logradouro`: se a coluna não existir em `shtClientes`, o campo sai `""` — nunca quebra.
 - Contrato de referência: `docs/superpowers/specs/2026-09-15-gas-contrato-logistica-roteiros-design.md`.
 - Reaproveitar os helpers já existentes `cleanIntString_` e `formatPhone_` (não reimplementar).
 
@@ -30,7 +31,7 @@
 
 **Interfaces:**
 - Consumes: helpers já existentes em `Code.gs`: `cleanIntString_(val) -> string`, `formatPhone_(val) -> string`.
-- Produces: `buildRoteirosNormalizados_(rotasValues, clientesValues, roteirosValues) -> { clientes: Array<{idUnico, uuid, cliente, logradouro, numero, cep, complemento, telefone1, telefone2}>, roteiros: Array<{roteiro, tipoResiduo, pontos: Array<{idRota, idUnico, ordem, inativo}>}>, skipped: number }`. Função pura (sem chamadas ao Sheets), acessível no teste como `context.buildRoteirosNormalizados_`.
+- Produces: `buildRoteirosNormalizados_(rotasValues, clientesValues, roteirosValues) -> { clientes: Array<{idUnico, uuid, cliente, logradouro, numero, cep, complemento, telefone1, telefone2}>, roteiros: Array<{roteiro, pontos: Array<{idRota, idUnico, ordem, inativo}>}>, skipped: number }`. Função pura (sem chamadas ao Sheets), acessível no teste como `context.buildRoteirosNormalizados_`.
 
 - [ ] **Step 1: Escrever o teste que falha**
 
@@ -62,9 +63,9 @@ const clientes = [
   ['103', '', 'SEM IDUNICO', 'Rua X', '10', 88000000, '', '', '']  // sem idUnico2, nunca referenciado
 ];
 const roteiros = [
-  ['idRoteiro', 'Roteiro', 'Tipo de Resíduo'],
-  ['10', 'SAT01', 'Recicláveis Orgânico (Restos de Alimentos)'],
-  ['20', 'SAT02', 'Rejeito']
+  ['idRoteiro', 'Roteiro'],
+  ['10', 'SAT01'],
+  ['20', 'SAT02']
 ];
 
 const out = context.buildRoteirosNormalizados_(rotas, clientes, roteiros);
@@ -85,8 +86,8 @@ assert.strictEqual(biarritz.telefone1, '48984097003', 'telefone limpo do artefat
 
 assert.strictEqual(out.roteiros.length, 2);
 const sat01 = out.roteiros.find(r => r.roteiro === 'SAT01');
-assert.strictEqual(sat01.tipoResiduo, 'Recicláveis Orgânico (Restos de Alimentos)');
 assert.strictEqual(sat01.pontos.length, 2, 'SAT01 tem 2 pontos válidos');
+assert.ok(!('tipoResiduo' in sat01), 'resíduo não faz parte do contrato GAS');
 const p3 = sat01.pontos.find(p => p.idRota === '3');
 assert.strictEqual(p3.idUnico, 'U-100', 'FK do ponto resolve para clientes[]');
 assert.strictEqual(p3.ordem, 1, 'ordem numérica convertida de "1,00"');
@@ -94,7 +95,6 @@ assert.strictEqual(p3.inativo, 0);
 
 const sat02 = out.roteiros.find(r => r.roteiro === 'SAT02');
 assert.strictEqual(sat02.pontos[0].inativo, 1, 'inativo=1 preservado');
-assert.strictEqual(sat02.tipoResiduo, 'Rejeito');
 
 const idsClientes = new Set(out.clientes.map(c => c.idUnico));
 out.roteiros.forEach(r => r.pontos.forEach(p => {
@@ -113,7 +113,7 @@ const rotasMin = [
 const out2 = context.buildRoteirosNormalizados_(rotasMin, clientesSemLograd, roteiros);
 assert.strictEqual(out2.clientes[0].logradouro, '', 'logradouro vira "" quando a coluna não existe');
 
-console.log('buildRoteirosNormalizados_: dedup, FK, skipped, limpeza, tipoResiduo, logradouro defensivo: OK');
+console.log('buildRoteirosNormalizados_: dedup, FK, skipped, limpeza, logradouro defensivo: OK');
 ```
 
 - [ ] **Step 2: Rodar o teste e confirmar que falha**
@@ -130,8 +130,9 @@ Em `gas/Code.gs`, apagar a função `buildFlatRoteiros_` inteira (do comentário
 // getValues() das 3 abas (tblRotas, shtClientes, tblRoteiros) e devolve a
 // visão normalizada { clientes, roteiros, skipped } do contrato roteiros/v1.
 // Junta tblRotas -> cliente por idPJ e -> roteiro por idRoteiro; emite cliente
-// deduplicado por idUnico (= idUnico2). logradouro e Tipo de Resíduo são lidos
-// defensivamente (colunas a confirmar na aba real; "" se ausentes).
+// deduplicado por idUnico (= idUnico2). logradouro é lido defensivamente
+// (coluna a confirmar na aba real; "" se ausente). Tipo de Resíduo NÃO faz
+// parte do contrato — é config client-side.
 function buildRoteirosNormalizados_(rotasValues, clientesValues, roteirosValues) {
     if (!rotasValues || rotasValues.length < 2) {
         return { clientes: [], roteiros: [], skipped: 0 };
@@ -169,16 +170,12 @@ function buildRoteirosNormalizados_(rotasValues, clientesValues, roteirosValues)
         };
     }
 
-    var colTipoResiduo = mapRoteiros['Tipo de Resíduo'];
     var roteirosById = {};
     for (var t = 1; t < roteirosValues.length; t++) {
         var rowT = roteirosValues[t];
         var keyRoteiro = cleanIntString_(rowT[mapRoteiros['idRoteiro']]);
         if (!keyRoteiro) continue;
-        roteirosById[keyRoteiro] = {
-            nome: String(rowT[mapRoteiros['Roteiro']] || '').trim(),
-            tipoResiduo: colTipoResiduo === undefined ? '' : String(rowT[colTipoResiduo] || '').trim()
-        };
+        roteirosById[keyRoteiro] = String(rowT[mapRoteiros['Roteiro']] || '').trim();
     }
 
     var clientesByIdUnico = {};
@@ -193,11 +190,10 @@ function buildRoteirosNormalizados_(rotasValues, clientesValues, roteirosValues)
         // Ponto sem cliente, sem nome, ou sem idUnico (a FK do contrato): descarta.
         if (!cliente || !cliente.cliente || !cliente.idUnico) { skipped++; continue; }
 
-        var roteiroInfo = roteirosById[cleanIntString_(rowR[mapRotas['idRoteiro']])] || { nome: '', tipoResiduo: '' };
-        var nomeRoteiro = roteiroInfo.nome;
+        var nomeRoteiro = roteirosById[cleanIntString_(rowR[mapRotas['idRoteiro']])] || '';
 
         if (!gruposByRoteiro[nomeRoteiro]) {
-            gruposByRoteiro[nomeRoteiro] = { roteiro: nomeRoteiro, tipoResiduo: roteiroInfo.tipoResiduo, pontos: [] };
+            gruposByRoteiro[nomeRoteiro] = { roteiro: nomeRoteiro, pontos: [] };
             ordemGrupos.push(nomeRoteiro);
         }
 
@@ -438,8 +434,7 @@ Expected: as únicas ocorrências de `getRoteirosFlat_`/`buildFlatRoteiros_` sã
 
 Resumir pass/fail de cada checagem. Registrar explicitamente as 3 dependências abertas que ficaram resolvidas de forma defensiva e ainda precisam de confirmação contra o Sheets real na hora do deploy:
 1. `logradouro` existe em `shtClientes`? (se não, sai `""`)
-2. Header exato do Tipo de Resíduo em `tblRoteiros`? (o código lê `'Tipo de Resíduo'`; se o header real diferir, sai `""` e o `mapRoteiros` precisa do nome certo)
-3. `idUnico2` preenchido para todos os clientes? (pontos sem ele caem em `skipped`)
+2. `idUnico2` preenchido para todos os clientes? (pontos sem ele caem em `skipped`)
 
 Sem commit nesta task, salvo se uma checagem exigir correção.
 

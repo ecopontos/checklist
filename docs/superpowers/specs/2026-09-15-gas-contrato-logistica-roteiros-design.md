@@ -33,6 +33,7 @@ não afeta o app em campo. Se essa premissa for falsa, esta spec precisa ser rev
 | Formato | Normalizado: `clientes[]` + `roteiros[]` com `pontos[]` |
 | Sync | Snapshot completo + `modifiedTime`; reconciliação por substituição no desktop |
 | Compatibilidade | Nenhuma — builder flat é substituído, não mantido em paralelo |
+| Tipo de Resíduo | **Fora** do contrato GAS — configurado client-side (`config.js`); não trafega no snapshot de roteiros (revisão 2026-09-15, alinhado ao WIP que moveu resíduo pra config) |
 
 ## Contrato: `action=roteiros` v1
 
@@ -80,12 +81,14 @@ Em erro, mantém o padrão atual do GAS: `{ "ok": false, "error": "<mensagem>" }
 ```jsonc
 {
   "roteiro": "SAT01",  // nome do roteiro
-  "tipoResiduo": "Recicláveis Orgânico (Restos de Alimentos)", // ver "Dependências abertas"
   "pontos": [
     { "idRota": "3", "idUnico": "…", "ordem": 1, "inativo": 0 }
   ]
 }
 ```
+
+> **Tipo de Resíduo não faz parte deste contrato.** O resíduo é configurado client-side (`config.js`),
+> fora do trânsito de roteiros — decisão alinhada ao trabalho paralelo que o retirou do GAS.
 
 - `idRota` = id da linha em `tblRotas` (id do **ponto**, não do cliente); string, limpo de `.0`.
 - `idUnico` no ponto é **FK** para `clientes[].idUnico`.
@@ -105,11 +108,11 @@ tombstones). `inativo:1` significa presente-mas-inativo (distinto de removido). 
    suspeita que ele viva só no Access (`tblCEP`), não replicado ao Sheets. Se a coluna não existir em
    `shtClientes`, `logradouro` sai `""` na v1 até ser replicado — não é regressão frente ao que o GAS
    emite hoje (nada).
-2. **`tipoResiduo` por roteiro:** os commits recentes (`buildFlatRoteiros_ propaga Tipo de Residuo`,
-   `getContatosWhatsapp expoe tipoResiduo`) já trouxeram o Tipo de Resíduo ao GAS. Confirmar **qual aba/
-   coluna** o builder normalizado deve ler (`tblRotas`? aba de roteiros? aba de resíduo?).
-3. **`idUnico2` preenchido:** pontos cujo cliente não tem `idUnico2` caem em `skipped` (mesmo
+2. **`idUnico2` preenchido:** pontos cujo cliente não tem `idUnico2` caem em `skipped` (mesmo
    comportamento do builder atual, que descarta ponto sem cliente).
+
+> A dependência antes listada aqui sobre a fonte do Tipo de Resíduo foi **resolvida por remoção**: o
+> resíduo saiu do contrato GAS e é configurado client-side (ver tabela de decisões).
 
 ## Escopo
 
@@ -123,6 +126,7 @@ tombstones). `inativo:1` significa presente-mas-inativo (distinto de removido). 
 **Fora (YAGNI / outras specs):**
 - Delta incremental, tombstones, cursor.
 - Minting de UUIDv7 (é da ADR-091).
+- **Tipo de Resíduo** — movido para config client-side (`config.js`); não trafega no snapshot.
 - Ingestão/reconciliação no `desktop/logistics` (spec própria do consumidor).
 - Push/escrita (coletas, edição) — segue como está.
 - Qualquer camada de back-compat ou action duplicada.
