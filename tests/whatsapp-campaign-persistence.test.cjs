@@ -183,3 +183,61 @@ test('diretório agrupa os telefones normalizados por idRota', async () => {
     { slot: 2, exibicao: '48 3333-4444', digits: '554833334444' }
   ]);
 });
+
+test('normaliza instantes em UTC e ordena histórico pela cronologia entre offsets', async () => {
+  const { db } = await setup();
+  const first = db.createWhatsappCampaign(campaign({
+    createdAt: '2026-09-18T10:30:00-03:00'
+  }));
+  assert.equal(first.createdAt, '2026-09-18T13:30:00.000Z');
+  const opened = db.transitionWhatsappCampaignItem('item-1', 'opened', {
+    phoneSlot: 1, phone: '5548999990000', at: '2026-09-18T12:00:00-03:00'
+  });
+  assert.equal(opened.openedAt, '2026-09-18T15:00:00.000Z');
+  const confirmed = db.transitionWhatsappCampaignItem('item-1', 'confirmed', {
+    at: '2026-09-18T16:00:00+01:00'
+  });
+  assert.equal(confirmed.confirmedAt, '2026-09-18T15:00:00.000Z');
+  db.completeWhatsappCampaign('campaign-1', '2026-09-18T13:00:00-03:00');
+
+  db.createWhatsappCampaign(campaign({
+    campaignId: 'campaign-2',
+    createdAt: '2026-09-18T14:00:00+02:00',
+    items: [item({ itemId: 'item-2', occurrenceId: 'occ-2' })]
+  }));
+  db.transitionWhatsappCampaignItem('item-2', 'deferred');
+  db.completeWhatsappCampaign('campaign-2', '2026-09-18T17:00:00+02:00');
+
+  const history = db.getWhatsappCampaignHistory();
+  assert.deepEqual(Array.from(history, entry => entry.campaignId), ['campaign-1', 'campaign-2']);
+  assert.equal(history[0].completedAt, '2026-09-18T16:00:00.000Z');
+  assert.equal(history[1].createdAt, '2026-09-18T12:00:00.000Z');
+  assert.equal(history[1].completedAt, '2026-09-18T15:00:00.000Z');
+});
+
+test('abertura exige correspondência exata com slot e digits do snapshot', async () => {
+  const { db } = await setup();
+  db.createWhatsappCampaign(campaign({
+    items: [item({
+      phones: [
+        { slot: 1, exibicao: '(48) 99999-0000', digits: '5548999990000' },
+        { slot: 2, exibicao: '(48) 3333-4444', digits: '554833334444' }
+      ]
+    })]
+  }));
+
+  assert.throws(() => db.transitionWhatsappCampaignItem('item-1', 'opened', {
+    phoneSlot: 3, phone: '554833334444', at: '2026-09-18T12:00:00.000Z'
+  }), /telefone|slot/i);
+  assert.throws(() => db.transitionWhatsappCampaignItem('item-1', 'opened', {
+    phoneSlot: 1, phone: '554833334444', at: '2026-09-18T12:00:00.000Z'
+  }), /telefone|slot/i);
+  assert.equal(db.getActiveWhatsappCampaign().items[0].status, 'pending');
+
+  const opened = db.transitionWhatsappCampaignItem('item-1', 'opened', {
+    phoneSlot: 2, phone: '554833334444', at: '2026-09-18T12:00:00.000Z'
+  });
+  assert.equal(opened.status, 'opened');
+  assert.equal(opened.phoneSlot, 2);
+  assert.equal(opened.phone, '554833334444');
+});

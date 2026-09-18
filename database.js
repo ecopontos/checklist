@@ -783,7 +783,7 @@ class AppDatabase {
         if (!normalized || !Number.isFinite(Date.parse(normalized))) {
             throw new Error(`${label} inválido`);
         }
-        return normalized;
+        return new Date(normalized).toISOString();
     }
 
     _requireCivilDate(value) {
@@ -903,16 +903,16 @@ class AppDatabase {
                 return this._readWhatsappCampaignItem(current);
             }
             if (status === 'opened') {
-                if (!Number.isInteger(details.phoneSlot) || details.phoneSlot < 1 ||
-                    !String(details.phone ?? '').trim()) {
-                    throw new Error('Telefone de abertura inválido');
-                }
+                const selectedPhone = JSON.parse(current.phones_snapshot).find(phone =>
+                    phone.slot === details.phoneSlot && phone.digits === details.phone
+                );
+                if (!selectedPhone) throw new Error('Telefone de abertura não pertence ao item');
                 const openedAt = this._requireWhatsappTimestamp(details.at, 'Data de abertura');
                 this.db.run(`
                     UPDATE whatsapp_campaign_items
                     SET status = 'opened', phone_slot = ?, phone_snapshot = ?, opened_at = ?
                     WHERE item_id = ?
-                `, [details.phoneSlot, String(details.phone).trim(), openedAt, normalizedId]);
+                `, [selectedPhone.slot, selectedPhone.digits, openedAt, normalizedId]);
             } else if (status === 'confirmed') {
                 const confirmedAt = this._requireWhatsappTimestamp(details.at, 'Data de confirmação');
                 this.db.run(`
