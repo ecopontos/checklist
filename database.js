@@ -103,6 +103,39 @@ class AppDatabase {
                 FOREIGN KEY (id_rota) REFERENCES clientes(id_rota)
             );
 
+            CREATE TABLE IF NOT EXISTS whatsapp_campaigns (
+                campaign_id TEXT PRIMARY KEY,
+                message_template TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('active','completed')),
+                created_at TEXT NOT NULL,
+                completed_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS whatsapp_campaign_items (
+                item_id TEXT PRIMARY KEY,
+                campaign_id TEXT NOT NULL,
+                occurrence_id TEXT NOT NULL,
+                id_rota TEXT NOT NULL,
+                cliente_snapshot TEXT NOT NULL,
+                roteiro_snapshot TEXT NOT NULL,
+                coleta_data TEXT NOT NULL,
+                intercorrencia_snapshot TEXT NOT NULL,
+                message_snapshot TEXT NOT NULL,
+                phones_snapshot TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('pending','opened','deferred','confirmed')),
+                phone_slot INTEGER,
+                phone_snapshot TEXT,
+                opened_at TEXT,
+                confirmed_at TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_whatsapp_item_occurrence
+                ON whatsapp_campaign_items(occurrence_id);
+            CREATE INDEX IF NOT EXISTS idx_whatsapp_item_campaign
+                ON whatsapp_campaign_items(campaign_id);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_one_active
+                ON whatsapp_campaigns(status) WHERE status = 'active';
+
             CREATE TABLE IF NOT EXISTS roteiro_change_outbox (
                 change_id TEXT PRIMARY KEY,
                 id_rota TEXT NOT NULL,
@@ -226,21 +259,53 @@ class AppDatabase {
 
         const contatos = [];
         clientes.forEach(cliente => {
-            [[1, cliente.telefone1], [2, cliente.telefone2]].forEach(([slot, raw]) => {
-                const digits = this._normalizeTelefoneDigits(raw);
-                if (!digits) return;
+            this._getWhatsappPhones(cliente).forEach(phone => {
                 contatos.push({
                     idRota: cliente.id_rota,
-                    slot,
+                    slot: phone.slot,
                     nome: cliente.cliente,
-                    telefoneExibicao: raw,
-                    telefoneDigits: digits,
+                    telefoneExibicao: phone.exibicao,
+                    telefoneDigits: phone.digits,
                     roteiroNome,
                     tipoResiduo
                 });
             });
         });
         return contatos;
+    }
+
+    getWhatsappContactDirectory() {
+        const res = this.db.exec(`
+            SELECT c.id_rota, c.cliente, c.telefone1, c.telefone2,
+                COALESCE(r.nome, '') AS roteiro_nome
+            FROM clientes c
+            LEFT JOIN roteiros r ON r.id = c.roteiro_id
+            WHERE c.ativo = 1
+            ORDER BY COALESCE(r.nome, ''),
+                CAST(REPLACE(TRIM(c.ordem), ',', '.') AS REAL), c.id_rota COLLATE NOCASE
+        `);
+        if (!res.length) return [];
+        return res[0].values.reduce((directory, values) => {
+            const cliente = Object.fromEntries(res[0].columns.map((column, index) => [column, values[index]]));
+            const phones = this._getWhatsappPhones(cliente);
+            if (phones.length) {
+                directory.push({
+                    idRota: String(cliente.id_rota),
+                    cliente: cliente.cliente,
+                    roteiroNome: cliente.roteiro_nome,
+                    phones
+                });
+            }
+            return directory;
+        }, []);
+    }
+
+    _getWhatsappPhones(cliente) {
+        return [[1, cliente.telefone1], [2, cliente.telefone2]].reduce((phones, [slot, raw]) => {
+            const digits = this._normalizeTelefoneDigits(raw);
+            if (digits) phones.push({ slot, exibicao: raw, digits });
+            return phones;
+        }, []);
     }
 
     // Telefones abaixo de 8 digitos sao lixo (campo vazio, "0", etc.) e nunca
@@ -662,6 +727,245 @@ class AppDatabase {
             "SELECT COUNT(*) FROM cliente_change_outbox WHERE sent_at IS NULL"
         );
         return res.length ? Number(res[0].values[0][0]) : 0;
+    }
+
+    // --- Campanhas de WhatsApp ---
+    _queryRows(sql, params = []) {
+        const res = this.db.exec(sql, params);
+        if (!res.length) return [];
+        return res[0].values.map(values => Object.fromEntries(
+            res[0].columns.map((column, index) => [column, values[index]])
+        ));
+    }
+
+    _readWhatsappCampaignItem(row) {
+        return {
+            itemId: row.item_id,
+            occurrenceId: row.occurrence_id,
+            idRota: row.id_rota,
+            cliente: row.cliente_snapshot,
+            roteiro: row.roteiro_snapshot,
+            coletaData: row.coleta_data,
+            intercorrencia: row.intercorrencia_snapshot,
+            message: row.message_snapshot,
+            phones: JSON.parse(row.phones_snapshot),
+            status: row.status,
+            phoneSlot: row.phone_slot,
+            phone: row.phone_snapshot,
+            openedAt: row.opened_at,
+            confirmedAt: row.confirmed_at
+        };
+    }
+
+    _readWhatsappCampaign(row) {
+        const campaign = {
+            campaignId: row.campaign_id,
+            messageTemplate: row.message_template,
+            status: row.status,
+            createdAt: row.created_at,
+            items: this._queryRows(`
+                SELECT * FROM whatsapp_campaign_items
+                WHERE campaign_id = ? ORDER BY rowid
+            `, [row.campaign_id]).map(item => this._readWhatsappCampaignItem(item))
+        };
+        if (row.completed_at) campaign.completedAt = row.completed_at;
+        return campaign;
+    }
+
+    _requireWhatsappId(value, label) {
+        const normalized = String(value ?? '').trim();
+        if (!normalized) throw new Error(`${label} obrigatório`);
+        return normalized;
+    }
+
+    _requireWhatsappTimestamp(value, label) {
+        const normalized = typeof value === 'string' ? value.trim() : '';
+        if (!normalized || !Number.isFinite(Date.parse(normalized))) {
+            throw new Error(`${label} inválido`);
+        }
+        return normalized;
+    }
+
+    _requireCivilDate(value) {
+        const day = typeof value === 'string' ? value : '';
+        const date = new Date(`${day}T12:00:00Z`);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(date.getTime()) ||
+            date.toISOString().slice(0, 10) !== day) {
+            throw new Error('Data de coleta inválida');
+        }
+        return day;
+    }
+
+    _normalizeWhatsappCampaignInput(input) {
+        if (!input || typeof input !== 'object') throw new Error('Campanha inválida');
+        const campaignId = this._requireWhatsappId(input.campaignId, 'ID da campanha');
+        const messageTemplate = String(input.messageTemplate ?? '').trim();
+        if (!messageTemplate) throw new Error('Modelo de mensagem obrigatório');
+        const createdAt = this._requireWhatsappTimestamp(input.createdAt, 'Data de criação');
+        if (!Array.isArray(input.items) || !input.items.length) {
+            throw new Error('Campanha deve conter itens');
+        }
+        const items = input.items.map(source => {
+            if (!source || typeof source !== 'object') throw new Error('Item de campanha inválido');
+            if (!Array.isArray(source.phones)) throw new Error('Telefones do item devem ser um array');
+            const phones = source.phones.map(phone => {
+                if (!phone || !Number.isInteger(phone.slot) || phone.slot < 1 ||
+                    !String(phone.digits ?? '').trim()) {
+                    throw new Error('Telefone de campanha inválido');
+                }
+                return {
+                    slot: phone.slot,
+                    exibicao: String(phone.exibicao ?? ''),
+                    digits: String(phone.digits).trim()
+                };
+            });
+            return {
+                itemId: this._requireWhatsappId(source.itemId, 'ID do item'),
+                occurrenceId: this._requireWhatsappId(source.occurrenceId, 'ID da ocorrência'),
+                idRota: this._requireWhatsappId(source.idRota, 'ID da rota'),
+                cliente: String(source.cliente ?? ''),
+                roteiro: String(source.roteiro ?? ''),
+                coletaData: this._requireCivilDate(source.coletaData),
+                intercorrencia: String(source.intercorrencia ?? ''),
+                message: String(source.message ?? ''),
+                phones
+            };
+        });
+        if (new Set(items.map(item => item.itemId)).size !== items.length) {
+            throw new Error('ID de item duplicado na campanha');
+        }
+        return { campaignId, messageTemplate, createdAt, items };
+    }
+
+    createWhatsappCampaign(input) {
+        const campaign = this._normalizeWhatsappCampaignInput(input);
+        return this._persistAtomic(() => {
+            if (this._queryRows("SELECT campaign_id FROM whatsapp_campaigns WHERE status = 'active'").length) {
+                throw new Error('Já existe uma campanha ativa');
+            }
+            if (this._queryRows('SELECT campaign_id FROM whatsapp_campaigns WHERE campaign_id = ?', [campaign.campaignId]).length) {
+                throw new Error('ID de campanha já utilizado');
+            }
+            this.db.run(`
+                INSERT INTO whatsapp_campaigns
+                    (campaign_id, message_template, status, created_at)
+                VALUES (?, ?, 'active', ?)
+            `, [campaign.campaignId, campaign.messageTemplate, campaign.createdAt]);
+            campaign.items.forEach(item => {
+                this.db.run(`
+                    INSERT INTO whatsapp_campaign_items
+                        (item_id, campaign_id, occurrence_id, id_rota, cliente_snapshot,
+                         roteiro_snapshot, coleta_data, intercorrencia_snapshot,
+                         message_snapshot, phones_snapshot, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+                `, [
+                    item.itemId, campaign.campaignId, item.occurrenceId, item.idRota,
+                    item.cliente, item.roteiro, item.coletaData, item.intercorrencia,
+                    item.message, JSON.stringify(item.phones)
+                ]);
+            });
+            return this._readWhatsappCampaign(this._queryRows(
+                'SELECT * FROM whatsapp_campaigns WHERE campaign_id = ?', [campaign.campaignId]
+            )[0]);
+        });
+    }
+
+    getActiveWhatsappCampaign() {
+        const rows = this._queryRows(
+            "SELECT * FROM whatsapp_campaigns WHERE status = 'active' LIMIT 1"
+        );
+        return rows.length ? this._readWhatsappCampaign(rows[0]) : null;
+    }
+
+    transitionWhatsappCampaignItem(itemId, status, details = {}) {
+        const normalizedId = this._requireWhatsappId(itemId, 'ID do item');
+        const allowed = {
+            pending: new Set(['opened', 'deferred']),
+            deferred: new Set(['opened']),
+            opened: new Set(['confirmed', 'deferred']),
+            confirmed: new Set(['confirmed'])
+        };
+        if (!['opened', 'deferred', 'confirmed'].includes(status)) {
+            throw new Error('Status de campanha inválido');
+        }
+        return this._persistAtomic(() => {
+            const rows = this._queryRows(`
+                SELECT i.* FROM whatsapp_campaign_items i
+                JOIN whatsapp_campaigns c ON c.campaign_id = i.campaign_id
+                WHERE i.item_id = ? AND c.status = 'active'
+            `, [normalizedId]);
+            if (!rows.length) throw new Error('Item de campanha ativa não encontrado');
+            const current = rows[0];
+            if (!allowed[current.status] || !allowed[current.status].has(status)) {
+                throw new Error(`Transição de status inválida: ${current.status} -> ${status}`);
+            }
+            if (current.status === 'confirmed' && status === 'confirmed') {
+                return this._readWhatsappCampaignItem(current);
+            }
+            if (status === 'opened') {
+                if (!Number.isInteger(details.phoneSlot) || details.phoneSlot < 1 ||
+                    !String(details.phone ?? '').trim()) {
+                    throw new Error('Telefone de abertura inválido');
+                }
+                const openedAt = this._requireWhatsappTimestamp(details.at, 'Data de abertura');
+                this.db.run(`
+                    UPDATE whatsapp_campaign_items
+                    SET status = 'opened', phone_slot = ?, phone_snapshot = ?, opened_at = ?
+                    WHERE item_id = ?
+                `, [details.phoneSlot, String(details.phone).trim(), openedAt, normalizedId]);
+            } else if (status === 'confirmed') {
+                const confirmedAt = this._requireWhatsappTimestamp(details.at, 'Data de confirmação');
+                this.db.run(`
+                    UPDATE whatsapp_campaign_items
+                    SET status = 'confirmed', confirmed_at = COALESCE(confirmed_at, ?)
+                    WHERE item_id = ?
+                `, [confirmedAt, normalizedId]);
+            } else {
+                this.db.run(
+                    "UPDATE whatsapp_campaign_items SET status = 'deferred' WHERE item_id = ?",
+                    [normalizedId]
+                );
+            }
+            return this._readWhatsappCampaignItem(this._queryRows(
+                'SELECT * FROM whatsapp_campaign_items WHERE item_id = ?', [normalizedId]
+            )[0]);
+        });
+    }
+
+    completeWhatsappCampaign(campaignId, completedAt) {
+        const normalizedId = this._requireWhatsappId(campaignId, 'ID da campanha');
+        const normalizedCompletedAt = this._requireWhatsappTimestamp(completedAt, 'Data de conclusão');
+        this._persistAtomic(() => {
+            const campaigns = this._queryRows(
+                "SELECT campaign_id FROM whatsapp_campaigns WHERE campaign_id = ? AND status = 'active'",
+                [normalizedId]
+            );
+            if (!campaigns.length) throw new Error('Campanha ativa não encontrada');
+            const pending = this._queryRows(`
+                SELECT item_id FROM whatsapp_campaign_items
+                WHERE campaign_id = ? AND status = 'pending' LIMIT 1
+            `, [normalizedId]);
+            if (pending.length) throw new Error('Itens pending impedem concluir a campanha');
+            this.db.run(`
+                UPDATE whatsapp_campaigns
+                SET status = 'completed', completed_at = ?
+                WHERE campaign_id = ?
+            `, [normalizedCompletedAt, normalizedId]);
+        });
+    }
+
+    getConfirmedWhatsappOccurrenceIds() {
+        return this._queryRows(`
+            SELECT DISTINCT occurrence_id FROM whatsapp_campaign_items
+            WHERE status = 'confirmed' ORDER BY occurrence_id
+        `).map(row => row.occurrence_id);
+    }
+
+    getWhatsappCampaignHistory() {
+        return this._queryRows(`
+            SELECT * FROM whatsapp_campaigns
+            WHERE status = 'completed' ORDER BY created_at DESC, campaign_id
+        `).map(campaign => this._readWhatsappCampaign(campaign));
     }
 
     _newChangeId() {
