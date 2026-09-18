@@ -236,6 +236,32 @@ export async function getIntercorrenciasRoteiro(roteiroNome) {
     );
 }
 
+export async function getIntercorrenciasAtuais() {
+    const url = getGasUrl();
+    if (!url) return { ok: false, error: 'URL do GAS não configurada' };
+    const result = await gasGetJsonWithRetry_(`${url}?action=intercorrenciasAtuais`);
+    if (!result || typeof result !== 'object') {
+        return { ok: false, error: 'Resposta vazia do GAS' };
+    }
+    if (result.ok !== true) {
+        return { ...result, ok: false, error: result.error || 'Falha ao consultar as intercorrências atuais' };
+    }
+    const apiVersion = Number(result.apiVersion);
+    if (!Number.isFinite(apiVersion) || apiVersion < 11 || result.source !== 'intercorrenciasAtuais') {
+        return { ok: false, error: 'O GAS precisa da API 11 para consultar as intercorrências atuais' };
+    }
+    if (!Array.isArray(result.data)) {
+        return { ok: false, error: 'Resposta inválida: data ausente' };
+    }
+    const invalid = result.data.find(item =>
+        !item || !item.occurrenceId || !item.idRota || !item.data || !item.intercorrencia
+    );
+    if (invalid) {
+        return { ok: false, error: 'Resposta inválida: ocorrência incompleta' };
+    }
+    return result;
+}
+
 export async function getAgendamentos(data = '') {
     const url = getGasUrl();
     if (!url) return { ok: false, error: 'URL do GAS não configurada' };
