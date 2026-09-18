@@ -133,7 +133,7 @@ O SQLite recebe duas tabelas.
 | --- | --- |
 | `campaign_id` | UUID, chave primária |
 | `message_template` | mensagem-base congelada |
-| `status` | `active`, `completed` ou `cancelled` |
+| `status` | `active` ou `completed` |
 | `created_at` | instante ISO |
 | `completed_at` | instante ISO opcional |
 
@@ -150,6 +150,7 @@ O SQLite recebe duas tabelas.
 | `coleta_data` | data civil da ocorrência |
 | `intercorrencia_snapshot` | texto exibido ao operador |
 | `message_snapshot` | mensagem final com tags substituídas |
+| `phones_snapshot` | JSON com os telefones válidos disponíveis no início |
 | `status` | `pending`, `opened`, `deferred` ou `confirmed` |
 | `phone_slot` | telefone 1 ou 2, opcional até a abertura |
 | `phone_snapshot` | telefone efetivamente aberto |
