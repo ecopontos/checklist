@@ -32,7 +32,8 @@ var CLIENT_CHANGES_HEADERS = [
     'Status', 'Recebido Em', 'Processado Em', 'Mensagem'
 ];
 var CLIENT_EDITABLE_FIELDS = ['Cliente', 'Número', 'Complemento', 'CEP', 'Telefone1', 'Telefone2'];
-var GAS_API_VERSION = 8;
+var GAS_API_VERSION = 11;
+var INTERCORRENCIAS_ATUAIS_CACHE_KEY = 'intercorrenciasAtuais:v1';
 // Consultas de última coleta varrem apenas as linhas mais recentes da aba
 // Coletas (append-only, cronológica). Varrer a aba inteira chega a ~37s e pode
 // estourar o limite do GAS. Se o roteiro não aparecer na janela, há fallback
@@ -79,6 +80,10 @@ function doGet(e) {
 
     if (params.action === 'intercorrenciasRoteiro') {
         return getIntercorrenciasRoteiro_(params.roteiro || '');
+    }
+
+    if (params.action === 'intercorrenciasAtuais') {
+        return getIntercorrenciasAtuais_();
     }
 
     if (params.action === 'agendamentos') {
@@ -511,6 +516,142 @@ function getIntercorrenciasRoteiro_(roteiroNome) {
 
         cache.put(cacheKey, JSON.stringify(data), 21600);
         return jsonResponse_({ ok: true, data: data });
+    } catch (err) {
+        return jsonResponse_({ ok: false, error: err.message });
+    }
+}
+
+function normalizeOccurrenceInstant_(value) {
+    return Object.prototype.toString.call(value) === '[object Date]'
+        ? value.toISOString()
+        : String(value == null ? '' : value).trim();
+}
+
+function legacyOccurrenceId_(item) {
+    var canonical = JSON.stringify([
+        item.idRota, item.data, item.cliente, item.roteiro,
+        String(item.quantidade), item.intercorrencia, item.sincronizadoEm
+    ]);
+    var digest = Utilities.computeDigest(
+        Utilities.DigestAlgorithm.SHA_256,
+        canonical,
+        Utilities.Charset.UTF_8
+    );
+    return 'legacy:' + digest.map(function (byte) {
+        return ('0' + ((byte + 256) % 256).toString(16)).slice(-2);
+    }).join('');
+}
+
+function buildIntercorrenciasAtuais_(values) {
+    var quality = {
+        invalidDates: 0,
+        missingRouteIds: 0,
+        legacyIds: 0,
+        excludedRecords: 0
+    };
+    if (!Array.isArray(values) || values.length < 2) {
+        return { data: [], quality: quality };
+    }
+
+    var columns = Object.create(null);
+    values[0].forEach(function (header, index) {
+        columns[String(header == null ? '' : header).trim()] = index;
+    });
+    var required = ['ID Rota', 'Data', 'Cliente', 'Roteiro', 'Quantidade', 'Intercorrência', 'Sincronizado Em', 'Sync ID'];
+    for (var r = 0; r < required.length; r++) {
+        if (columns[required[r]] === undefined) {
+            throw new Error('Coluna ' + required[r] + ' não encontrada na aba ' + COLETAS_SHEET_NAME);
+        }
+    }
+
+    var colIdRota = columns['ID Rota'];
+    var colData = columns['Data'];
+    var colCliente = columns['Cliente'];
+    var colRoteiro = columns['Roteiro'];
+    var colQuantidade = columns['Quantidade'];
+    var colIntercorrencia = columns['Intercorrência'];
+    var colSincronizadoEm = columns['Sincronizado Em'];
+    var colSyncId = columns['Sync ID'];
+    var latestByRoute = Object.create(null);
+
+    for (var i = 1; i < values.length; i++) {
+        var row = values[i];
+        if (row.every(function (value) { return value === '' || value === null; })) continue;
+
+        var idRota = String(row[colIdRota] == null ? '' : row[colIdRota]).trim();
+        var data = normalizeHistoryDate_(row[colData]);
+        if (!data) quality.invalidDates++;
+        if (!idRota) quality.missingRouteIds++;
+        if (!data || !idRota) {
+            quality.excludedRecords++;
+            continue;
+        }
+
+        if (!String(row[colSyncId] == null ? '' : row[colSyncId]).trim()) {
+            quality.legacyIds++;
+        }
+        var current = latestByRoute[idRota];
+        if (!current || data > current.data || (data === current.data && i > current.index)) {
+            latestByRoute[idRota] = { row: row, idRota: idRota, data: data, index: i };
+        }
+    }
+
+    var data = Object.keys(latestByRoute).map(function (idRota) {
+        var current = latestByRoute[idRota];
+        var row = current.row;
+        var syncId = String(row[colSyncId] == null ? '' : row[colSyncId]).trim();
+        var item = {
+            idRota: current.idRota,
+            data: current.data,
+            cliente: String(row[colCliente] || '').trim(),
+            roteiro: String(row[colRoteiro] || '').trim(),
+            quantidade: Number(row[colQuantidade]),
+            intercorrencia: String(row[colIntercorrencia] || '').trim(),
+            sincronizadoEm: normalizeOccurrenceInstant_(row[colSincronizadoEm])
+        };
+        return {
+            occurrenceId: syncId || legacyOccurrenceId_(item),
+            idRota: item.idRota,
+            data: item.data,
+            cliente: item.cliente,
+            roteiro: item.roteiro,
+            intercorrencia: item.intercorrencia
+        };
+    }).filter(function (item) { return item.intercorrencia !== ''; });
+
+    return { data: data, quality: quality };
+}
+
+function getIntercorrenciasAtuais_() {
+    var config = getConfig_();
+    if (!config.spreadsheetId) {
+        return jsonResponse_({ ok: false, error: 'SPREADSHEET_ID não configurado' });
+    }
+
+    try {
+        var cache = CacheService.getScriptCache();
+        var cached = null;
+        try { cached = cache.get(INTERCORRENCIAS_ATUAIS_CACHE_KEY); } catch (_) { /* cache é opcional */ }
+        if (cached !== null) return jsonResponse_(JSON.parse(cached));
+
+        var ss = SpreadsheetApp.openById(config.spreadsheetId);
+        var sheet = ss.getSheetByName(COLETAS_SHEET_NAME);
+        var result = {
+            ok: true,
+            apiVersion: GAS_API_VERSION,
+            source: 'intercorrenciasAtuais',
+            generatedAt: new Date().toISOString(),
+            data: [],
+            quality: { invalidDates: 0, missingRouteIds: 0, legacyIds: 0, excludedRecords: 0 }
+        };
+        if (sheet && sheet.getLastRow() >= 2) {
+            var values = sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn()).getValues();
+            var built = buildIntercorrenciasAtuais_(values);
+            result.data = built.data;
+            result.quality = built.quality;
+        }
+        try { cache.put(INTERCORRENCIAS_ATUAIS_CACHE_KEY, JSON.stringify(result), 300); } catch (_) { /* cache é opcional */ }
+        return jsonResponse_(result);
     } catch (err) {
         return jsonResponse_({ ok: false, error: err.message });
     }
@@ -1579,6 +1720,10 @@ function saveColetas_(coletas) {
         if (novos.length) {
             sheet.getRange(sheet.getLastRow() + 1, 1, novos.length, 8).setValues(novos);
         }
+
+        try {
+            CacheService.getScriptCache().remove(INTERCORRENCIAS_ATUAIS_CACHE_KEY);
+        } catch (_) { /* cache é opcional */ }
 
         return jsonResponse_({ ok: true, count: novos.length, duplicates: duplicados });
     } finally {

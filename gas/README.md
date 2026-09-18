@@ -55,7 +55,7 @@ o conteúdo ao aplicativo.
 curl "<URL>?action=status"
 ```
 
-Esperado: `{"ok":true,"service":"satelite-gas","apiVersion":7,"routeChangesConfigured":true}`.
+Esperado: `{"ok":true,"service":"satelite-gas","apiVersion":11,"routeChangesConfigured":true}`.
 
 ```bash
 curl "<URL>"
@@ -92,6 +92,22 @@ curl "<URL>?action=intercorrenciasRoteiro&roteiro=SAT01"
 Esperado: `{"ok":true,"data":[{"id_rota":"SAT01-1","data":"2026-07-21","intercorrencia":"recusou coleta"}]}`,
 com um item por cliente cuja última coleta no roteiro teve intercorrência
 registrada, ou `{"ok":true,"data":[]}` se nenhum teve.
+
+Para consultar a fila consolidada de intercorrências atuais, sem escolher um
+roteiro:
+
+```bash
+curl "<URL>?action=intercorrenciasAtuais"
+```
+
+O contrato da API 11 é
+`{"ok":true,"apiVersion":11,"source":"intercorrenciasAtuais","generatedAt":"...","data":[...],"quality":{...}}`.
+O GAS escolhe a última coleta de cada ponto pela maior data civil e, em empate,
+pela última linha gravada. Só então remove os pontos cuja coleta escolhida não
+tem intercorrência; uma coleta com quantidade zero continua válida. A resposta
+usa `syncId` como `occurrenceId` e gera um digest estável para linhas legadas
+sem esse identificador. O resultado permanece em cache por até cinco minutos e
+é invalidado depois de um lote válido de coletas.
 
 Para testar o envio de checklist (substitua `<URL>`; o base64 abaixo é o
 texto "teste" codificado, só para confirmar que a rota funciona — não é um
