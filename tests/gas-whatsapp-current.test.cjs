@@ -36,6 +36,7 @@ class SheetMock {
 
 const sheets = new Map();
 const cache = new Map();
+const cachePuts = [];
 const removedCacheKeys = [];
 const context = vm.createContext({
   console,
@@ -56,7 +57,7 @@ const context = vm.createContext({
   CacheService: {
     getScriptCache: () => ({
       get: key => cache.has(key) ? cache.get(key) : null,
-      put: (key, value) => cache.set(key, value),
+      put: (key, value, ttl) => { cachePuts.push({ key, ttl }); cache.set(key, value); },
       remove: key => { removedCacheKeys.push(key); cache.delete(key); }
     })
   },
@@ -102,15 +103,15 @@ const duplicateLegacyRows = [
   ['5', '2026-09-05', 'E', 'R5', 1, 'Outro registro', '2026-09-05T11:00:00Z', 'sync-5'],
   ['4', '2026-09-05', 'D', 'R4', 1, 'Legada duplicada', '2026-09-05T11:00:00Z', '']
 ];
-function legacyItem(row) {
-  return {
-    idRota: row[0], data: row[1], cliente: row[2], roteiro: row[3], quantidade: row[4],
-    intercorrencia: row[5], sincronizadoEm: row[6]
-  };
-}
+const legacyFirst = context.buildIntercorrenciasAtuais_([
+  header, duplicateLegacyRows[1], duplicateLegacyRows[2]
+]).data.find(item => item.idRota === '4');
+const legacyMoved = context.buildIntercorrenciasAtuais_([
+  header, duplicateLegacyRows[2], duplicateLegacyRows[3]
+]).data.find(item => item.idRota === '4');
 assert.strictEqual(
-  context.legacyOccurrenceId_(legacyItem(duplicateLegacyRows[1])),
-  context.legacyOccurrenceId_(legacyItem(duplicateLegacyRows[3]))
+  legacyFirst.occurrenceId,
+  legacyMoved.occurrenceId
 );
 
 sheets.set('Coletas', new SheetMock(values));
@@ -119,8 +120,19 @@ assert.strictEqual(response.ok, true);
 assert.strictEqual(response.apiVersion, 11);
 assert.strictEqual(response.source, 'intercorrenciasAtuais');
 assert.ok(Array.isArray(response.data));
+assert.strictEqual(cachePuts.at(-1).ttl, 300);
+
+cache.clear();
+sheets.delete('Coletas');
+const missingSheetResponse = JSON.parse(context.getIntercorrenciasAtuais_().value);
+assert.strictEqual(missingSheetResponse.ok, false);
+assert.match(missingSheetResponse.error, /Coletas/);
+sheets.set('Coletas', new SheetMock(values));
 
 const cacheService = context.CacheService;
+context.CacheService = { getScriptCache() { throw new Error('cache unavailable'); } };
+assert.strictEqual(JSON.parse(context.getIntercorrenciasAtuais_().value).ok, true);
+
 context.CacheService = { getScriptCache: () => ({
   get() { throw new Error('cache indisponível'); },
   put() { throw new Error('cache indisponível'); },
@@ -128,6 +140,18 @@ context.CacheService = { getScriptCache: () => ({
 }) };
 assert.strictEqual(JSON.parse(context.getIntercorrenciasAtuais_().value).ok, true);
 context.CacheService = cacheService;
+
+cache.set('intercorrenciasAtuais:v1', '{invalid-json');
+assert.strictEqual(JSON.parse(context.getIntercorrenciasAtuais_().value).ok, true);
+cache.clear();
+
+const removedBeforeInvalidBatch = removedCacheKeys.length;
+const invalidBatchResponse = JSON.parse(context.saveColetas_([{
+  id_rota: '5', data: 'data-invalida', cliente: 'E', roteiro: 'R5',
+  quantidade: 1, intercorrencia: 'Teste', sync_id: 'sync-invalido'
+}]).value);
+assert.strictEqual(invalidBatchResponse.ok, false);
+assert.strictEqual(removedCacheKeys.length, removedBeforeInvalidBatch);
 
 context.saveColetas_([{
   id_rota: '5', data: '2026-09-18', cliente: 'E', roteiro: 'R5',

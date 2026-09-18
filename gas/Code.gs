@@ -629,13 +629,21 @@ function getIntercorrenciasAtuais_() {
     }
 
     try {
-        var cache = CacheService.getScriptCache();
+        var cache = null;
+        try { cache = CacheService.getScriptCache(); } catch (_) { /* cache é opcional */ }
         var cached = null;
-        try { cached = cache.get(INTERCORRENCIAS_ATUAIS_CACHE_KEY); } catch (_) { /* cache é opcional */ }
-        if (cached !== null) return jsonResponse_(JSON.parse(cached));
+        if (cache) {
+            try { cached = cache.get(INTERCORRENCIAS_ATUAIS_CACHE_KEY); } catch (_) { /* cache é opcional */ }
+        }
+        if (cached !== null) {
+            try { return jsonResponse_(JSON.parse(cached)); } catch (_) { /* cache inválido equivale a miss */ }
+        }
 
         var ss = SpreadsheetApp.openById(config.spreadsheetId);
         var sheet = ss.getSheetByName(COLETAS_SHEET_NAME);
+        if (!sheet) {
+            return jsonResponse_({ ok: false, error: 'Aba ' + COLETAS_SHEET_NAME + ' não encontrada' });
+        }
         var result = {
             ok: true,
             apiVersion: GAS_API_VERSION,
@@ -644,13 +652,15 @@ function getIntercorrenciasAtuais_() {
             data: [],
             quality: { invalidDates: 0, missingRouteIds: 0, legacyIds: 0, excludedRecords: 0 }
         };
-        if (sheet && sheet.getLastRow() >= 2) {
+        if (sheet.getLastRow() >= 2) {
             var values = sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn()).getValues();
             var built = buildIntercorrenciasAtuais_(values);
             result.data = built.data;
             result.quality = built.quality;
         }
-        try { cache.put(INTERCORRENCIAS_ATUAIS_CACHE_KEY, JSON.stringify(result), 300); } catch (_) { /* cache é opcional */ }
+        if (cache) {
+            try { cache.put(INTERCORRENCIAS_ATUAIS_CACHE_KEY, JSON.stringify(result), 300); } catch (_) { /* cache é opcional */ }
+        }
         return jsonResponse_(result);
     } catch (err) {
         return jsonResponse_({ ok: false, error: err.message });
