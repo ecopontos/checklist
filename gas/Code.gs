@@ -1673,6 +1673,15 @@ function getAgendamentoFotos_(id, incluirBase64) {
     }
 }
 
+function normalizeHistoryDate_(value) {
+    var text = Object.prototype.toString.call(value) === '[object Date]'
+        ? Utilities.formatDate(value, 'America/Sao_Paulo', 'yyyy-MM-dd')
+        : String(value || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+    var date = new Date(text + 'T12:00:00Z');
+    return isFinite(date.getTime()) && date.toISOString().slice(0, 10) === text ? text : null;
+}
+
 function saveColetas_(coletas) {
     var config = getConfig_();
     if (!config.spreadsheetId) {
