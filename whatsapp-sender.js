@@ -12,7 +12,7 @@ let ready = false;
 let selectedPhoneSlot = null;
 let displayedItemId = null;
 const selectedOccurrences = new Set();
-const statusLabels = { pending: 'Pendente', opened: 'Aberto', confirmed: 'Confirmado', deferred: 'Adiado', blocked: 'Bloqueado' };
+const statusLabels = { pending: 'Pendente', opened: 'Aguardando confirmação', confirmed: 'Confirmado', deferred: 'Adiado', blocked: 'Bloqueado' };
 const element = id => document.getElementById(id);
 
 function escapeHtml(value) {

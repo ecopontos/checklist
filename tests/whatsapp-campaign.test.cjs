@@ -124,6 +124,23 @@ test('substitui todas as tags da mensagem sem diferenciar maiusculas', async () 
   );
 });
 
+test('interpola valores literalmente sem reinterpretar cifrões ou tags embutidas', async () => {
+  const { buildWhatsappMessage } = await loadCampaignModule();
+  const cliente = "Nome $& $$ $` $' {intercorrencia}";
+  const intercorrencia = 'Falha $& {nome}';
+  const residuo = 'Vidro $$ {data}';
+
+  const message = buildWhatsappMessage(
+    'Cliente={nome}; Ocorrência={intercorrencia}; Data={data}; Resíduo={residuo}',
+    { cliente, intercorrencia, data: '2026-09-18', residuo }
+  );
+
+  assert.equal(
+    message,
+    `Cliente=${cliente}; Ocorrência=${intercorrencia}; Data=18/09/2026; Resíduo=${residuo}`
+  );
+});
+
 test('resume os itens em seis contadores exclusivos', async () => {
   const { summarizeWhatsappItems } = await loadCampaignModule();
   const summary = summarizeWhatsappItems([

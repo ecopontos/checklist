@@ -15,7 +15,8 @@ function campaign() {
     items: [1, 2].map(n => ({ ...occurrence, occurrenceId: `occ-${n}`, itemId: `item-${n}`,
       coletaData: occurrence.data, message: `Mensagem congelada ${n}`, phones })) };
 }
-async function setup({ active = false, remote = { ok: true, data: [occurrence] } } = {}) {
+async function setup({ active = false, remote = { ok: true, data: [occurrence] },
+  storage = new Map(), contactDirectory = null } = {}) {
   assert.ok(fs.existsSync('whatsapp-sender.js'), 'o módulo externo da fila deve existir');
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(([, id]) => [id, {
     id, textContent: '', innerHTML: '', value: '', hidden: false, disabled: false,
@@ -23,7 +24,6 @@ async function setup({ active = false, remote = { ok: true, data: [occurrence] }
   }]));
   const document = { readyState: 'loading', getElementById: id => elements.get(id),
     addEventListener() {}, querySelectorAll: () => [] };
-  const storage = new Map();
   let failPersistence = false;
   let remoteCalls = 0;
   const exported = [];
@@ -46,12 +46,13 @@ async function setup({ active = false, remote = { ok: true, data: [occurrence] }
   db.upsertCliente({ idRota: '42', idCliente: 'c1', Cliente: 'Cliente original', ativo: true,
     logradouro: 'Rua A', 'Número': '1', Complemento: '', CEP: '88000000', roteiro_id: 1, Ordem: 1,
     Telefone1: phones[0].digits, Telefone2: phones[1].digits });
+  if (contactDirectory) db.getWhatsappContactDirectory = () => contactDirectory;
   if (active) db.createWhatsappCampaign(campaign());
   vm.runInContext(fs.readFileSync('whatsapp-campaign.js', 'utf8').replace(/export /g, ''), context);
   vm.runInContext(fs.readFileSync('whatsapp-sender.js', 'utf8')
     .replace(/^import .*;\r?\n/gm, '').replace(/export /g, ''), context);
   elements.get('campaignMessage').value = 'Olá {nome}: {intercorrencia} em {data} ({residuo})';
-  return { window, db, elements, opened, exported, remoteCalls: () => remoteCalls,
+  return { window, db, elements, opened, exported, storage, remoteCalls: () => remoteCalls,
     setRemote: value => { remote = value; }, fail: value => { failPersistence = value; } };
 }
 test('estrutura da fila, histórico e delegação externa', () => {
@@ -113,6 +114,7 @@ test('abrir exige telefone, nunca confirma e só habilita confirmação após pe
   await h.window.openCurrentWhatsapp();
   assert.match(h.opened[0], /^https:\/\/wa\.me\/5548988880000\?text=Mensagem%20congelada%201$/);
   assert.equal(h.db.getActiveWhatsappCampaign().items[0].status, 'opened');
+  assert.equal(h.elements.get('campaignStatus').textContent, 'Aguardando confirmação');
   assert.equal(h.elements.get('confirmWhatsappButton').disabled, false);
   assert.equal(h.elements.get('campaignPreview').textContent, 'Mensagem congelada 1');
   await h.window.confirmCurrentWhatsapp();
@@ -192,6 +194,65 @@ test('retoma opened com telefone original, mesmo após mudança na fonte e no ca
   await h.window.confirmCurrentWhatsapp();
   assert.equal(h.db.getActiveWhatsappCampaign().items[0].status, 'opened');
   assert.equal(h.elements.get('campaignPreview').textContent, 'Mensagem congelada 1');
+});
+
+test('controller abre, recarrega, confirma, adia, conclui e preserva campanha diante de API antiga', async () => {
+  const storage = new Map();
+  const secondOccurrence = { ...occurrence, occurrenceId: 'occ-2', idRota: '43', cliente: 'Cliente B' };
+  const blockedOccurrence = { ...occurrence, occurrenceId: 'occ-blocked', idRota: '44', cliente: 'Sem telefone' };
+  const directory = [
+    { idRota: '42', cliente: occurrence.cliente, roteiroNome: occurrence.roteiro, phones },
+    { idRota: '43', cliente: secondOccurrence.cliente, roteiroNome: secondOccurrence.roteiro, phones: [phones[0]] },
+    { idRota: '44', cliente: blockedOccurrence.cliente, roteiroNome: blockedOccurrence.roteiro, phones: [] }
+  ];
+  const initial = await setup({
+    active: true,
+    storage,
+    contactDirectory: directory,
+    remote: { ok: true, data: [occurrence, secondOccurrence, blockedOccurrence] }
+  });
+  await initial.window.initWhatsappSender();
+  assert.match(initial.elements.get('queueList').innerHTML, /Sem telefone válido/);
+  initial.window.selectWhatsappPhone(2);
+  await initial.window.openCurrentWhatsapp();
+  assert.equal(initial.opened.length, 1);
+  assert.equal(initial.db.getActiveWhatsappCampaign().items[0].status, 'opened');
+  assert.equal(initial.db.getConfirmedWhatsappOccurrenceIds().length, 0);
+
+  const reloaded = await setup({
+    storage,
+    contactDirectory: directory,
+    remote: { ok: false, error: 'GAS incompatível: API 11 obrigatória' }
+  });
+  await reloaded.window.initWhatsappSender();
+  assert.equal(reloaded.elements.get('campaignPanel').hidden, false);
+  assert.equal(reloaded.elements.get('campaignStatus').textContent, 'Aguardando confirmação');
+  assert.equal(reloaded.elements.get('campaignPreview').textContent, 'Mensagem congelada 1');
+  assert.equal(reloaded.elements.get('confirmWhatsappButton').disabled, false);
+  assert.match(reloaded.elements.get('queueError').textContent, /API 11/);
+  assert.notEqual(reloaded.elements.get('queuePendingCount').textContent, '0');
+
+  reloaded.setRemote({ ok: true, data: [occurrence, secondOccurrence, blockedOccurrence] });
+  await reloaded.window.refreshWhatsappQueue();
+  await reloaded.window.confirmCurrentWhatsapp();
+  assert.deepEqual(Array.from(reloaded.db.getConfirmedWhatsappOccurrenceIds()), ['occ-1']);
+  await reloaded.window.deferCurrentWhatsapp();
+  await reloaded.window.completeWhatsappCampaign();
+  assert.equal(reloaded.db.getActiveWhatsappCampaign(), null);
+  assert.equal(reloaded.elements.get('queuePendingCount').textContent, '1');
+  assert.ok(!reloaded.elements.get('queueList').innerHTML.includes('data-occurrence-id="occ-1"'));
+  assert.match(reloaded.elements.get('queueList').innerHTML, /data-occurrence-id="occ-2"/);
+  assert.match(reloaded.elements.get('queueList').innerHTML, /Sem telefone válido/);
+  assert.match(reloaded.elements.get('campaignHistory').innerHTML, /Mensagem congelada 1/);
+  reloaded.window.exportWhatsappCampaign('campaign-1');
+  assert.equal(reloaded.exported.length, 2);
+  assert.equal(reloaded.exported[0].Status, 'Confirmado');
+  assert.equal(reloaded.exported[1].Status, 'Adiado');
+
+  const newOccurrence = { ...occurrence, occurrenceId: 'occ-1-new', data: '2026-09-21' };
+  reloaded.setRemote({ ok: true, data: [newOccurrence, secondOccurrence, blockedOccurrence] });
+  await reloaded.window.refreshWhatsappQueue();
+  assert.match(reloaded.elements.get('queueList').innerHTML, /data-occurrence-id="occ-1-new"/);
 });
 
 test('falha sem campanha mantém contadores desconhecidos e permite recuperar a fonte', async () => {

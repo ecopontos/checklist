@@ -15,11 +15,10 @@ export function buildWhatsappMessage(template, occurrence) {
         data: formatCivilDate(source.data || source.coletaData),
         residuo: source.residuo || source.tipoResiduo || ''
     };
-    return String(template ?? '')
-        .replace(/\{nome\}/gi, replacements.nome)
-        .replace(/\{intercorrencia\}/gi, replacements.intercorrencia)
-        .replace(/\{data\}/gi, replacements.data)
-        .replace(/\{residuo\}/gi, replacements.residuo);
+    return String(template ?? '').replace(
+        /\{(nome|intercorrencia|data|residuo)\}/gi,
+        (_match, key) => replacements[key.toLowerCase()]
+    );
 }
 
 export function buildWhatsappQueue({
