@@ -602,7 +602,7 @@ Com mocks ou ambiente local, confirme esta sequência sem tocar produção:
 6. devolver nova `occurrenceId` para o primeiro ponto e verificar seu retorno;
 7. simular GAS API 10 e confirmar erro explícito sem zerar a fila.
 
-- [x] **Step 5: atualizar evidências e fazer revisão independente**
+- [ ] **Step 5: atualizar evidências e fazer revisão independente** — evidências corrigidas; re-review independente pendente
 
 Marque as tarefas concluídas neste plano e acrescente comandos/resultados reais. Atualize a especificação apenas se a implementação alterar um contrato aprovado. Faça revisão focada em falsos “enviados”, perda de campanha, identidade de ocorrência, conteúdo HTML não escapado e regressões no sync de coletas.
 
@@ -627,16 +627,17 @@ git commit -m "test(whatsapp): integra fila de intercorrencias"
 - `npm test`, sintaxe, `prepare-dist`, hashes, imports e IDs passam.
 - GAS API 11 e frontend ficam prontos para publicação conjunta, sem publicar automaticamente.
 
-## Evidências de conclusão — 2026-09-21
+## Evidências e estado da revisão — 2026-09-21
 
-- Tasks 1–4: implementadas e revisadas nos commits `83f6c3f`, `70f76cc`, `08c959f`, `00daab3`, `11ad835` e `b9822ee`.
-- `npm test`: exit 0; comando padrão completo passou, incluindo as cinco novas suítes (29 subtestes da feature: 1 + 9 + 3 + 5 + 11).
-- `node --check database.js google-sync.js whatsapp-campaign.js whatsapp-sender.js whatsapp-events.js`: cinco arquivos válidos, todos com exit 0.
-- `npm run prepare-dist`: exit 0; `dist/` regenerado. SHA-256 idêntico entre origem e distribuição para os seis arquivos exigidos.
-- `vm.SourceTextModule`: grafo de `dist/whatsapp-sender.js` ligado com quatro módulos (`whatsapp-sender.js`, `database.js`, `google-sync.js`, `whatsapp-campaign.js`).
-- HTML distribuído após remoção de `<script>`: 32 IDs e nenhuma duplicata.
-- Revisão funcional controlada: 7/7 passos passaram com SQLite real, módulos reais e GAS simulado; API 10 retornou erro explícito e preservou a fila local.
-- Revisão focada: nenhuma abertura foi contada como confirmação; campanha e snapshots sobreviveram à recarga; confirmação filtrou por `occurrenceId`; nova ocorrência do mesmo ponto retornou; conteúdo malicioso permaneceu escapado; regressões de sincronização de coletas passaram no comando padrão.
-- Distribuição: nenhum GAS foi publicado e nenhum instalador foi gerado ou distribuído. A especificação não foi alterada porque a implementação não mudou o contrato aprovado.
-- Minor deferido para revisão final: `buildWhatsappMessage` usa replacement strings sucessivas e pode interpretar sequências especiais de `$` ou tags presentes nos valores.
-- Minor deferido para revisão final: o estado `opened` é apresentado como `Aberto`; o contrato o descreve como `Aguardando confirmação`, embora a confirmação continue manual e separada.
+- Tasks 1–4: implementadas nos commits `83f6c3f`, `70f76cc`, `08c959f`, `00daab3`, `11ad835` e `b9822ee`.
+- O primeiro review independente de `b9822ee..6d93070` reprovou a integração com 3 Important e 1 Minor: duas suítes fora do `npm test` rastreado, revisão funcional scratch sem controller/reload real, evidências produzidas no checkout sujo e os dois minors então conhecidos.
+- Correções TDD: `b2a6278` inclui `whatsapp-events`/`whatsapp-open` no comando rastreado, teste integrado do controller, interpolação literal por regex única/callback e rótulo `Aguardando confirmação`; `56195a1`, `aaeab68` e `9314c80` incorporam três dependências que o primeiro checkout limpo revelou (`normalizeHistoryDate_`, rejeição de data inválida antes da invalidação do cache e `_persistAtomic`).
+- RED observado: a interpolação reinterpretou sequências especiais de substituição e tags embutidas; a UI exibiu `Aberto`; o checkout limpo falhou sucessivamente por `normalizeHistoryDate_` e `_persistAtomic` ausentes e por lote inválido aceito. GREEN: domínio 6/6, persistência 9/9 e UI 12/12.
+- Checkout de validação: `.worktrees/task5-clean-9314c80`, detached em `9314c80595c9e0288d64c6c98a83fbe798b7c1dc`, com `git status --short --branch` retornando somente `## HEAD (no branch)` antes e depois dos comandos.
+- `npm test` nesse checkout: exit 0. Além das suítes anteriores, passaram GAS atual, persistência 9/9, cliente remoto 3/3, domínio 6/6, UI 12/12, eventos e abertura externa.
+- `node --check database.js`, `google-sync.js`, `whatsapp-campaign.js`, `whatsapp-sender.js` e `whatsapp-events.js`: 5/5 com exit 0.
+- `npm run prepare-dist`: exit 0. Os seis SHA-256 coincidiram entre origem e `dist/`: `whatsapp-sender.html` `06260EEC…8D8D1E`; `whatsapp-sender.js` `0CAD870A…19A55D`; `whatsapp-campaign.js` `5B6BD53C…8B4F1E`; `whatsapp-events.js` `E5FD7343…196FBD2`; `database.js` `7ADB406A…06B643F`; `google-sync.js` `65F0949A…9FDEB83`.
+- `vm.SourceTextModule`: quatro módulos ligados a partir de `dist/whatsapp-sender.js`. HTML distribuído sem blocos `<script>`: 31 IDs, nenhuma duplicata.
+- Revisão funcional automatizada no checkout limpo: `node --experimental-vm-modules tests/google-sync-whatsapp.test.cjs` (3/3) e `node tests/whatsapp-ui.test.cjs` (12/12), ambos exit 0. O controller abre sem confirmar, persiste `opened`, recria a página/banco pelo mesmo armazenamento, mantém campanha visível diante de erro de API 11, confirma uma ocorrência, adia outra, bloqueia contato sem telefone, conclui, mantém o adiado pendente, registra histórico/exportação e aceita nova `occurrenceId` do mesmo ponto.
+- Distribuição: nenhum GAS foi publicado e nenhum instalador foi gerado ou distribuído. A especificação não mudou porque o contrato aprovado foi preservado.
+- Estado: as correções e evidências acima aguardam novo review independente. Este plano não declara a revisão limpa.
