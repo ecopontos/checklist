@@ -1692,6 +1692,13 @@ function saveColetas_(coletas) {
         return jsonResponse_({ ok: false, error: 'coletas deve ser uma lista' });
     }
 
+    for (var v = 0; v < coletas.length; v++) {
+        var item = coletas[v];
+        if (!item || !normalizeHistoryDate_(item.data)) {
+            return jsonResponse_({ ok: false, error: 'Data inválida na coleta ' + (v + 1) });
+        }
+    }
+
     var lock = LockService.getScriptLock();
     lock.waitLock(30000);
     try {
