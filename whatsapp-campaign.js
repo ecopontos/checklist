@@ -47,7 +47,8 @@ export function buildWhatsappQueue({
         .map(occurrence => {
             const contact = contactsByRoute.get(String(occurrence.idRota));
             const phones = clonePhones(contact && contact.phones);
-            const item = { ...occurrence, status: 'pending', phones };
+            const item = { ...occurrence, status: 'pending', phones,
+                residuo: occurrence.residuo || occurrence.tipoResiduo || contact?.tipoResiduo || '' };
             if (!contact) item.blockedReason = 'Cadastro não localizado';
             else if (!phones.length) item.blockedReason = 'Sem telefone válido';
             return item;

@@ -160,7 +160,7 @@ test('valida identificadores, data civil, telefones e transições permitidas', 
 
 test('diretório agrupa os telefones normalizados por idRota', async () => {
   const { db } = await setup();
-  db.addRoteiro('R1');
+  db.addRoteiro('R1', 'Orgânicos');
   const roteiroId = db.getRoteiros()[0].id;
   db.upsertCliente({
     idRota: '42', idCliente: 'cliente-42', Cliente: 'Cliente A', logradouro: '',
@@ -174,14 +174,32 @@ test('diretório agrupa os telefones normalizados por idRota', async () => {
   });
 
   const directory = db.getWhatsappContactDirectory();
-  assert.equal(directory.length, 1);
+  assert.equal(directory.length, 2);
   assert.equal(directory[0].idRota, '42');
   assert.equal(directory[0].cliente, 'Cliente A');
   assert.equal(directory[0].roteiroNome, 'R1');
+  assert.equal(directory[0].tipoResiduo, 'Orgânicos');
+  assert.equal(directory[1].idRota, '43');
+  assert.equal(directory[1].phones.length, 0);
   assert.deepEqual(JSON.parse(JSON.stringify(directory[0].phones)), [
     { slot: 1, exibicao: '(48) 99999-0000', digits: '5548999990000' },
     { slot: 2, exibicao: '48 3333-4444', digits: '554833334444' }
   ]);
+});
+
+test('diretório usa o tipo de resíduo cadastrado no SQLite e exclui clientes inativos', async () => {
+  const { db } = await setup();
+  db.addRoteiro('ROTA-VIDRO', 'Vidro');
+  const roteiroId = db.getRoteiros()[0].id;
+  for (const [idRota, ativo] of [['1', true], ['2', false]]) {
+    db.upsertCliente({ idRota, idCliente: idRota, Cliente: 'Teste', logradouro: '',
+      'Número': '', Complemento: '', CEP: '', Telefone1: '', Telefone2: '',
+      roteiro_id: roteiroId, Ordem: 1, ativo });
+  }
+  const directory = db.getWhatsappContactDirectory();
+  assert.equal(directory.length, 1);
+  assert.equal(directory[0].idRota, '1');
+  assert.equal(directory[0].tipoResiduo, 'Vidro');
 });
 
 test('normaliza instantes em UTC e ordena histórico pela cronologia entre offsets', async () => {

@@ -1,5 +1,5 @@
 import db from './database.js';
-import { getIntercorrenciasAtuais } from './google-sync.js';
+import { getIntercorrenciasAtuais, checkAndImportRoteirosRede } from './google-sync.js';
 import { buildWhatsappMessage, buildWhatsappQueue, summarizeWhatsappItems } from './whatsapp-campaign.js';
 
 let activeCampaign = null;
@@ -49,8 +49,9 @@ function reconcileQueue() {
 
 function renderQueue() {
     const counts = summarizeWhatsappItems(queue);
-    for (const [id, status] of [['queuePendingCount', 'pending'], ['queueOpenedCount', 'opened'], ['queueConfirmedCount', 'confirmed']]) {
-        element(id).textContent = occurrences === null && !activeCampaign ? '—' : String(counts[status]);
+    const pending = counts.pending + counts.opened + counts.deferred + counts.blocked;
+    for (const [id, count] of [['queuePendingCount', pending], ['queueOpenedCount', counts.opened], ['queueConfirmedCount', counts.confirmed]]) {
+        element(id).textContent = occurrences === null && !activeCampaign ? '—' : String(count);
     }
     const search = element('queueSearch').value.trim().toLocaleLowerCase('pt-BR');
     const route = element('queueRouteFilter').value;
@@ -70,7 +71,7 @@ function renderQueue() {
         queue.length ? 'Nenhum item corresponde aos filtros.' : 'Nenhuma pendência na fonte consultada.'}</p>`;
     element('queueSelection').textContent = activeCampaign ? 'Retome a campanha abaixo antes de iniciar outra.' :
         `${selectedOccurrences.size} ocorrência(s) selecionada(s) · ${counts.blocked} bloqueada(s)`;
-    element('startCampaignButton').disabled = !ready || busy || !!activeCampaign || !selectedOccurrences.size;
+    element('startCampaignButton').disabled = !ready || busy || !!refreshPromise || !!activeCampaign || !selectedOccurrences.size;
     element('campaignComposer').hidden = !!activeCampaign;
 }
 
@@ -138,6 +139,8 @@ export function refreshWhatsappQueue() {
     element('refreshQueueButton').disabled = true;
     refreshPromise = (async () => {
         try {
+            const imported = await checkAndImportRoteirosRede(db);
+            if (imported.error || imported.warning) throw new Error(imported.error || imported.warning);
             const result = await getIntercorrenciasAtuais();
             if (!result?.ok || !Array.isArray(result.data)) throw new Error(result?.error || 'Resposta inválida da fonte');
             contactDirectory = db.getWhatsappContactDirectory();
@@ -153,7 +156,8 @@ export function refreshWhatsappQueue() {
         } finally {
             element('refreshQueueButton').disabled = false;
         }
-    })().finally(() => { refreshPromise = null; });
+    })().finally(() => { refreshPromise = null; renderQueue(); });
+    renderQueue();
     return refreshPromise;
 }
 
@@ -182,7 +186,7 @@ function setBusy(value) {
 }
 
 export async function startWhatsappCampaign() {
-    if (!ready || busy) return;
+    if (!ready || busy || refreshPromise) return;
     setError('campaignError');
     try {
         activeCampaign = db.getActiveWhatsappCampaign();
@@ -199,8 +203,7 @@ export async function startWhatsappCampaign() {
             campaignId: crypto.randomUUID(), messageTemplate, createdAt: new Date().toISOString(),
             items: selected.map(item => ({ ...item, itemId: crypto.randomUUID(), coletaData: item.data,
                 phones: item.phones.map(phone => ({ ...phone })),
-                message: buildWhatsappMessage(messageTemplate, { ...item,
-                    residuo: item.residuo || window.getTipoResiduoPorRoteiro?.(item.roteiro) || '' }) }))
+                message: buildWhatsappMessage(messageTemplate, item) }))
         };
         setBusy(true);
         activeCampaign = await db.createWhatsappCampaign(campaign);

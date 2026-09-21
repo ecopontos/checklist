@@ -290,7 +290,8 @@ class AppDatabase {
     getWhatsappContactDirectory() {
         const res = this.db.exec(`
             SELECT c.id_rota, c.cliente, c.telefone1, c.telefone2,
-                COALESCE(r.nome, '') AS roteiro_nome
+                COALESCE(r.nome, '') AS roteiro_nome,
+                COALESCE(r.tipo_residuo, '') AS tipo_residuo
             FROM clientes c
             LEFT JOIN roteiros r ON r.id = c.roteiro_id
             WHERE c.ativo = 1
@@ -298,19 +299,16 @@ class AppDatabase {
                 CAST(REPLACE(TRIM(c.ordem), ',', '.') AS REAL), c.id_rota COLLATE NOCASE
         `);
         if (!res.length) return [];
-        return res[0].values.reduce((directory, values) => {
+        return res[0].values.map(values => {
             const cliente = Object.fromEntries(res[0].columns.map((column, index) => [column, values[index]]));
-            const phones = this._getWhatsappPhones(cliente);
-            if (phones.length) {
-                directory.push({
-                    idRota: String(cliente.id_rota),
-                    cliente: cliente.cliente,
-                    roteiroNome: cliente.roteiro_nome,
-                    phones
-                });
-            }
-            return directory;
-        }, []);
+            return {
+                idRota: String(cliente.id_rota),
+                cliente: cliente.cliente,
+                roteiroNome: cliente.roteiro_nome,
+                tipoResiduo: cliente.tipo_residuo,
+                phones: this._getWhatsappPhones(cliente)
+            };
+        });
     }
 
     _getWhatsappPhones(cliente) {

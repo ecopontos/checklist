@@ -16,7 +16,7 @@ function campaign() {
       coletaData: occurrence.data, message: `Mensagem congelada ${n}`, phones })) };
 }
 async function setup({ active = false, remote = { ok: true, data: [occurrence] },
-  storage = new Map(), contactDirectory = null } = {}) {
+  storage = new Map(), contactDirectory = null, networkReader = null } = {}) {
   assert.ok(fs.existsSync('whatsapp-sender.js'), 'o módulo externo da fila deve existir');
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(([, id]) => [id, {
     id, textContent: '', innerHTML: '', value: '', hidden: false, disabled: false,
@@ -26,33 +26,53 @@ async function setup({ active = false, remote = { ok: true, data: [occurrence] }
     addEventListener() {}, querySelectorAll: () => [] };
   let failPersistence = false;
   let remoteCalls = 0;
+  let importCalls = 0;
   const exported = [];
   const opened = [];
-  const window = { getTipoResiduoPorRoteiro: () => 'Orgânicos',
+  const window = {
     openWhatsappUrl: async url => { opened.push(url); } };
+  if (networkReader) window.__TAURI__ = { core: { invoke: async command => {
+    assert.equal(command, 'read_network_logradouros_csv');
+    importCalls++;
+    return networkReader();
+  } } };
   const context = vm.createContext({ console, window, document,
+    Uint8Array, TextEncoder, TextDecoder, atob, AbortController, setTimeout, clearTimeout,
     crypto: require('node:crypto').webcrypto,
     localStorage: { getItem: key => storage.get(key) ?? null, removeItem: key => storage.delete(key),
       setItem(key, value) { if (failPersistence) throw new Error('QuotaExceeded'); storage.set(key, value); } },
     initSqlJs: () => require('../vendor/sql-wasm.js')({ locateFile: file => path.resolve('vendor', file) }),
     XLSX: { utils: { json_to_sheet: rows => rows, book_new: () => ({}),
       book_append_sheet: (_, rows) => exported.push(...rows) }, writeFile() {} },
-    getIntercorrenciasAtuais: async () => { remoteCalls++; return typeof remote === 'function' ? remote() : remote; }
+    fetch: async url => {
+      assert.match(url, /\?action=intercorrenciasAtuais$/);
+      remoteCalls++;
+      const reply = await (typeof remote === 'function' ? remote() : remote);
+      return { ok: true, json: async () => ({ apiVersion: 11, source: 'intercorrenciasAtuais', ...reply }) };
+    }
   });
+  vm.runInContext(fs.readFileSync('config.js', 'utf8'), context);
+  if (html.includes('src="vendor/papaparse.min.js"')) {
+    vm.runInContext(fs.readFileSync('vendor/papaparse.min.js', 'utf8'), context);
+  }
   vm.runInContext(fs.readFileSync('database.js', 'utf8')
     .replace(/export default db;?/, 'globalThis.db = db;').replace(/^export /gm, ''), context);
   const db = context.db;
   await db.init();
+  db.addRoteiro('SAT01', 'Orgânicos');
   db.upsertCliente({ idRota: '42', idCliente: 'c1', Cliente: 'Cliente original', ativo: true,
     logradouro: 'Rua A', 'Número': '1', Complemento: '', CEP: '88000000', roteiro_id: 1, Ordem: 1,
     Telefone1: phones[0].digits, Telefone2: phones[1].digits });
   if (contactDirectory) db.getWhatsappContactDirectory = () => contactDirectory;
   if (active) db.createWhatsappCampaign(campaign());
+  vm.runInContext(fs.readFileSync('google-sync.js', 'utf8')
+    .replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, ''), context);
   vm.runInContext(fs.readFileSync('whatsapp-campaign.js', 'utf8').replace(/export /g, ''), context);
   vm.runInContext(fs.readFileSync('whatsapp-sender.js', 'utf8')
     .replace(/^import .*;\r?\n/gm, '').replace(/export /g, ''), context);
   elements.get('campaignMessage').value = 'Olá {nome}: {intercorrencia} em {data} ({residuo})';
   return { window, db, elements, opened, exported, storage, remoteCalls: () => remoteCalls,
+    importCalls: () => importCalls, setNetworkReader: value => { networkReader = value; },
     setRemote: value => { remote = value; }, fail: value => { failPersistence = value; } };
 }
 test('estrutura da fila, histórico e delegação externa', () => {
@@ -81,6 +101,7 @@ test('refresh concorrente faz uma consulta; falha mantém a última fila conheci
   h.setRemote(() => new Promise(resolve => { finish = resolve; }));
   const a = h.window.refreshWhatsappQueue();
   const b = h.window.refreshWhatsappQueue();
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.remoteCalls(), 2);
   finish({ ok: false, error: 'offline' });
   await Promise.all([a, b]);
@@ -239,7 +260,7 @@ test('controller abre, recarrega, confirma, adia, conclui e preserva campanha di
   await reloaded.window.deferCurrentWhatsapp();
   await reloaded.window.completeWhatsappCampaign();
   assert.equal(reloaded.db.getActiveWhatsappCampaign(), null);
-  assert.equal(reloaded.elements.get('queuePendingCount').textContent, '1');
+  assert.equal(reloaded.elements.get('queuePendingCount').textContent, '2');
   assert.ok(!reloaded.elements.get('queueList').innerHTML.includes('data-occurrence-id="occ-1"'));
   assert.match(reloaded.elements.get('queueList').innerHTML, /data-occurrence-id="occ-2"/);
   assert.match(reloaded.elements.get('queueList').innerHTML, /Sem telefone válido/);
@@ -293,3 +314,129 @@ test('falha ao criar ou concluir conserva seleção e campanha para nova tentati
   assert.equal(h.elements.get('campaignPanel').hidden, false);
   assert.equal(h.db.getWhatsappCampaignHistory().length, 0);
 });
+
+function networkCsv(phone = '48977770000', modified = 1000) {
+  const csv = 'Fonte;idRota;Inativo;Ordem;Roteiro;Cliente;logradouro;Número;CEP;Complemento;Telefone1;Telefone2;TipoResiduo\r\n' +
+    `SAT01-1;42;0;1;SAT01;Cliente atualizado;Rua A;1;88000000;;${phone};;Vidro`;
+  return { bytes_base64: Buffer.from('\ufeff' + csv, 'utf16le').toString('base64'), modified_time_ms: modified };
+}
+
+test('Pendentes inclui abertos, adiados e bloqueados; confirmação é a única redução', async () => {
+  const remote = { ok: true, data: [occurrence,
+    { ...occurrence, occurrenceId: 'occ-2' },
+    { ...occurrence, occurrenceId: 'blocked', idRota: '99' }] };
+  const h = await setup({ active: true, remote });
+  await h.window.initWhatsappSender();
+  assert.equal(h.elements.get('queuePendingCount').textContent, '3');
+  h.window.selectWhatsappPhone(1);
+  await h.window.openCurrentWhatsapp();
+  assert.equal(h.elements.get('queuePendingCount').textContent, '3');
+  assert.equal(h.elements.get('queueOpenedCount').textContent, '1');
+  const resumed = await setup({ storage: h.storage, remote });
+  await resumed.window.initWhatsappSender();
+  assert.equal(resumed.elements.get('queuePendingCount').textContent, '3');
+  assert.equal(resumed.elements.get('queueOpenedCount').textContent, '1');
+  await resumed.window.confirmCurrentWhatsapp();
+  assert.equal(resumed.elements.get('queuePendingCount').textContent, '2');
+  assert.equal(resumed.elements.get('queueOpenedCount').textContent, '0');
+  assert.equal(resumed.elements.get('queueConfirmedCount').textContent, '1');
+  await resumed.window.deferCurrentWhatsapp();
+  assert.equal(resumed.elements.get('queuePendingCount').textContent, '2');
+  assert.match(resumed.elements.get('campaignProgress').textContent, /1 confirmado\(s\), 1 adiado\(s\) de 2/);
+  await resumed.window.completeWhatsappCampaign();
+  assert.equal(resumed.elements.get('queuePendingCount').textContent, '2');
+});
+
+test('cadastro real sem telefone informa bloqueio por telefone, não cadastro ausente', async () => {
+  const h = await setup();
+  h.db.db.run("UPDATE clientes SET telefone1 = '', telefone2 = ''");
+  await h.window.initWhatsappSender();
+  assert.match(h.elements.get('queueList').innerHTML, /Sem telefone válido/);
+  assert.doesNotMatch(h.elements.get('queueList').innerHTML, /Cadastro não localizado/);
+  assert.equal(h.elements.get('queuePendingCount').textContent, '1');
+});
+
+test('importa cadastro na abertura e no refresh antes de criar mensagem e telefones da campanha', async () => {
+  const h = await setup({ networkReader: () => networkCsv() });
+  await h.window.initWhatsappSender();
+  assert.equal(h.importCalls(), 1);
+  assert.equal(h.db.getWhatsappContactDirectory()[0].phones[0].digits, '5548977770000');
+  h.setNetworkReader(() => networkCsv('48966660000', 2000));
+  await h.window.refreshWhatsappQueue();
+  assert.equal(h.importCalls(), 2);
+  h.window.toggleWhatsappOccurrence('occ-1', true);
+  await h.window.startWhatsappCampaign();
+  const saved = h.db.getActiveWhatsappCampaign();
+  assert.equal(saved.items[0].phones[0].digits, '5548966660000');
+  assert.equal(saved.items[0].message, 'Olá Cliente original: Bombona suja em 18/09/2026 (Vidro)');
+});
+
+test('campanha salva aparece antes do import e mantém snapshots após cadastro atualizado', async () => {
+  let finishImport;
+  const h = await setup({ active: true, networkReader: () => new Promise(resolve => { finishImport = resolve; }) });
+  const init = h.window.initWhatsappSender();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.elements.get('campaignPreview').textContent, 'Mensagem congelada 1');
+  assert.equal(h.remoteCalls(), 0);
+  assert.equal(h.importCalls(), 1);
+  assert.equal(h.elements.get('startCampaignButton').disabled, true);
+  finishImport(networkCsv());
+  await init;
+  assert.equal(h.db.getWhatsappContactDirectory()[0].phones[0].digits, '5548977770000');
+  assert.equal(h.elements.get('campaignPreview').textContent, 'Mensagem congelada 1');
+  assert.equal(h.db.getActiveWhatsappCampaign().items[0].phones[0].digits, phones[0].digits);
+});
+
+test('refresh único impede campanha com cadastro antigo enquanto import está pendente', async () => {
+  const h = await setup({ networkReader: () => networkCsv() });
+  await h.window.initWhatsappSender();
+  h.window.toggleWhatsappOccurrence('occ-1', true);
+  let finishImport;
+  h.setNetworkReader(() => new Promise(resolve => { finishImport = resolve; }));
+  const a = h.window.refreshWhatsappQueue();
+  const b = h.window.refreshWhatsappQueue();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.importCalls(), 2);
+  assert.equal(h.elements.get('startCampaignButton').disabled, true);
+  await h.window.startWhatsappCampaign();
+  assert.equal(h.db.getActiveWhatsappCampaign(), null);
+  finishImport(networkCsv('48966660000', 2000));
+  await Promise.all([a, b]);
+  assert.equal(h.remoteCalls(), 2);
+  await h.window.startWhatsappCampaign();
+  assert.equal(h.db.getActiveWhatsappCampaign().items[0].phones[0].digits, '5548966660000');
+});
+
+test('falha no import preserva última fila e campanha salva', async () => {
+  const h = await setup({ active: true, networkReader: () => networkCsv() });
+  await h.window.initWhatsappSender();
+  const before = h.elements.get('queueList').innerHTML;
+  const snapshot = JSON.stringify(h.db.getActiveWhatsappCampaign());
+  h.setNetworkReader(() => { throw new Error('cadastro offline'); });
+  h.setRemote({ ok: true, data: [] });
+  await h.window.refreshWhatsappQueue();
+  assert.match(h.elements.get('queueError').textContent, /cadastro offline/);
+  h.window.applyWhatsappFilters();
+  assert.equal(h.elements.get('queueList').innerHTML, before);
+  assert.equal(JSON.stringify(h.db.getActiveWhatsappCampaign()), snapshot);
+  assert.equal(h.remoteCalls(), 1);
+});
+
+for (const invalid of [null, false, 0, '']) {
+  test(`resposta com ${JSON.stringify(invalid)} preserva fila e campanha mesmo após refiltrar`, async () => {
+    const h = await setup({ active: true });
+    await h.window.initWhatsappSender();
+    const before = h.elements.get('queueList').innerHTML;
+    const snapshot = JSON.stringify(h.db.getActiveWhatsappCampaign());
+    h.setRemote({ ok: true, data: [{ ...occurrence, occurrenceId: 'nao-publicar' }, invalid] });
+    await h.window.refreshWhatsappQueue();
+    assert.match(h.elements.get('queueError').textContent, /ocorr.*incompleta/i);
+    h.window.applyWhatsappFilters();
+    assert.equal(h.elements.get('queueList').innerHTML, before);
+    assert.equal(JSON.stringify(h.db.getActiveWhatsappCampaign()), snapshot);
+    h.window.selectWhatsappPhone(1);
+    await h.window.openCurrentWhatsapp();
+    assert.equal(h.db.getActiveWhatsappCampaign().items[0].status, 'opened');
+    assert.doesNotMatch(h.elements.get('queueList').innerHTML, /nao-publicar/);
+  });
+}

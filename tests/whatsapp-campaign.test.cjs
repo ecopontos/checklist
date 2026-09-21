@@ -124,6 +124,14 @@ test('substitui todas as tags da mensagem sem diferenciar maiusculas', async () 
   );
 });
 
+test('fila enriquece resíduo pelo cadastro antes de formar a mensagem', async () => {
+  const { buildWhatsappQueue, buildWhatsappMessage } = await loadCampaignModule();
+  const [item] = buildWhatsappQueue({ occurrences: [occurrenceA],
+    contacts: [{ idRota: '1', tipoResiduo: 'Vidro', phones: frozenPhones }] });
+  assert.equal(item.residuo, 'Vidro');
+  assert.equal(buildWhatsappMessage('{nome}: {residuo}', item), 'A: Vidro');
+});
+
 test('interpola valores literalmente sem reinterpretar cifrões ou tags embutidas', async () => {
   const { buildWhatsappMessage } = await loadCampaignModule();
   const cliente = "Nome $& $$ $` $' {intercorrencia}";

@@ -116,3 +116,13 @@ test('sem URL retorna erro explicito sem consultar a rede', async () => {
   });
   assert.equal(requests.length, 0);
 });
+
+for (const invalid of [null, false, 0, '']) {
+  test(`rejeita ocorrência falsy ${JSON.stringify(invalid)} mesmo após item válido`, async () => {
+    const { sync } = await loadSyncModule([{ ok: true, apiVersion: 11,
+      source: 'intercorrenciasAtuais', data: [occurrence, invalid] }]);
+    const result = await sync.getIntercorrenciasAtuais();
+    assert.equal(result.ok, false);
+    assert.match(result.error, /ocorr.*incompleta/i);
+  });
+}

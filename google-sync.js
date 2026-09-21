@@ -253,7 +253,7 @@ export async function getIntercorrenciasAtuais() {
     if (!Array.isArray(result.data)) {
         return { ok: false, error: 'Resposta inválida: data ausente' };
     }
-    const invalid = result.data.find(item =>
+    const invalid = result.data.some(item =>
         !item || !item.occurrenceId || !item.idRota || !item.data || !item.intercorrencia
     );
     if (invalid) {
