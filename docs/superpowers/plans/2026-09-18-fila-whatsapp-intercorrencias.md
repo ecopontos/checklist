@@ -59,7 +59,7 @@
 - Produces: `getIntercorrenciasAtuais_() -> TextOutput` e `buildIntercorrenciasAtuais_(values) -> {data, quality}`.
 - Produces HTTP: `GET ?action=intercorrenciasAtuais -> {ok, apiVersion:11, source:'intercorrenciasAtuais', generatedAt, data, quality}`.
 
-- [ ] **Step 1: criar o teste falho da regra de consolidação**
+- [x] **Step 1: criar o teste falho da regra de consolidação**
 
 Em `tests/gas-whatsapp-current.test.cjs`, carregue `gas/Code.gs` em `vm`, forneça `Utilities.formatDate`, `Utilities.computeDigest`, `Utilities.DigestAlgorithm.SHA_256` e `Utilities.Charset.UTF_8`, e exercite a função pura com esta matriz:
 
@@ -88,13 +88,13 @@ assert.strictEqual(result.quality.excludedRecords, 1);
 
 Inclua dois registros legados idênticos em posições diferentes e confirme que ambos produzem o mesmo digest canônico.
 
-- [ ] **Step 2: executar o teste e confirmar a falha**
+- [x] **Step 2: executar o teste e confirmar a falha**
 
 Run: `node tests/gas-whatsapp-current.test.cjs`
 
 Expected: FAIL porque `buildIntercorrenciasAtuais_` não existe e a API ainda é 10.
 
-- [ ] **Step 3: implementar a consolidação pura e o endpoint**
+- [x] **Step 3: implementar a consolidação pura e o endpoint**
 
 Em `gas/Code.gs`:
 
@@ -155,7 +155,7 @@ if (params.action === 'intercorrenciasAtuais') {
 
 `getIntercorrenciasAtuais_` deve tolerar falha de `cache.get/put`, usar TTL 300 segundos, incluir `source`, `generatedAt` e `apiVersion`, e devolver `ok:false` em falha da planilha. Após um lote válido em `saveColetas_`, execute `CacheService.getScriptCache().remove(INTERCORRENCIAS_ATUAIS_CACHE_KEY)` dentro de `try/catch`.
 
-- [ ] **Step 4: testar endpoint, contrato antigo e invalidação**
+- [x] **Step 4: testar endpoint, contrato antigo e invalidação**
 
 No mesmo teste, monte `SheetMock` e `CacheService` com registro de `remove`. Verifique:
 
@@ -177,7 +177,7 @@ Run: `node tests/gas-whatsapp-current.test.cjs && node tests/gas-intercorrencias
 
 Expected: PASS.
 
-- [ ] **Step 5: documentar o endpoint e fazer commit**
+- [x] **Step 5: documentar o endpoint e fazer commit**
 
 Adicione ao `gas/README.md` o curl `?action=intercorrenciasAtuais`, o contrato API 11, a regra “última coleta por ponto” e a ressalva de que quantidade zero é aceita.
 
@@ -204,7 +204,7 @@ git commit -m "feat(gas): consolida intercorrencias atuais"
 - Produces: `completeWhatsappCampaign(campaignId,completedAt) -> void`.
 - Produces: `getConfirmedWhatsappOccurrenceIds() -> string[]` e `getWhatsappCampaignHistory() -> object[]`.
 
-- [ ] **Step 1: criar testes falhos de migração, retomada e idempotência**
+- [x] **Step 1: criar testes falhos de migração, retomada e idempotência**
 
 Em `tests/whatsapp-campaign-persistence.test.cjs`, use SQL.js real e `localStorage` simulado. Depois de `db.init()`, confirme as tabelas e crie uma campanha:
 
@@ -243,13 +243,13 @@ assert.strictEqual(db.getActiveWhatsappCampaign().items[0].confirmedAt, '2026-09
 
 Simule falha de `localStorage.setItem` durante uma transição e confirme que memória e armazenamento continuam em `pending`. Confirme também que uma segunda campanha ativa é rejeitada, uma campanha concluída aparece no histórico e itens `deferred` continuam sem ocorrência confirmada.
 
-- [ ] **Step 2: executar o teste e confirmar a falha**
+- [x] **Step 2: executar o teste e confirmar a falha**
 
 Run: `node --experimental-vm-modules tests/whatsapp-campaign-persistence.test.cjs`
 
 Expected: FAIL porque as tabelas e métodos ainda não existem.
 
-- [ ] **Step 3: criar schema e leitura normalizada**
+- [x] **Step 3: criar schema e leitura normalizada**
 
 Acrescente em `createTables()`:
 
@@ -285,7 +285,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_one_active ON whatsapp_campaigns(
 
 Implemente um leitor interno que converta `phones_snapshot` com `JSON.parse` e devolva nomes camelCase conforme as interfaces acima. `getWhatsappCampaignHistory()` devolve somente campanhas concluídas em `createdAt` decrescente, cada uma com seu array `items` completo; `getActiveWhatsappCampaign()` usa a mesma forma para a única campanha ativa.
 
-- [ ] **Step 4: implementar comandos atômicos e diretório de contatos**
+- [x] **Step 4: implementar comandos atômicos e diretório de contatos**
 
 Todos os comandos de escrita devem executar dentro de `_persistAtomic`. Valide UUIDs/IDs não vazios, data civil de `coletaData`, arrays de telefones, estados e transições permitidas:
 
@@ -300,7 +300,7 @@ const allowed = {
 
 Uma segunda confirmação retorna o item existente sem trocar `confirmed_at`. `completeWhatsappCampaign` aceita apenas campanha `active`; itens ainda `pending` impedem a conclusão, enquanto `deferred` é permitido. Extraia a normalização atual de telefone para um helper interno usado por `getContatosWhatsapp` e `getWhatsappContactDirectory`; o novo método agrupa `telefone1` e `telefone2` por `idRota` sem duplicar a regra.
 
-- [ ] **Step 5: executar regressões e fazer commit**
+- [x] **Step 5: executar regressões e fazer commit**
 
 Run: `node --experimental-vm-modules tests/whatsapp-campaign-persistence.test.cjs && node --experimental-vm-modules tests/whatsapp-contatos.test.cjs && node --experimental-vm-modules tests/coleta-persistence.test.cjs`
 
@@ -329,7 +329,7 @@ git commit -m "feat(db): persiste campanhas de WhatsApp"
 - Produces: `buildWhatsappQueue({occurrences, contacts, confirmedOccurrenceIds, activeItems}) -> queueItem[]`.
 - Produces: `summarizeWhatsappItems(items) -> {pending,opened,confirmed,deferred,blocked,total}`.
 
-- [ ] **Step 1: criar teste falho do contrato remoto**
+- [x] **Step 1: criar teste falho do contrato remoto**
 
 Em `tests/google-sync-whatsapp.test.cjs`, carregue `database.js` e `google-sync.js` por `vm.SourceTextModule`, configure a URL do GAS e faça o fetch devolver sucessivamente: resposta válida API 11, API 10, `source` incorreta, `data` ausente e item sem `occurrenceId`.
 
@@ -344,7 +344,7 @@ assert.strictEqual(old.ok, false);
 assert.match(old.error, /API 11/);
 ```
 
-- [ ] **Step 2: criar teste falho das regras da fila**
+- [x] **Step 2: criar teste falho das regras da fila**
 
 Em `tests/whatsapp-campaign.test.cjs`:
 
@@ -371,13 +371,13 @@ assert.ok(!queue.some(item => item.occurrenceId === 'occ-c'));
 
 Teste também as tags `{nome}`, `{intercorrencia}`, `{data}` e `{residuo}`, repetidas e sem diferenciar maiúsculas, e os seis contadores de `summarizeWhatsappItems`.
 
-- [ ] **Step 3: executar os testes e confirmar as falhas**
+- [x] **Step 3: executar os testes e confirmar as falhas**
 
 Run: `node --experimental-vm-modules tests/google-sync-whatsapp.test.cjs && node --experimental-vm-modules tests/whatsapp-campaign.test.cjs`
 
 Expected: FAIL por exports ausentes.
 
-- [ ] **Step 4: implementar validação remota e módulo puro**
+- [x] **Step 4: implementar validação remota e módulo puro**
 
 Em `google-sync.js`, valide sem lançar para o caller:
 
@@ -399,7 +399,7 @@ export async function getIntercorrenciasAtuais() {
 
 Em `whatsapp-campaign.js`, mantenha funções puras e sem DOM. `buildWhatsappQueue` deve preservar todos os itens da campanha ativa, inclusive `confirmed`, mesmo que não estejam mais na resposta remota; isso sustenta retomada e progresso. Para ocorrências fora da campanha ativa, remova as já confirmadas, use o diretório atual e crie estado `pending`. Prefira `phones` e snapshots congelados do item ativo. Ordene itens novos por data decrescente, depois roteiro e cliente, sem alterar os arrays recebidos.
 
-- [ ] **Step 5: executar regressões e fazer commit**
+- [x] **Step 5: executar regressões e fazer commit**
 
 Run: `node --experimental-vm-modules tests/google-sync-whatsapp.test.cjs && node --experimental-vm-modules tests/whatsapp-campaign.test.cjs && node --experimental-vm-modules tests/google-sync-intercorrencias.test.cjs`
 
@@ -428,7 +428,7 @@ git commit -m "feat(whatsapp): calcula fila consolidada"
 - Produces: `initWhatsappSender()`, `refreshWhatsappQueue()`, `startWhatsappCampaign()`, `openCurrentWhatsapp()`, `confirmCurrentWhatsapp()`, `deferCurrentWhatsapp()`, `completeWhatsappCampaign()`, `showWhatsappTab(tab)`, `exportWhatsappCampaign(campaignId)`.
 - Preserves: `window.openWhatsappUrl(url) -> Promise<void>` from `whatsapp-events.js`.
 
-- [ ] **Step 1: criar testes falhos da estrutura e das ações**
+- [x] **Step 1: criar testes falhos da estrutura e das ações**
 
 Em `tests/whatsapp-ui.test.cjs`, leia HTML/JS e verifique:
 
@@ -462,13 +462,13 @@ Atualize `tests/whatsapp-events.test.cjs` para despachar e esperar estas chamada
 ]
 ```
 
-- [ ] **Step 2: executar testes e confirmar as falhas**
+- [x] **Step 2: executar testes e confirmar as falhas**
 
 Run: `node tests/whatsapp-ui.test.cjs && node tests/whatsapp-events.test.cjs && node tests/whatsapp-open.test.cjs`
 
 Expected: FAIL porque a estrutura e as ações novas não existem.
 
-- [ ] **Step 3: substituir o fluxo de seleção de roteiros pela fila**
+- [x] **Step 3: substituir o fluxo de seleção de roteiros pela fila**
 
 Em `whatsapp-sender.html`, mantenha cabeçalho, tema e navegação. Substitua os quatro passos atuais por:
 
@@ -488,7 +488,7 @@ Use classes explícitas `status-pending`, `status-opened`, `status-confirmed`, `
 <script src="whatsapp-events.js"></script>
 ```
 
-- [ ] **Step 4: implementar inicialização e atualização segura**
+- [x] **Step 4: implementar inicialização e atualização segura**
 
 Em `whatsapp-sender.js`, exporte as funções listadas e também publique no `window` as usadas pelo delegador. A inicialização deve ocorrer nesta ordem:
 
@@ -505,13 +505,13 @@ export async function initWhatsappSender() {
 
 `refreshWhatsappQueue` usa uma variável `refreshPromise` para single-flight. Em falha, preserva `activeCampaign`, mostra `queueError` e não escreve “0 pendências”. Em sucesso, combina resposta, confirmados, diretório e campanha ativa; preenche filtros e renderiza conteúdo somente via `textContent` ou `escapeHtml`.
 
-- [ ] **Step 5: implementar campanha e máquina de estados visual**
+- [x] **Step 5: implementar campanha e máquina de estados visual**
 
 `startWhatsappCampaign` congela apenas itens selecionados e não bloqueados, gera UUIDs antes da persistência e chama `db.createWhatsappCampaign` uma única vez. Se já houver campanha ativa, a tela oferece retomada e não cria outra. `openCurrentWhatsapp` exige telefone selecionado, aguarda `window.openWhatsappUrl`, e só então persiste `opened`; se a abertura falhar, mantém `pending`. Se a persistência falhar depois da abertura externa, mostra erro explícito, mantém a tela no item e não o chama de aberto ou enviado. `confirmCurrentWhatsapp` só habilita em `opened` e chama a transição `confirmed`. `deferCurrentWhatsapp` chama `deferred` e avança somente depois de persistir.
 
 Quando todos os itens forem `confirmed` ou `deferred`, exiba **Concluir campanha**. Ao concluir, chame o banco, recarregue histórico e reconcilie a fila: confirmados desaparecem e adiados continuam disponíveis. O histórico usa snapshots e `exportWhatsappCampaign` gera XLSX com campanha, ocorrência, cliente, roteiro, data, status, telefone, abertura, confirmação e mensagem.
 
-- [ ] **Step 6: ampliar o delegador de eventos e testar**
+- [x] **Step 6: ampliar o delegador de eventos e testar**
 
 Em `whatsapp-events.js`, mapeie `data-action` sem handlers inline:
 
@@ -533,7 +533,7 @@ Run: `node tests/whatsapp-ui.test.cjs && node tests/whatsapp-events.test.cjs && 
 
 Expected: PASS.
 
-- [ ] **Step 7: fazer commit**
+- [x] **Step 7: fazer commit**
 
 ```bash
 git add whatsapp-sender.html whatsapp-sender.js whatsapp-events.js tests/whatsapp-ui.test.cjs tests/whatsapp-events.test.cjs tests/whatsapp-open.test.cjs
@@ -555,7 +555,7 @@ git commit -m "feat(whatsapp): exibe fila e historico local"
 - Consumes: todos os testes e módulos das Tasks 1–4.
 - Produces: comando padrão cobrindo a funcionalidade e artefatos frontend atualizados.
 
-- [ ] **Step 1: adicionar as regressões ao comando padrão**
+- [x] **Step 1: adicionar as regressões ao comando padrão**
 
 Acrescente ao script `test`, junto das suítes existentes:
 
@@ -567,13 +567,13 @@ node --experimental-vm-modules tests/whatsapp-campaign.test.cjs
 node tests/whatsapp-ui.test.cjs
 ```
 
-- [ ] **Step 2: executar a suíte completa**
+- [x] **Step 2: executar a suíte completa**
 
 Run: `npm test`
 
 Expected: exit code 0, todas as suítes anteriores e cinco novas passando.
 
-- [ ] **Step 3: verificar sintaxe e contratos distribuídos**
+- [x] **Step 3: verificar sintaxe e contratos distribuídos**
 
 Run:
 
@@ -590,7 +590,7 @@ Depois compare SHA-256 de `whatsapp-sender.html`, `whatsapp-sender.js`, `whatsap
 
 Expected: sintaxe válida, hashes iguais, imports resolvidos e nenhum ID duplicado.
 
-- [ ] **Step 4: executar revisão funcional controlada**
+- [x] **Step 4: executar revisão funcional controlada**
 
 Com mocks ou ambiente local, confirme esta sequência sem tocar produção:
 
@@ -602,11 +602,11 @@ Com mocks ou ambiente local, confirme esta sequência sem tocar produção:
 6. devolver nova `occurrenceId` para o primeiro ponto e verificar seu retorno;
 7. simular GAS API 10 e confirmar erro explícito sem zerar a fila.
 
-- [ ] **Step 5: atualizar evidências e fazer revisão independente**
+- [x] **Step 5: atualizar evidências e fazer revisão independente**
 
 Marque as tarefas concluídas neste plano e acrescente comandos/resultados reais. Atualize a especificação apenas se a implementação alterar um contrato aprovado. Faça revisão focada em falsos “enviados”, perda de campanha, identidade de ocorrência, conteúdo HTML não escapado e regressões no sync de coletas.
 
-- [ ] **Step 6: fazer commit final de integração**
+- [x] **Step 6: fazer commit final de integração**
 
 ```bash
 git add package.json docs/superpowers/specs/2026-09-18-fila-whatsapp-intercorrencias-design.md docs/superpowers/plans/2026-09-18-fila-whatsapp-intercorrencias.md
@@ -626,3 +626,17 @@ git commit -m "test(whatsapp): integra fila de intercorrencias"
 - Histórico e exportação são separados por campanha e permanecem locais.
 - `npm test`, sintaxe, `prepare-dist`, hashes, imports e IDs passam.
 - GAS API 11 e frontend ficam prontos para publicação conjunta, sem publicar automaticamente.
+
+## Evidências de conclusão — 2026-09-21
+
+- Tasks 1–4: implementadas e revisadas nos commits `83f6c3f`, `70f76cc`, `08c959f`, `00daab3`, `11ad835` e `b9822ee`.
+- `npm test`: exit 0; comando padrão completo passou, incluindo as cinco novas suítes (29 subtestes da feature: 1 + 9 + 3 + 5 + 11).
+- `node --check database.js google-sync.js whatsapp-campaign.js whatsapp-sender.js whatsapp-events.js`: cinco arquivos válidos, todos com exit 0.
+- `npm run prepare-dist`: exit 0; `dist/` regenerado. SHA-256 idêntico entre origem e distribuição para os seis arquivos exigidos.
+- `vm.SourceTextModule`: grafo de `dist/whatsapp-sender.js` ligado com quatro módulos (`whatsapp-sender.js`, `database.js`, `google-sync.js`, `whatsapp-campaign.js`).
+- HTML distribuído após remoção de `<script>`: 32 IDs e nenhuma duplicata.
+- Revisão funcional controlada: 7/7 passos passaram com SQLite real, módulos reais e GAS simulado; API 10 retornou erro explícito e preservou a fila local.
+- Revisão focada: nenhuma abertura foi contada como confirmação; campanha e snapshots sobreviveram à recarga; confirmação filtrou por `occurrenceId`; nova ocorrência do mesmo ponto retornou; conteúdo malicioso permaneceu escapado; regressões de sincronização de coletas passaram no comando padrão.
+- Distribuição: nenhum GAS foi publicado e nenhum instalador foi gerado ou distribuído. A especificação não foi alterada porque a implementação não mudou o contrato aprovado.
+- Minor deferido para revisão final: `buildWhatsappMessage` usa replacement strings sucessivas e pode interpretar sequências especiais de `$` ou tags presentes nos valores.
+- Minor deferido para revisão final: o estado `opened` é apresentado como `Aberto`; o contrato o descreve como `Aguardando confirmação`, embora a confirmação continue manual e separada.
