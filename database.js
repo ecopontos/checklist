@@ -170,6 +170,19 @@ class AppDatabase {
         localStorage.setItem('app3_db', JSON.stringify(array));
     }
 
+    _persistAtomic(action) {
+        const before = this.db.export();
+        try {
+            const result = action();
+            this.save();
+            return result;
+        } catch (error) {
+            this.db.close();
+            this.db = new this.SQL.Database(before);
+            throw error;
+        }
+    }
+
     // --- Roteiros ---
     addRoteiro(nome, tipoResiduo = '') {
         this.db.run(`
