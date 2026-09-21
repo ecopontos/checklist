@@ -333,6 +333,35 @@
     font-size: 13px;
     color: var(--text-dim);
   }
+
+  /* Fila de intercorrências */
+  [hidden] { display: none !important; }
+  main { width: 100%; max-width: 680px; }
+  .queue-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 20px; }
+  .queue-tabs, .queue-actions, .queue-filters, .queue-counts { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  .queue-tabs button[aria-selected="true"] { color: var(--green); border-color: var(--green); }
+  .queue-counts > div { flex: 1; min-width: 120px; padding: 14px; background: var(--surface2); border-radius: 8px; }
+  .queue-counts strong { display: block; font-size: 26px; }
+  .queue-counts span, .queue-meta { color: var(--text-dim); font-size: 13px; }
+  .queue-error { color: #fca5a5; margin: 12px 0; white-space: pre-wrap; }
+  .queue-row, .history-item { border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin: 12px 0; overflow-wrap: anywhere; }
+  .queue-row label { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+  .queue-row input { margin-top: 4px; }
+  .queue-row p, .history-item p { margin-top: 6px; white-space: pre-wrap; }
+  .status-pending { border-left: 4px solid #94a3b8; }
+  .status-opened { border-left: 4px solid #60a5fa; }
+  .status-confirmed { border-left: 4px solid var(--green); }
+  .status-deferred { border-left: 4px solid #f59e0b; }
+  .status-blocked { border-left: 4px solid #f87171; }
+  .queue-filters label { flex: 1; min-width: 180px; }
+  .queue-filters input, .queue-filters select { display: block; width: 100%; padding: 10px; margin-top: 6px; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; }
+  .queue-panel h2 { margin-bottom: 12px; font-size: 18px; }
+  .queue-panel h3 { margin: 12px 0; }
+  .queue-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; background: var(--surface2); padding: 16px; margin: 16px 0; border-radius: 8px; }
+  .queue-panel textarea { min-height: 170px; margin: 12px 0; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button[aria-pressed="true"] { color: var(--green); border-color: var(--green); }
+  summary { cursor: pointer; padding: 12px 0; }
 </style>
 <link rel="stylesheet" href="theme.css">
 <script src="theme.js"></script>
@@ -347,478 +376,71 @@
   </div>
 </header>
 
-<!-- PROGRESS BAR -->
-<div class="progress-wrap" id="progressWrap">
-  <div class="progress-info">
-    <span id="progressLabel">0 / 0 enviados</span>
-    <span id="progressPct">0%</span>
+<main>
+  <div class="queue-tabs" role="tablist" aria-label="WhatsApp">
+    <button id="queueTabButton" class="btn btn-outline" role="tab" aria-selected="true" aria-controls="queueTab" data-action="mostrar-aba" data-tab="queue">Fila atual</button>
+    <button id="historyTabButton" class="btn btn-outline" role="tab" aria-selected="false" aria-controls="historyTab" data-action="mostrar-aba" data-tab="history">Histórico</button>
   </div>
-  <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
-</div>
-
-<!-- STEP 1: SELECT ROUTES -->
-<div class="step active" id="step1">
-  <div class="step-label">Passo 01</div>
-  <h2>Selecionar roteiro(s)</h2>
-
-  <div class="hint" id="roteirosLoading">Carregando roteiros...</div>
-  <div class="col-list" id="roteiroChips" style="display:none;"></div>
-
-  <div id="previewWrap"></div>
-
-  <div class="field" id="intercorrenciaWrap" style="display:none; margin-bottom:0;">
-    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--text-dim);">
-      <input type="checkbox" id="chkIntercorrencia" onchange="toggleSomenteIntercorrencia()">
-      Só com intercorrência (última coleta)
-    </label>
-    <div class="hint" id="intercorrenciaStatus" style="display:none; margin-top:8px;"></div>
-  </div>
-
-  <div class="actions">
-    <button class="btn btn-primary" id="btnToMsg" disabled>Próximo →</button>
-  </div>
-</div>
-
-<!-- STEP 2: MESSAGE -->
-<div class="step" id="step2">
-  <div class="step-label">Passo 02</div>
-  <h2>Mensagem</h2>
-
-  <div class="field">
-    <label class="field-label">Texto da mensagem</label>
-    <textarea id="msgText" placeholder="Digite ou cole a mensagem aqui..."></textarea>
-    <div class="tag-hint">Use <code>{nome}</code>, <code>{intercorrencia}</code>, <code>{data}</code> (data da coleta com problema) e <code>{residuo}</code> (tipo de resíduo do roteiro) para personalizar a mensagem.</div>
-  </div>
-
-  <div class="actions">
-    <button class="btn btn-primary" id="btnStart">Iniciar disparos →</button>
-    <button class="btn btn-outline" onclick="goTo(1)">← Voltar</button>
-  </div>
-</div>
-
-<!-- STEP 3: SEND -->
-<div class="step" id="step3">
-  <div class="step-label">Passo 03</div>
-
-  <div class="nav-row">
-    <span class="nav-counter" id="navCounter"></span>
-    <div style="display:flex;gap:8px;">
-      <button class="btn btn-outline" id="btnPrev" onclick="navigate(-1)">←</button>
-      <button class="btn btn-outline" id="btnNext" onclick="navigate(1)">→</button>
+  <section id="queueTab" role="tabpanel" aria-labelledby="queueTabButton">
+    <div class="queue-counts" aria-live="polite">
+      <div><strong id="queuePendingCount">—</strong><span>Pendentes</span></div>
+      <div><strong id="queueOpenedCount">—</strong><span>Abertos</span></div>
+      <div><strong id="queueConfirmedCount">—</strong><span>Confirmados</span></div>
     </div>
-  </div>
-
-  <div class="contact-card" id="contactCard">
-    <div>
-      <div class="contact-name" id="curName">—</div>
-      <div class="contact-phone" id="curPhone">—</div>
+    <section class="queue-panel">
+      <h2>Intercorrências atuais</h2>
+      <p id="queueSource" class="queue-meta" aria-live="polite">Consultando a fonte de intercorrências...</p>
+      <p id="queueError" class="queue-error" role="alert" hidden></p>
+      <button id="refreshQueueButton" class="btn btn-outline" data-action="atualizar-fila">Atualizar fila</button>
+      <div class="queue-filters">
+        <label>Buscar cliente ou intercorrência<input id="queueSearch" type="search" placeholder="Buscar na fila"></label>
+        <label>Roteiro<select id="queueRouteFilter" data-change-action="filtrar-fila"><option value="">Todos os roteiros</option></select></label>
+      </div>
+      <p id="queueSelection" class="queue-meta" aria-live="polite"></p>
+      <div id="queueList"></div>
+    </section>
+    <section id="campaignComposer" class="queue-panel">
+      <h2>Preparar campanha</h2>
+      <label for="campaignMessage">Mensagem para os itens selecionados</label>
+      <textarea id="campaignMessage">Olá, {nome}! Na coleta de {residuo} do dia {data}, registramos: {intercorrencia}. Podemos conversar sobre isso?</textarea>
+      <p class="tag-hint">Tags: <code>{nome}</code> <code>{intercorrencia}</code> <code>{data}</code> <code>{residuo}</code></p>
+      <p class="hint">Cada ocorrência é um envio, mesmo quando o cliente tem dois telefones. Escolha o telefone ao abrir.</p>
+      <button id="startCampaignButton" class="btn btn-primary" data-action="iniciar-campanha" disabled>Iniciar campanha</button>
+    </section>
+    <p id="campaignError" class="queue-error" role="alert" hidden></p>
+    <section id="campaignPanel" class="queue-panel" hidden>
+      <h2>Campanha em andamento</h2>
+      <p id="campaignProgress" class="queue-meta" aria-live="polite"></p>
+      <div id="campaignCurrent">
+        <h3 id="campaignClient"></h3>
+        <p id="campaignOccurrence"></p>
+        <p id="campaignStatus" aria-live="polite"></p>
+        <p class="hint">Escolha um telefone:</p>
+        <div id="campaignPhones" class="queue-actions"></div>
+        <pre id="campaignPreview"></pre>
+        <div class="queue-actions">
+          <button id="openWhatsappButton" class="btn btn-whatsapp" data-action="abrir-whatsapp" disabled>Abrir no WhatsApp</button>
+          <button id="confirmWhatsappButton" class="btn btn-primary" data-action="confirmar-envio" disabled>Confirmar envio manual</button>
+          <button id="deferWhatsappButton" class="btn btn-outline" data-action="adiar-envio">Adiar</button>
+        </div>
+        <p class="hint">Abrir o WhatsApp não confirma envio. Confirme aqui somente depois de enviar a mensagem.</p>
+      </div>
+      <button id="completeCampaignButton" class="btn btn-primary" data-action="concluir-campanha" hidden>Concluir campanha</button>
+    </section>
+  </section>
+  <section id="historyTab" role="tabpanel" aria-labelledby="historyTabButton" hidden>
+    <div class="queue-panel">
+      <h2>Histórico local</h2>
+      <p class="hint">As campanhas guardam o cliente, a ocorrência, a mensagem e os telefones usados na ocasião.</p>
+      <div id="campaignHistory"></div>
     </div>
-    <span class="contact-status status-pending" id="curStatus">Pendente</span>
-  </div>
-
-  <div class="msg-preview" id="msgPreview"></div>
-
-  <button class="btn btn-whatsapp" id="btnWA" onclick="openWA()">
-    📲 Abrir no WhatsApp
-  </button>
-
-  <div class="actions" style="margin-top:14px; justify-content:space-between;">
-    <div style="display:flex;gap:8px;">
-      <button class="btn btn-outline" onclick="markSkip()">Pular ↷</button>
-      <button class="btn btn-outline" onclick="markSent()" style="color:var(--green);border-color:var(--green);">✓ Marcar enviado</button>
-    </div>
-    <button class="btn btn-outline" onclick="goTo(2)" style="font-size:12px;">Editar mensagem</button>
-  </div>
-
-  <div id="historySection" style="margin-top:28px;">
-    <div class="step-label" style="margin-bottom:12px;">Todos os contatos</div>
-    <div id="historyList"></div>
-  </div>
-</div>
-
-<!-- STEP 4: DONE -->
-<div class="step" id="step4">
-  <div class="step-label">Concluído ✓</div>
-  <h2>Disparo finalizado!</h2>
-  <div class="summary-grid">
-    <div class="summary-card"><div class="summary-number n-sent" id="sumSent">0</div><div class="summary-label">Enviados</div></div>
-    <div class="summary-card"><div class="summary-number n-skip" id="sumSkip">0</div><div class="summary-label">Pulados</div></div>
-    <div class="summary-card"><div class="summary-number n-total" id="sumTotal">0</div><div class="summary-label">Total</div></div>
-  </div>
-  <div class="actions" style="margin-top:24px;">
-    <button class="btn btn-primary" onclick="restart()">Novo disparo</button>
-    <button class="btn btn-outline" onclick="exportCSV()">Exportar resultado CSV</button>
-  </div>
-</div>
-
+  </section>
+</main>
 <script src="vendor/xlsx.full.min.js"></script>
 <script src="vendor/sql-wasm.js"></script>
-<script type="module">
-import db from './database.js';
-import { getIntercorrenciasRoteiro } from './google-sync.js';
-
-// ── STATE ──
-let allRoteiros = [];             // [{id, nome}]
-let selectedRoteiroIds = new Set();
-let excludedKeys = new Set();     // chaves "idRota:slot" desmarcadas manualmente no passo 1
-let contacts = [];                // [{idRota, slot, nome, labelSufixo, telefoneExibicao, telefoneDigits, roteiroNome}]
-let statuses = [];                // 'pending' | 'sent' | 'skip', paralelo a contacts
-let current  = 0;
-let message  = '';
-let somenteIntercorrencia = false;
-let intercorrenciasPorIdRota = new Map(); // idRota (string) -> { intercorrencia, data }
-let intercorrenciasCarregadas = new Set(); // nomes de roteiro ja buscados nesta sessao
-
-// ── HELPERS ──
-function escapeHtml(value) {
-  const div = document.createElement('div');
-  div.textContent = String(value ?? '');
-  return div.innerHTML;
-}
-
-// ── NAVIGATION ──
-function goTo(n) {
-  document.querySelectorAll('.step').forEach((s,i) => s.classList.toggle('active', i === n-1));
-}
-window.goTo = goTo;
-
-// ── STEP 1: SELECT ROUTES ──
-function buildPendingContacts() {
-  const list = [];
-  selectedRoteiroIds.forEach(id => {
-    db.getContatosWhatsapp(id).forEach(c => list.push(c));
-  });
-  const countByIdRota = {};
-  list.forEach(c => { countByIdRota[c.idRota] = (countByIdRota[c.idRota] || 0) + 1; });
-  list.forEach(c => {
-    c.labelSufixo = countByIdRota[c.idRota] > 1 ? ` (tel ${c.slot})` : '';
-    c.key = `${c.idRota}:${c.slot}`;
-  });
-  return list;
-}
-
-function getVisibleContacts() {
-  return buildPendingContacts().filter(c => !somenteIntercorrencia || intercorrenciasPorIdRota.has(c.idRota));
-}
-
-// Busca no GAS as intercorrencias dos roteiros selecionados que ainda nao
-// foram carregados nesta sessao. Retorna false (e mostra erro) se alguma
-// busca falhar ou vier em formato inesperado — isso acontece quando o GAS
-// ainda nao foi redeployado com a action intercorrenciasRoteiro: o doGet cai
-// no fallback padrao (getRoteirosFlat_, que devolve `rows`, nao `data`), e a
-// checagem Array.isArray(res.data) pega exatamente esse caso.
-async function ensureIntercorrenciasCarregadas() {
-  const statusEl = document.getElementById('intercorrenciaStatus');
-  const faltantes = [...selectedRoteiroIds]
-    .map(id => allRoteiros.find(r => r.id === id))
-    .filter(r => r && !intercorrenciasCarregadas.has(r.nome));
-
-  if (!faltantes.length) return true;
-
-  statusEl.style.display = 'block';
-  statusEl.textContent = 'Buscando intercorrências...';
-  document.getElementById('btnToMsg').disabled = true;
-
-  for (const roteiro of faltantes) {
-    const res = await getIntercorrenciasRoteiro(roteiro.nome);
-    if (!res || res.ok !== true || !Array.isArray(res.data)) {
-      statusEl.textContent = 'Não foi possível buscar intercorrências agora (verifique a conexão ou se o GAS foi atualizado). Tente novamente.';
-      return false;
-    }
-    res.data.forEach(item => {
-      if (item && item.id_rota) {
-        intercorrenciasPorIdRota.set(String(item.id_rota), item);
-      }
-    });
-    intercorrenciasCarregadas.add(roteiro.nome);
-  }
-  statusEl.style.display = 'none';
-  return true;
-}
-
-function renderRoteiroChips() {
-  const wrap = document.getElementById('roteiroChips');
-  wrap.innerHTML = allRoteiros.map(r => {
-    const count = db.getContatosWhatsapp(r.id).length;
-    const selected = selectedRoteiroIds.has(r.id) ? 'selected' : '';
-    return `<div class="col-chip ${selected}" data-id="${r.id}" onclick="toggleRoteiro(${r.id})">${escapeHtml(r.nome)} · ${count}</div>`;
-  }).join('');
-}
-
-function renderContactPreview() {
-  const full = buildPendingContacts();
-  const list = full.filter(c => !somenteIntercorrencia || intercorrenciasPorIdRota.has(c.idRota));
-  const wrap = document.getElementById('previewWrap');
-  const btn = document.getElementById('btnToMsg');
-
-  if (!list.length) {
-    wrap.innerHTML = (somenteIntercorrencia && full.length)
-      ? '<div class="hint">Nenhum cliente com intercorrência registrada neste(s) roteiro(s).</div>'
-      : '';
-    btn.disabled = true;
-    return;
-  }
-
-  const colIntercorrenciaHeader = somenteIntercorrencia ? '<th>Intercorrência</th>' : '';
-  wrap.innerHTML = `<table class="preview-table"><thead><tr>
-      <th></th><th>Nome</th><th>Telefone</th><th>Roteiro</th>${colIntercorrenciaHeader}
-    </tr></thead><tbody>` +
-    list.map(c => {
-      const intercorrenciaCel = somenteIntercorrencia
-        ? `<td>${escapeHtml((intercorrenciasPorIdRota.get(c.idRota) || {}).intercorrencia || '')}</td>`
-        : '';
-      return `<tr>
-      <td><input type="checkbox" ${excludedKeys.has(c.key) ? '' : 'checked'} onchange="toggleContact('${c.key}')"></td>
-      <td>${escapeHtml(c.nome)}${escapeHtml(c.labelSufixo)}</td>
-      <td style="font-family:'DM Mono',monospace">${escapeHtml(c.telefoneExibicao || '—')}</td>
-      <td>${escapeHtml(c.roteiroNome)}</td>${intercorrenciaCel}
-    </tr>`;
-    }).join('') +
-    `</tbody></table>`;
-
-  const incluidos = list.filter(c => !excludedKeys.has(c.key));
-  btn.disabled = incluidos.length === 0;
-}
-
-async function toggleRoteiro(id) {
-  if (selectedRoteiroIds.has(id)) selectedRoteiroIds.delete(id);
-  else selectedRoteiroIds.add(id);
-  renderRoteiroChips();
-  document.getElementById('intercorrenciaWrap').style.display = selectedRoteiroIds.size ? 'block' : 'none';
-
-  if (somenteIntercorrencia) {
-    const ok = await ensureIntercorrenciasCarregadas();
-    if (!ok) {
-      document.getElementById('chkIntercorrencia').checked = false;
-      somenteIntercorrencia = false;
-    }
-  }
-  renderContactPreview();
-}
-window.toggleRoteiro = toggleRoteiro;
-
-async function toggleSomenteIntercorrencia() {
-  const checkbox = document.getElementById('chkIntercorrencia');
-  somenteIntercorrencia = checkbox.checked;
-
-  if (somenteIntercorrencia) {
-    const ok = await ensureIntercorrenciasCarregadas();
-    if (!ok) {
-      checkbox.checked = false;
-      somenteIntercorrencia = false;
-      renderContactPreview();
-      return;
-    }
-  }
-  renderContactPreview();
-}
-window.toggleSomenteIntercorrencia = toggleSomenteIntercorrencia;
-
-function toggleContact(key) {
-  if (excludedKeys.has(key)) excludedKeys.delete(key);
-  else excludedKeys.add(key);
-  renderContactPreview();
-}
-window.toggleContact = toggleContact;
-
-document.getElementById('btnToMsg').onclick = () => {
-  const list = getVisibleContacts().filter(c => !excludedKeys.has(c.key));
-  if (!list.length) { alert('Selecione ao menos um contato.'); return; }
-  contacts = list;
-  statuses = new Array(contacts.length).fill('pending');
-  goTo(2);
-};
-
-// ── STEP 2: MESSAGE ──
-const DEFAULT_MSG = `Boa tarde! 📢
-A partir do dia 07 de abril, iniciaremos a coleta seletiva de orgânicos no Centro Leste, nos períodos vespertino e noturno. Essa iniciativa faz parte do programa Florianópolis Capital Lixo Zero.
-
-Como participar:
-O estabelecimento deve adquirir bombonas plásticas de 50L para o descarte dos restos alimentares.
-É necessário comprar o dobro da sua necessidade diária (um jogo titular e um reserva), pois nossa equipe levará as cheias e deixará bombonas vazias e higienizadas no local.
-
-Nesta e na próxima semana, a equipe de Educação Ambiental visitará a região para realizar a capacitação. Contamos com a sua colaboração para tornarmos nossa cidade mais sustentável!
-
-Em breve, enviaremos mais detalhes. ♻️`;
-
-document.getElementById('msgText').value = DEFAULT_MSG;
-
-document.getElementById('btnStart').onclick = () => {
-  message = document.getElementById('msgText').value.trim();
-  if (!message) { alert('Digite a mensagem.'); return; }
-  current = 0;
-  renderSendStep();
-  document.getElementById('progressWrap').classList.add('active');
-  goTo(3);
-  updateProgress();
-};
-
-// ── STEP 3: SEND ──
-function renderSendStep() {
-  renderCurrentContact();
-  renderHistory();
-}
-
-function formatDateBR(dateStr) {
-  if (!dateStr) return '';
-  const [ano, mes, dia] = dateStr.split('-');
-  return `${dia}/${mes}/${ano}`;
-}
-
-function buildMsg(contact) {
-  const nome = contact.nome || 'estabelecimento';
-  const registro = intercorrenciasPorIdRota.get(contact.idRota) || {};
-  const intercorrencia = registro.intercorrencia || '';
-  const data = formatDateBR(registro.data || '');
-  const residuo = contact.tipoResiduo || '';
-  return message
-    .replace(/\{nome\}/gi, nome)
-    .replace(/\{intercorrencia\}/gi, intercorrencia)
-    .replace(/\{data\}/gi, data)
-    .replace(/\{residuo\}/gi, residuo);
-}
-
-function renderCurrentContact() {
-  if (current >= contacts.length) { finishAll(); return; }
-  const contact = contacts[current];
-  document.getElementById('curName').textContent  = contact.nome || '—';
-  document.getElementById('curPhone').textContent = contact.telefoneExibicao || '—';
-  document.getElementById('navCounter').textContent = `${current + 1} / ${contacts.length}`;
-
-  const s = statuses[current];
-  const statusEl = document.getElementById('curStatus');
-  statusEl.textContent = s === 'sent' ? 'Enviado ✓' : s === 'skip' ? 'Pulado' : 'Pendente';
-  statusEl.className = `contact-status status-${s === 'pending' ? 'pending' : s === 'sent' ? 'sent' : 'skip'}`;
-
-  document.getElementById('msgPreview').textContent = buildMsg(contact);
-  document.getElementById('btnPrev').disabled = current === 0;
-  document.getElementById('btnNext').disabled = current === contacts.length - 1;
-}
-
-function navigate(dir) {
-  current = Math.max(0, Math.min(contacts.length - 1, current + dir));
-  renderCurrentContact();
-}
-window.navigate = navigate;
-
-async function openWA() {
-  const openedIndex = current;
-  const contact = contacts[openedIndex];
-  const text = encodeURIComponent(buildMsg(contact));
-  const url = `https://wa.me/${contact.telefoneDigits}?text=${text}`;
-  if (window.__TAURI_INTERNALS__) {
-    await window.__TAURI_INTERNALS__.invoke('plugin:shell|open', { url });
-  } else {
-    window.open(url, '_blank');
-  }
-  // auto-mark sent after opening — só se o usuário ainda estiver no mesmo
-  // contato (senão marcaria como enviado um contato para o qual ele já
-  // navegou, e não o que de fato foi aberto no WhatsApp).
-  setTimeout(() => { if (current === openedIndex && statuses[openedIndex] === 'pending') markSent(); }, 1200);
-}
-window.openWA = openWA;
-
-function markSent() {
-  statuses[current] = 'sent';
-  renderCurrentContact();
-  renderHistory();
-  updateProgress();
-  if (current < contacts.length - 1) setTimeout(() => { current++; renderCurrentContact(); }, 400);
-  else finishAll();
-}
-window.markSent = markSent;
-
-function markSkip() {
-  statuses[current] = 'skip';
-  renderCurrentContact();
-  renderHistory();
-  updateProgress();
-  if (current < contacts.length - 1) { current++; renderCurrentContact(); }
-  else finishAll();
-}
-window.markSkip = markSkip;
-
-function updateProgress() {
-  const sent  = statuses.filter(s => s === 'sent').length;
-  const done  = statuses.filter(s => s !== 'pending').length;
-  const total = contacts.length;
-  const pct   = total ? Math.round(done / total * 100) : 0;
-  document.getElementById('progressLabel').textContent = `${sent} enviados · ${done} / ${total} processados`;
-  document.getElementById('progressPct').textContent   = pct + '%';
-  document.getElementById('progressFill').style.width  = pct + '%';
-}
-
-function renderHistory() {
-  const list = document.getElementById('historyList');
-  list.innerHTML = contacts.map((contact, i) => {
-    const s = statuses[i];
-    const active = i === current ? 'border-color:var(--green);' : '';
-    return `<div class="contact-card" style="cursor:pointer;${active}" onclick="jumpTo(${i})">
-      <div>
-        <div class="contact-name" style="font-size:14px">${escapeHtml(contact.nome || '—')}${escapeHtml(contact.labelSufixo)}</div>
-        <div class="contact-phone">${escapeHtml(contact.telefoneExibicao || '—')}</div>
-      </div>
-      <span class="contact-status status-${s === 'pending' ? 'pending' : s === 'sent' ? 'sent' : 'skip'}">
-        ${s === 'sent' ? '✓ Enviado' : s === 'skip' ? 'Pulado' : 'Pendente'}
-      </span>
-    </div>`;
-  }).join('');
-}
-
-function jumpTo(i) { current = i; renderCurrentContact(); }
-window.jumpTo = jumpTo;
-
-function finishAll() {
-  const allDone = statuses.every(s => s !== 'pending');
-  if (allDone) {
-    document.getElementById('sumSent').textContent  = statuses.filter(s => s === 'sent').length;
-    document.getElementById('sumSkip').textContent  = statuses.filter(s => s === 'skip').length;
-    document.getElementById('sumTotal').textContent = contacts.length;
-    setTimeout(() => goTo(4), 600);
-  }
-}
-
-// ── EXPORT ──
-function exportCSV() {
-  const out = contacts.map((contact, i) => ({
-    nome: contact.nome,
-    telefone: contact.telefoneExibicao,
-    roteiro: contact.roteiroNome,
-    status: statuses[i]
-  }));
-  const ws = XLSX.utils.json_to_sheet(out);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Resultado');
-  XLSX.writeFile(wb, 'disparo_resultado.xlsx');
-}
-window.exportCSV = exportCSV;
-
-function restart() {
-  selectedRoteiroIds = new Set();
-  excludedKeys = new Set();
-  contacts = []; statuses = []; current = 0;
-  somenteIntercorrencia = false;
-  intercorrenciasPorIdRota = new Map();
-  intercorrenciasCarregadas = new Set();
-  document.getElementById('chkIntercorrencia').checked = false;
-  document.getElementById('intercorrenciaWrap').style.display = 'none';
-  document.getElementById('progressWrap').classList.remove('active');
-  document.getElementById('progressFill').style.width = '0%';
-  renderRoteiroChips();
-  renderContactPreview();
-  goTo(1);
-}
-window.restart = restart;
-
-// ── INIT ──
-(async () => {
-  await db.init();
-  allRoteiros = db.getRoteiros();
-  document.getElementById('roteirosLoading').style.display = 'none';
-  document.getElementById('roteiroChips').style.display = 'flex';
-  renderRoteiroChips();
-  renderContactPreview();
-})();
-</script>
+<script src="config.js"></script>
+<script src="config.local.js"></script>
+<script type="module" src="whatsapp-sender.js"></script>
+<script src="whatsapp-events.js"></script>
 </body>
 </html>
