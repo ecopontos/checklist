@@ -602,7 +602,7 @@ Com mocks ou ambiente local, confirme esta sequência sem tocar produção:
 6. devolver nova `occurrenceId` para o primeiro ponto e verificar seu retorno;
 7. simular GAS API 10 e confirmar erro explícito sem zerar a fila.
 
-- [ ] **Step 5: atualizar evidências e fazer revisão independente** — evidências corrigidas; re-review independente pendente
+- [x] **Step 5: atualizar evidências e fazer revisão independente** — re-review final aprovado sem achados Critical/Important; três minors registrados para acompanhamento
 
 Marque as tarefas concluídas neste plano e acrescente comandos/resultados reais. Atualize a especificação apenas se a implementação alterar um contrato aprovado. Faça revisão focada em falsos “enviados”, perda de campanha, identidade de ocorrência, conteúdo HTML não escapado e regressões no sync de coletas.
 
@@ -656,3 +656,12 @@ git commit -m "test(whatsapp): integra fila de intercorrencias"
 - Nesse checkout, `npm test` terminou com exit 0. A execução focada `node --experimental-vm-modules --test --test-reporter=spec tests/whatsapp-campaign-persistence.test.cjs tests/google-sync-whatsapp.test.cjs tests/whatsapp-campaign.test.cjs tests/whatsapp-ui.test.cjs` terminou com 46/46 e exit 0. A primeira tentativa agrupada foi bloqueada pelo sandbox (`spawn EPERM`); a repetição autorizada passou. Permanecem apenas os avisos esperados de VM Modules experimental.
 - `node --check` em `database.js`, `google-sync.js`, `whatsapp-campaign.js`, `whatsapp-sender.js` e `whatsapp-events.js`: 5/5, exit 0. Nenhum GAS foi publicado e nenhum instalador foi gerado.
 - Limite da evidência: os resultados referem-se ao commit limpo. A raiz conserva alterações anteriores, inclusive mudanças de cadastro/resíduo que não pertencem a esta rodada. Estado final: correções implementadas e verificadas, aguardando re-review; não aprovado por este registro.
+
+## Re-review final e retomada do checkout principal — 2026-09-22
+
+- A revisão independente final cobriu `7800032..7c95115` a partir do pacote de 14 commits e 180460 bytes. Veredito: **Ready to merge: Yes**, sem achados Critical ou Important.
+- O revisor confirmou a separação entre abertura e confirmação, a retomada por snapshots e SQLite, a identidade estável das ocorrências, o escape do conteúdo dinâmico e a ausência de regressão detectada no sync de coletas.
+- Três findings Minor foram deferidos: telefones não aparecem na lista inicial; o rótulo de tentativa adiada desaparece quando a campanha concluída deixa de ser ativa; e a restrição global `10` descrita no início deste plano não corresponde ao valor `4` do commit revisado. Nenhum deles altera os gates de confirmação, persistência ou identidade aprovados.
+- O checkout principal, que preserva mudanças anteriores de checklist, dashboard, cadastro e sincronização, foi reconciliado com a migração de `roteiros.tipo_residuo`. `npm test` passou com exit 0; a persistência passou 10/10, o cliente remoto 7/7, o domínio 7/7 e a UI 22/22.
+- Verificações repetidas na retomada: sintaxe 5/5; `npm run prepare-dist` exit 0; hashes 6/6; grafo de imports com quatro módulos; 32 IDs HTML e nenhuma duplicata; testes funcionais focados 7/7 e 22/22.
+- Nenhum GAS foi publicado, nenhum instalador foi gerado e nenhum artefato foi distribuído. Estado final: implementação verificada e aprovada para integração, com os três minors acima explicitamente deferidos.
