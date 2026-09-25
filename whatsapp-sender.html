@@ -334,6 +334,59 @@
     color: var(--text-dim);
   }
 
+  /* ── NAV MENU ── */
+  .nav-wrapper { position: relative; }
+  .nav-toggle { display: none; }
+  .hamburger-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 1.1rem;
+    transition: all 0.3s;
+    position: relative;
+    z-index: 210;
+  }
+  .hamburger-icon:hover { border-color: var(--green); color: var(--green); }
+  .nav-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 190;
+    cursor: default;
+  }
+  .nav-toggle:checked ~ .nav-overlay { display: block; }
+  .page-nav {
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    position: absolute;
+    top: 44px;
+    right: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px;
+    min-width: 180px;
+    font-size: 0.85rem;
+    z-index: 200;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  }
+  .nav-toggle:checked ~ .page-nav { display: flex; }
+  .page-nav a, .page-nav .active {
+    padding: 8px 10px;
+    border-radius: 8px;
+    color: var(--text-dim);
+    text-decoration: none;
+    transition: background 0.2s, color 0.2s;
+  }
+  .page-nav a:hover { background: rgba(255, 255, 255, 0.05); color: var(--green); }
+  .page-nav .active { color: var(--green); font-weight: 600; }
   /* Fila de intercorrências */
   [hidden] { display: none !important; }
   main { width: 100%; max-width: 680px; }
@@ -368,11 +421,24 @@
 </head>
 <body>
 
-<header>
+<header style="display:flex; align-items:flex-end; justify-content:space-between;">
   <div>
     <div class="logo">♻️ Floripa · Lixo Zero</div>
     <h1>Disparo WhatsApp</h1>
     <p class="subtitle">Envio manual assistido — um contato por vez</p>
+  </div>
+  <div class="nav-wrapper">
+    <input type="checkbox" id="navToggle" class="nav-toggle">
+    <label for="navToggle" class="hamburger-icon" role="button" tabindex="0" aria-label="Abrir menu de navegação">☰</label>
+    <label for="navToggle" class="nav-overlay"></label>
+    <nav class="page-nav">
+      <a href="index.html">🏠 Início</a>
+      <a href="coleta-checklist.html">✅ Coleta</a>
+      <a href="agendamentos.html">📅 Agendamentos</a>
+      <span class="active">📲 WhatsApp</span>
+      <a href="admin.html">⚙️ Admin</a>
+      <a href="ajuda-coleta.html" target="_blank">❓ Ajuda</a>
+    </nav>
   </div>
 </header>
 
@@ -443,5 +509,6 @@
 <script src="config.local.js"></script>
 <script type="module" src="whatsapp-sender.js"></script>
 <script src="whatsapp-events.js"></script>
+<script src="nav-menu.js"></script>
 </body>
 </html>

@@ -8,7 +8,7 @@
 ## Contexto
 
 Decisão de rumo (ver `ecoforms/docs/2026-09-01-levantamento-migracao-checklist-standalone.md` e a memória
-`project-logistics-data-source-and-identity`): a fonte operacional de roteiro/cliente/resíduo para o
+`project-logistics-data-source-and-identity`): a fonte operacional de roteiro/cliente para o
 `desktop/logistics` será o **GAS, no trânsito dos demais dados do ecoforms** — não o Postgres `geo_fpolis`
 nem o CSV do Access. Esta spec define **o contrato de dados desse endpoint GAS**: o shape que o
 `desktop/logistics` vai consumir para popular seu SQLite local.
@@ -33,7 +33,7 @@ não afeta o app em campo. Se essa premissa for falsa, esta spec precisa ser rev
 | Formato | Normalizado: `clientes[]` + `roteiros[]` com `pontos[]` |
 | Sync | Snapshot completo + `modifiedTime`; reconciliação por substituição no desktop |
 | Compatibilidade | Nenhuma — builder flat é substituído, não mantido em paralelo |
-| Tipo de Resíduo | **Fora** do contrato GAS — configurado client-side (`config.js`); não trafega no snapshot de roteiros (revisão 2026-09-15, alinhado ao WIP que moveu resíduo pra config) |
+| Tipo de Resíduo | **Fora** do contrato GAS; não trafega no snapshot de roteiros. O standalone atual resolve seu uso no WhatsApp em `config.js`; a fonte do futuro consumidor pertence à spec dele. |
 
 ## Contrato: `action=roteiros` v1
 
@@ -87,8 +87,9 @@ Em erro, mantém o padrão atual do GAS: `{ "ok": false, "error": "<mensagem>" }
 }
 ```
 
-> **Tipo de Resíduo não faz parte deste contrato.** O resíduo é configurado client-side (`config.js`),
-> fora do trânsito de roteiros — decisão alinhada ao trabalho paralelo que o retirou do GAS.
+> **Tipo de Resíduo não faz parte deste contrato.** O `config.js` citado neste
+> repositório atende somente ao standalone atual. Esta spec não determina como o
+> futuro `desktop/logistics` obterá o resíduo.
 
 - `idRota` = id da linha em `tblRotas` (id do **ponto**, não do cliente); string, limpo de `.0`.
 - `idUnico` no ponto é **FK** para `clientes[].idUnico`.
@@ -111,9 +112,6 @@ tombstones). `inativo:1` significa presente-mas-inativo (distinto de removido). 
 2. **`idUnico2` preenchido:** pontos cujo cliente não tem `idUnico2` caem em `skipped` (mesmo
    comportamento do builder atual, que descarta ponto sem cliente).
 
-> A dependência antes listada aqui sobre a fonte do Tipo de Resíduo foi **resolvida por remoção**: o
-> resíduo saiu do contrato GAS e é configurado client-side (ver tabela de decisões).
-
 ## Escopo
 
 **Dentro:**
@@ -126,7 +124,8 @@ tombstones). `inativo:1` significa presente-mas-inativo (distinto de removido). 
 **Fora (YAGNI / outras specs):**
 - Delta incremental, tombstones, cursor.
 - Minting de UUIDv7 (é da ADR-091).
-- **Tipo de Resíduo** — movido para config client-side (`config.js`); não trafega no snapshot.
+- **Tipo de Resíduo** — não trafega no snapshot; sua fonte no futuro consumidor
+  será definida na spec de ingestão desse projeto.
 - Ingestão/reconciliação no `desktop/logistics` (spec própria do consumidor).
 - Push/escrita (coletas, edição) — segue como está.
 - Qualquer camada de back-compat ou action duplicada.

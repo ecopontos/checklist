@@ -1,5 +1,5 @@
 import db from './database.js';
-import { getIntercorrenciasAtuais, checkAndImportRoteirosRede } from './google-sync.js';
+import { getIntercorrenciasAtuais, checkAndImportRoteiros } from './google-sync.js';
 import { buildWhatsappMessage, buildWhatsappQueue, summarizeWhatsappItems } from './whatsapp-campaign.js';
 
 let activeCampaign = null;
@@ -139,8 +139,10 @@ export function refreshWhatsappQueue() {
     element('refreshQueueButton').disabled = true;
     refreshPromise = (async () => {
         try {
-            const imported = await checkAndImportRoteirosRede(db);
-            if (imported.error || imported.warning) throw new Error(imported.error || imported.warning);
+            const imported = await checkAndImportRoteiros(db);
+            if (imported.error || imported.warning || !imported.checked) {
+                throw new Error(imported.error || imported.warning || 'CSV do Drive não configurado');
+            }
             const result = await getIntercorrenciasAtuais();
             if (!result?.ok || !Array.isArray(result.data)) throw new Error(result?.error || 'Resposta inválida da fonte');
             contactDirectory = db.getWhatsappContactDirectory();

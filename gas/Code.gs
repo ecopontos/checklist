@@ -4,6 +4,7 @@
  *
  * Script Properties required (Project Settings > Script Properties):
  *   SPREADSHEET_ID        - id of the Google Sheet (coletas + abas de roteiros)
+ *   DRIVE_FOLDER_ID       - id of the Drive folder containing cstExportaCheckList.csv
  *   CHECKLISTS_FOLDER_ID   - id of the Drive folder that receives checklist PDFs
  *   ROUTE_CHANGES_TOKEN    - shared token used by apps and the Access frontend
  */
@@ -11,6 +12,7 @@
 var TBL_ROTAS = 'tblRotas';
 var TBL_CLIENTES = 'shtClientes';
 var TBL_ROTEIROS = 'tblRoteiros';
+var CSV_FILE_NAME = 'cstExportaCheckList.csv';
 var COLETAS_SHEET_NAME = 'Coletas';
 var AGENDAMENTOS_SHEET_NAME = 'verdesagendados';
 var AGENDAMENTOS_HEADERS = [
@@ -32,7 +34,7 @@ var CLIENT_CHANGES_HEADERS = [
     'Status', 'Recebido Em', 'Processado Em', 'Mensagem'
 ];
 var CLIENT_EDITABLE_FIELDS = ['Cliente', 'Número', 'Complemento', 'CEP', 'Telefone1', 'Telefone2'];
-var GAS_API_VERSION = 11;
+var GAS_API_VERSION = 12;
 var INTERCORRENCIAS_ATUAIS_CACHE_KEY = 'intercorrenciasAtuais:v1';
 // Consultas de última coleta varrem apenas as linhas mais recentes da aba
 // Coletas (append-only, cronológica). Varrer a aba inteira chega a ~37s e pode
@@ -44,6 +46,7 @@ function getConfig_() {
     var props = PropertiesService.getScriptProperties();
     return {
         spreadsheetId: props.getProperty('SPREADSHEET_ID'),
+        folderId: props.getProperty('DRIVE_FOLDER_ID'),
         checklistsFolderId: props.getProperty('CHECKLISTS_FOLDER_ID'),
         routeChangesToken: props.getProperty('ROUTE_CHANGES_TOKEN')
     };
@@ -94,9 +97,84 @@ function doGet(e) {
         return getAgendamentoFotos_(params.id || '', params.incluirBase64 === 'true');
     }
 
+    if (params.action === 'historicoColetas') {
+        return getHistoricoColetas_(params.mes || '');
+    }
+
+    if (params.action === 'roteirosCsv') {
+        return getRoteirosCsv_();
+    }
+
     // Fonte de roteiros: antes um CSV no Drive (exportado do Access), agora
     // montada direto das abas do Sheets. Vale como action=roteiros e como padrão.
     return getRoteirosFlat_();
+}
+
+// O CSV do Access permanece no Drive. Devolve o texto original para que o
+// importador local use exatamente as mesmas colunas da antiga leitura da LAN.
+function getRoteirosCsv_() {
+    var config = getConfig_();
+    if (!config.folderId) {
+        return jsonResponse_({ ok: false, error: 'DRIVE_FOLDER_ID não configurado' });
+    }
+
+    try {
+        var files = DriveApp.getFolderById(config.folderId).getFilesByName(CSV_FILE_NAME);
+        var latest = null;
+        var modifiedTime = null;
+        while (files.hasNext()) {
+            var candidate = files.next();
+            var candidateTime = candidate.getLastUpdated();
+            if (!latest || candidateTime.getTime() > modifiedTime.getTime()) {
+                latest = candidate;
+                modifiedTime = candidateTime;
+            }
+        }
+        if (!latest) {
+            return jsonResponse_({ ok: false, error: 'Arquivo ' + CSV_FILE_NAME + ' não encontrado na pasta do Drive' });
+        }
+
+        var decoded = decodeCsvBlob_(latest.getBlob());
+        return jsonResponse_({
+            ok: true,
+            apiVersion: GAS_API_VERSION,
+            source: 'drive-csv',
+            content: decoded.content,
+            encoding: decoded.encoding,
+            modifiedTime: modifiedTime.toISOString()
+        });
+    } catch (err) {
+        return jsonResponse_({ ok: false, error: err.message });
+    }
+}
+
+function decodeCsvBlob_(blob) {
+    var bytes = blob.getBytes();
+    var encoding = detectCsvEncoding_(bytes);
+    return {
+        content: blob.getDataAsString(encoding).replace(/^\uFEFF/, ''),
+        encoding: encoding
+    };
+}
+
+function detectCsvEncoding_(bytes) {
+    if (bytes.length >= 2) {
+        var first = bytes[0] & 255;
+        var second = bytes[1] & 255;
+        if (first === 255 && second === 254) return 'UTF-16LE';
+        if (first === 254 && second === 255) return 'UTF-16BE';
+    }
+    var sampleSize = Math.min(bytes.length, 200);
+    var evenNulls = 0;
+    var oddNulls = 0;
+    for (var i = 0; i < sampleSize; i++) {
+        if ((bytes[i] & 255) !== 0) continue;
+        if (i % 2 === 0) evenNulls++;
+        else oddNulls++;
+    }
+    if (sampleSize >= 8 && oddNulls >= sampleSize / 4 && oddNulls > evenNulls * 2) return 'UTF-16LE';
+    if (sampleSize >= 8 && evenNulls >= sampleSize / 4 && evenNulls > oddNulls * 2) return 'UTF-16BE';
+    return 'UTF-8';
 }
 
 // L\u00EA tblRotas + shtClientes + tblRoteiros e devolve a vis\u00E3o achatada que o app
@@ -197,10 +275,7 @@ function buildFlatRoteiros_(rotasValues, clientesValues, roteirosValues) {
         var rowT = roteirosValues[t];
         var keyRoteiro = cleanIntString_(rowT[mapRoteiros['idRoteiro']]);
         if (!keyRoteiro) continue;
-        roteirosById[keyRoteiro] = {
-            nome: String(rowT[mapRoteiros['Roteiro']] || '').trim(),
-            tipoResiduo: String(rowT[mapRoteiros['Tipo de Resíduo']] || '').trim()
-        };
+        roteirosById[keyRoteiro] = String(rowT[mapRoteiros['Roteiro']] || '').trim();
     }
 
     var rows = [];
@@ -215,10 +290,8 @@ function buildFlatRoteiros_(rotasValues, clientesValues, roteirosValues) {
         var ordemVal = rowR[mapRotas['Ordem']];
         var inativoVal = rowR[mapRotas['Inativo']];
 
-        var roteiroInfo = roteirosById[cleanIntString_(rowR[mapRotas['idRoteiro']])] || { nome: '', tipoResiduo: '' };
         rows.push({
-            Roteiro: roteiroInfo.nome,
-            TipoResiduo: roteiroInfo.tipoResiduo,
+            Roteiro: roteirosById[cleanIntString_(rowR[mapRotas['idRoteiro']])] || '',
             idCliente: cliente.idCliente,
             Cliente: cliente.Cliente,
             idRota: cleanIntString_(rowR[mapRotas['idRota']]),
@@ -1347,7 +1420,8 @@ function getAgendamentos_(data) {
         }
 
         var cache = CacheService.getScriptCache();
-        var cacheKey = 'age:' + lastRow + ':' + (dataAlvo || '*');
+        var revision = PropertiesService.getScriptProperties().getProperty('AGENDAMENTOS_CACHE_REVISION') || '0';
+        var cacheKey = 'age:' + revision + ':' + lastRow + ':' + (dataAlvo || '*');
         var cached = cache.get(cacheKey);
         if (cached !== null) {
             return jsonResponse_({ ok: true, data: JSON.parse(cached) });
@@ -1503,6 +1577,15 @@ function syncAgendamentos_(ops) {
                     values.length - newRows.length,
                     AGENDAMENTOS_HEADERS.length
                 ).clearContent();
+            }
+
+            // Uma nova revisão invalida todas as consultas, inclusive por data.
+            // Atualizada sob o mesmo lock da escrita; leitores antigos só podem
+            // preencher chaves da revisão anterior.
+            if (upserts || deletes) {
+                var properties = PropertiesService.getScriptProperties();
+                var revision = Number(properties.getProperty('AGENDAMENTOS_CACHE_REVISION') || 0);
+                properties.setProperty('AGENDAMENTOS_CACHE_REVISION', String(revision + 1));
             }
 
             return jsonResponse_({
@@ -1682,6 +1765,69 @@ function normalizeHistoryDate_(value) {
     return isFinite(date.getTime()) && date.toISOString().slice(0, 10) === text ? text : null;
 }
 
+function getHistoricoColetas_(mes) {
+    var config = getConfig_();
+    if (!config.spreadsheetId) {
+        return jsonResponse_({ ok: false, error: 'SPREADSHEET_ID não configurado' });
+    }
+
+    var mesParam = String(mes || '').trim();
+    if (mesParam && !normalizeHistoryDate_(mesParam + '-01')) {
+        return jsonResponse_({ ok: false, error: 'Formato de mês inválido (use YYYY-MM)' });
+    }
+
+    try {
+        var ss = SpreadsheetApp.openById(config.spreadsheetId);
+        var sheet = ss.getSheetByName(COLETAS_SHEET_NAME);
+        var quality = { invalidDates: 0, invalidQuantities: 0, excludedRecords: 0 };
+        if (!sheet || sheet.getLastRow() < 2) {
+            return jsonResponse_({ ok: true, data: [], quality: quality });
+        }
+
+        var cache = CacheService.getScriptCache();
+        var lastRow = sheet.getLastRow();
+        var cacheKey = 'coletas:v3:' + lastRow + ':' + (mesParam || '*');
+        var cached = null;
+        try { cached = cache.get(cacheKey); } catch (_) { /* cache é opcional */ }
+        if (cached !== null) {
+            return jsonResponse_(JSON.parse(cached));
+        }
+
+        var values = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
+        var rows = [];
+        for (var i = 0; i < values.length; i++) {
+            var row = values[i];
+            if (row.every(function (v) { return v === '' || v === null; })) continue;
+            var data = normalizeHistoryDate_(row[1]);
+            var quantity = Number(row[4]);
+            var validQuantity = (typeof row[4] === 'number' || (typeof row[4] === 'string' && row[4].trim() !== '')) &&
+                Number.isSafeInteger(quantity) && quantity >= 0;
+            if (!data) quality.invalidDates++;
+            if (!validQuantity) quality.invalidQuantities++;
+            if (!data || !validQuantity) { quality.excludedRecords++; continue; }
+            if (mesParam && !data.startsWith(mesParam)) continue;
+            rows.push({
+                idRota: String(row[0] || ''),
+                data: data,
+                cliente: String(row[2] || ''),
+                roteiro: String(row[3] || ''),
+                quantidade: quantity,
+                intercorrencia: String(row[5] || ''),
+                sincronizadoEm: String(row[6] || ''),
+                syncId: String(row[7] || '')
+            });
+        }
+
+        // Históricos grandes podem exceder a capacidade de uma entrada do cache.
+        // A resposta consultada continua válida mesmo se não puder ser guardada.
+        var result = { ok: true, data: rows, quality: quality };
+        try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (_) { /* cache é opcional */ }
+        return jsonResponse_(result);
+    } catch (err) {
+        return jsonResponse_({ ok: false, error: err.message });
+    }
+}
+
 function saveColetas_(coletas) {
     var config = getConfig_();
     if (!config.spreadsheetId) {
@@ -1692,11 +1838,27 @@ function saveColetas_(coletas) {
         return jsonResponse_({ ok: false, error: 'coletas deve ser uma lista' });
     }
 
+    // Valida o lote completo antes de adquirir/escrever na planilha, para que
+    // uma linha inválida nunca produza append parcial.
+    var hojeSP = Utilities.formatDate(new Date(), 'America/Sao_Paulo', 'yyyy-MM-dd');
+    var validadas = [];
     for (var v = 0; v < coletas.length; v++) {
-        var item = coletas[v];
-        if (!item || !normalizeHistoryDate_(item.data)) {
-            return jsonResponse_({ ok: false, error: 'Data inválida na coleta ' + (v + 1) });
+        var item = coletas[v] || {};
+        var data = item.data;
+        var dataTexto = typeof data === 'string' ? data.trim() : '';
+        var dataValida = /^\d{4}-\d{2}-\d{2}$/.test(dataTexto);
+        if (dataValida) {
+            var dataObj = new Date(dataTexto + 'T12:00:00Z');
+            dataValida = isFinite(dataObj.getTime()) && dataObj.toISOString().slice(0, 10) === dataTexto && dataTexto <= hojeSP;
         }
+        if (!dataValida) return jsonResponse_({ ok: false, error: 'Data inválida na coleta ' + (v + 1) });
+        if (typeof item.quantidade !== 'number' || !Number.isSafeInteger(item.quantidade) || item.quantidade < 0) {
+            return jsonResponse_({ ok: false, error: 'Quantidade inválida na coleta ' + (v + 1) });
+        }
+        var idRota = String(item.id_rota == null ? '' : item.id_rota).trim();
+        var syncId = String(item.sync_id == null ? '' : item.sync_id).trim();
+        if (!idRota || !syncId) return jsonResponse_({ ok: false, error: 'id_rota e sync_id são obrigatórios na coleta ' + (v + 1) });
+        validadas.push({ item: item, data: dataTexto, idRota: idRota, syncId: syncId });
     }
 
     var lock = LockService.getScriptLock();
@@ -1713,7 +1875,7 @@ function saveColetas_(coletas) {
         // traz o mesmo sync_id da 1ª tentativa; ignora os que já estão na aba
         // (e também repetidos dentro do próprio lote) para não duplicar.
         var lastRow = sheet.getLastRow();
-        var vistos = {};
+        var vistos = Object.create(null);
         if (lastRow > 1) {
             var ids = sheet.getRange(2, 8, lastRow - 1, 1).getValues();
             for (var i = 0; i < ids.length; i++) {
@@ -1725,18 +1887,19 @@ function saveColetas_(coletas) {
         var now = new Date().toISOString();
         var novos = [];
         var duplicados = 0;
-        coletas.forEach(function (c) {
-            var sid = String(c.sync_id || '').trim();
+        validadas.forEach(function (v) {
+            var c = v.item;
+            var sid = v.syncId;
             if (sid) {
                 if (vistos[sid]) { duplicados++; return; }
                 vistos[sid] = true;
             }
             novos.push([
-                c.id_rota || '',
-                c.data || '',
+                v.idRota,
+                v.data,
                 c.cliente || '',
                 c.roteiro || '',
-                c.quantidade || 0,
+                c.quantidade,
                 c.intercorrencia || '',
                 now,
                 sid
@@ -1766,16 +1929,26 @@ function saveChecklist_(checklist) {
         return jsonResponse_({ ok: false, error: 'filename ou pdfBase64 ausente' });
     }
 
-    var folder = DriveApp.getFolderById(config.checklistsFolderId);
-
-    var existing = folder.getFilesByName(checklist.filename);
-    while (existing.hasNext()) {
-        existing.next().setTrashed(true);
+    var lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+    try {
+        var folder = DriveApp.getFolderById(config.checklistsFolderId);
+        var existing = folder.getFilesByName(checklist.filename);
+        var antigos = [];
+        while (existing.hasNext()) antigos.push(existing.next());
+        var bytes = Utilities.base64Decode(checklist.pdfBase64);
+        var blob = Utilities.newBlob(bytes, 'application/pdf', checklist.filename);
+        folder.createFile(blob);
+        var aviso = null;
+        for (var i = 0; i < antigos.length; i++) {
+            try { antigos[i].setTrashed(true); } catch (cleanupError) { aviso = 'Arquivo novo salvo, mas não foi possível remover o arquivo anterior: ' + cleanupError.message; }
+        }
+        var resposta = { ok: true };
+        if (aviso) resposta.warning = aviso;
+        return jsonResponse_(resposta);
+    } catch (err) {
+        return jsonResponse_({ ok: false, error: err.message });
+    } finally {
+        lock.releaseLock();
     }
-
-    var bytes = Utilities.base64Decode(checklist.pdfBase64);
-    var blob = Utilities.newBlob(bytes, 'application/pdf', checklist.filename);
-    folder.createFile(blob);
-
-    return jsonResponse_({ ok: true });
 }

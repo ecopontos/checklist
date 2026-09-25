@@ -246,6 +246,11 @@
         }
         .btn-save:hover { background: #2ea043; }
         .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-retry-sync {
+            border: 1px solid var(--warning); background: transparent;
+            color: var(--warning); border-radius: 8px; padding: 6px 10px;
+            cursor: pointer; font: inherit; font-size: 0.78rem;
+        }
 
         .empty-state {
             text-align: center;
@@ -367,6 +372,7 @@
                         <a href="index.html">🏠 Início</a>
                         <span class="active">✅ Coleta</span>
                         <a href="agendamentos.html">📅 Agendamentos</a>
+                        <a href="whatsapp-sender.html">📲 WhatsApp</a>
                         <a href="admin.html">⚙️ Admin</a>
                         <a href="ajuda-coleta.html" target="_blank">❓ Ajuda</a>
                     </nav>
@@ -418,6 +424,7 @@
             <div class="save-summary">
                 <span class="sync-indicator" id="syncIndicator"></span>
                 <span id="saveSummary"><strong>0 registros</strong> prontos para salvar</span>
+                <button type="button" id="btnRetrySync" class="btn-retry-sync" hidden>Reenviar pendências</button>
             </div>
         </div>
     </footer>

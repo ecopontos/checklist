@@ -16,7 +16,7 @@ function campaign() {
       coletaData: occurrence.data, message: `Mensagem congelada ${n}`, phones })) };
 }
 async function setup({ active = false, remote = { ok: true, data: [occurrence] },
-  storage = new Map(), contactDirectory = null, networkReader = null } = {}) {
+  storage = new Map(), contactDirectory = null, driveReader = null } = {}) {
   assert.ok(fs.existsSync('whatsapp-sender.js'), 'o módulo externo da fila deve existir');
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(([, id]) => [id, {
     id, textContent: '', innerHTML: '', value: '', hidden: false, disabled: false,
@@ -27,15 +27,11 @@ async function setup({ active = false, remote = { ok: true, data: [occurrence] }
   let failPersistence = false;
   let remoteCalls = 0;
   let importCalls = 0;
+  let dbForDrive;
   const exported = [];
   const opened = [];
   const window = {
     openWhatsappUrl: async url => { opened.push(url); } };
-  if (networkReader) window.__TAURI__ = { core: { invoke: async command => {
-    assert.equal(command, 'read_network_logradouros_csv');
-    importCalls++;
-    return networkReader();
-  } } };
   const context = vm.createContext({ console, window, document,
     Uint8Array, TextEncoder, TextDecoder, atob, AbortController, setTimeout, clearTimeout,
     crypto: require('node:crypto').webcrypto,
@@ -45,6 +41,16 @@ async function setup({ active = false, remote = { ok: true, data: [occurrence] }
     XLSX: { utils: { json_to_sheet: rows => rows, book_new: () => ({}),
       book_append_sheet: (_, rows) => exported.push(...rows) }, writeFile() {} },
     fetch: async url => {
+      if (/\?action=roteirosCsv$/.test(url)) {
+        importCalls++;
+        const reader = driveReader || (() => {
+          const client = dbForDrive.getClienteByIdRota('42');
+          const route = dbForDrive.getRoteiros().find(item => item.nome === 'SAT01');
+          return driveCsv(client.telefone1, 1000, client.cliente, route.tipo_residuo, client.telefone2);
+        });
+        const reply = await reader();
+        return { ok: true, json: async () => reply };
+      }
       assert.match(url, /\?action=intercorrenciasAtuais$/);
       remoteCalls++;
       const reply = await (typeof remote === 'function' ? remote() : remote);
@@ -59,6 +65,7 @@ async function setup({ active = false, remote = { ok: true, data: [occurrence] }
     .replace(/export default db;?/, 'globalThis.db = db;').replace(/^export /gm, ''), context);
   const db = context.db;
   await db.init();
+  dbForDrive = db;
   db.addRoteiro('SAT01', 'Orgânicos');
   db.upsertCliente({ idRota: '42', idCliente: 'c1', Cliente: 'Cliente original', ativo: true,
     logradouro: 'Rua A', 'Número': '1', Complemento: '', CEP: '88000000', roteiro_id: 1, Ordem: 1,
@@ -72,7 +79,7 @@ async function setup({ active = false, remote = { ok: true, data: [occurrence] }
     .replace(/^import .*;\r?\n/gm, '').replace(/export /g, ''), context);
   elements.get('campaignMessage').value = 'Olá {nome}: {intercorrencia} em {data} ({residuo})';
   return { window, db, elements, opened, exported, storage, remoteCalls: () => remoteCalls,
-    importCalls: () => importCalls, setNetworkReader: value => { networkReader = value; },
+    importCalls: () => importCalls, setDriveReader: value => { driveReader = value; },
     setRemote: value => { remote = value; }, fail: value => { failPersistence = value; } };
 }
 test('estrutura da fila, histórico e delegação externa', () => {
@@ -315,10 +322,11 @@ test('falha ao criar ou concluir conserva seleção e campanha para nova tentati
   assert.equal(h.db.getWhatsappCampaignHistory().length, 0);
 });
 
-function networkCsv(phone = '48977770000', modified = 1000) {
+function driveCsv(phone = '48977770000', modified = 1000, cliente = 'Cliente atualizado', tipo = 'Vidro', phone2 = '') {
   const csv = 'Fonte;idRota;Inativo;Ordem;Roteiro;Cliente;logradouro;Número;CEP;Complemento;Telefone1;Telefone2;TipoResiduo\r\n' +
-    `SAT01-1;42;0;1;SAT01;Cliente atualizado;Rua A;1;88000000;;${phone};;Vidro`;
-  return { bytes_base64: Buffer.from('\ufeff' + csv, 'utf16le').toString('base64'), modified_time_ms: modified };
+    `SAT01-1;42;0;1;SAT01;${cliente};Rua A;1;88000000;;${phone};${phone2};${tipo}`;
+  return { ok: true, apiVersion: 12, source: 'drive-csv', content: csv,
+    modifiedTime: new Date(modified).toISOString() };
 }
 
 test('Pendentes inclui abertos, adiados e bloqueados; confirmação é a única redução', async () => {
@@ -357,11 +365,11 @@ test('cadastro real sem telefone informa bloqueio por telefone, não cadastro au
 });
 
 test('importa cadastro na abertura e no refresh antes de criar mensagem e telefones da campanha', async () => {
-  const h = await setup({ networkReader: () => networkCsv() });
+  const h = await setup({ driveReader: () => driveCsv() });
   await h.window.initWhatsappSender();
   assert.equal(h.importCalls(), 1);
   assert.equal(h.db.getWhatsappContactDirectory()[0].phones[0].digits, '5548977770000');
-  h.setNetworkReader(() => networkCsv('48966660000', 2000));
+  h.setDriveReader(() => driveCsv('48966660000', 2000));
   await h.window.refreshWhatsappQueue();
   assert.equal(h.importCalls(), 2);
   h.window.toggleWhatsappOccurrence('occ-1', true);
@@ -373,14 +381,14 @@ test('importa cadastro na abertura e no refresh antes de criar mensagem e telefo
 
 test('campanha salva aparece antes do import e mantém snapshots após cadastro atualizado', async () => {
   let finishImport;
-  const h = await setup({ active: true, networkReader: () => new Promise(resolve => { finishImport = resolve; }) });
+  const h = await setup({ active: true, driveReader: () => new Promise(resolve => { finishImport = resolve; }) });
   const init = h.window.initWhatsappSender();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.elements.get('campaignPreview').textContent, 'Mensagem congelada 1');
   assert.equal(h.remoteCalls(), 0);
   assert.equal(h.importCalls(), 1);
   assert.equal(h.elements.get('startCampaignButton').disabled, true);
-  finishImport(networkCsv());
+  finishImport(driveCsv());
   await init;
   assert.equal(h.db.getWhatsappContactDirectory()[0].phones[0].digits, '5548977770000');
   assert.equal(h.elements.get('campaignPreview').textContent, 'Mensagem congelada 1');
@@ -388,11 +396,11 @@ test('campanha salva aparece antes do import e mantém snapshots após cadastro 
 });
 
 test('refresh único impede campanha com cadastro antigo enquanto import está pendente', async () => {
-  const h = await setup({ networkReader: () => networkCsv() });
+  const h = await setup({ driveReader: () => driveCsv() });
   await h.window.initWhatsappSender();
   h.window.toggleWhatsappOccurrence('occ-1', true);
   let finishImport;
-  h.setNetworkReader(() => new Promise(resolve => { finishImport = resolve; }));
+  h.setDriveReader(() => new Promise(resolve => { finishImport = resolve; }));
   const a = h.window.refreshWhatsappQueue();
   const b = h.window.refreshWhatsappQueue();
   await new Promise(resolve => setImmediate(resolve));
@@ -400,7 +408,7 @@ test('refresh único impede campanha com cadastro antigo enquanto import está p
   assert.equal(h.elements.get('startCampaignButton').disabled, true);
   await h.window.startWhatsappCampaign();
   assert.equal(h.db.getActiveWhatsappCampaign(), null);
-  finishImport(networkCsv('48966660000', 2000));
+  finishImport(driveCsv('48966660000', 2000));
   await Promise.all([a, b]);
   assert.equal(h.remoteCalls(), 2);
   await h.window.startWhatsappCampaign();
@@ -408,11 +416,11 @@ test('refresh único impede campanha com cadastro antigo enquanto import está p
 });
 
 test('falha no import preserva última fila e campanha salva', async () => {
-  const h = await setup({ active: true, networkReader: () => networkCsv() });
+  const h = await setup({ active: true, driveReader: () => driveCsv() });
   await h.window.initWhatsappSender();
   const before = h.elements.get('queueList').innerHTML;
   const snapshot = JSON.stringify(h.db.getActiveWhatsappCampaign());
-  h.setNetworkReader(() => { throw new Error('cadastro offline'); });
+  h.setDriveReader(() => { throw new Error('cadastro offline'); });
   h.setRemote({ ok: true, data: [] });
   await h.window.refreshWhatsappQueue();
   assert.match(h.elements.get('queueError').textContent, /cadastro offline/);

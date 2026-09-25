@@ -15,7 +15,9 @@
 - **Formato:** normalizado — `clientes[]` deduplicado + `roteiros[]` com `pontos[]`.
 - **Chaves JSON ascii minúsculas** (`numero`, `cep`, `telefone1`…), não `Número`/`Telefone1`.
 - **Snapshot completo** com `modifiedTime`; sem delta/cursor/tombstones.
-- **Tipo de Resíduo fora do contrato:** o resíduo é configurado client-side (`config.js`), não trafega no snapshot; o builder normalizado **não** lê `Tipo de Resíduo`.
+- **Tipo de Resíduo fora do contrato:** não trafega no snapshot e o builder
+  normalizado **não** lê `Tipo de Resíduo`. O `config.js` deste repositório atende
+  somente ao standalone; a fonte do futuro consumidor será definida na spec dele.
 - **Leitura defensiva** de `logradouro`: se a coluna não existir em `shtClientes`, o campo sai `""` — nunca quebra.
 - Contrato de referência: `docs/superpowers/specs/2026-09-15-gas-contrato-logistica-roteiros-design.md`.
 - Reaproveitar os helpers já existentes `cleanIntString_` e `formatPhone_` (não reimplementar).
@@ -132,7 +134,7 @@ Em `gas/Code.gs`, apagar a função `buildFlatRoteiros_` inteira (do comentário
 // Junta tblRotas -> cliente por idPJ e -> roteiro por idRoteiro; emite cliente
 // deduplicado por idUnico (= idUnico2). logradouro é lido defensivamente
 // (coluna a confirmar na aba real; "" se ausente). Tipo de Resíduo NÃO faz
-// parte do contrato — é config client-side.
+// parte do contrato v1.
 function buildRoteirosNormalizados_(rotasValues, clientesValues, roteirosValues) {
     if (!rotasValues || rotasValues.length < 2) {
         return { clientes: [], roteiros: [], skipped: 0 };
@@ -432,7 +434,7 @@ Expected: as únicas ocorrências de `getRoteirosFlat_`/`buildFlatRoteiros_` sã
 
 - [ ] **Step 3: Relatar resultados**
 
-Resumir pass/fail de cada checagem. Registrar explicitamente as 3 dependências abertas que ficaram resolvidas de forma defensiva e ainda precisam de confirmação contra o Sheets real na hora do deploy:
+Resumir pass/fail de cada checagem. Registrar explicitamente as 2 dependências abertas que ficaram resolvidas de forma defensiva e ainda precisam de confirmação contra o Sheets real na hora do deploy:
 1. `logradouro` existe em `shtClientes`? (se não, sai `""`)
 2. `idUnico2` preenchido para todos os clientes? (pontos sem ele caem em `skipped`)
 

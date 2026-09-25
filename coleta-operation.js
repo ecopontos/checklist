@@ -1,5 +1,7 @@
 import db from './database.js';
-import { pushColetas, sendChecklistToDrive, getUltimaColeta, getUltimasQuantidades, getLastRotasRedeSyncLabel } from './google-sync.js';
+import { sendChecklistToDrive, getUltimaColeta, getUltimasQuantidades, getLastRoteirosDriveSyncLabel } from './google-sync.js';
+import { operationalToday, validCivilDate } from './dashboard-metrics.js';
+import { startColetaSync } from './coleta-sync.js';
 
 let currentClients = [];
 let sessionData = {};
@@ -10,13 +12,28 @@ let previousRouteId = '';
 let operationSaved = false;
 let syncState = 'idle';
 let ultimaColetaData = null;
-let ultimaColetaRequestId = 0;
 let ultimasQuantidades = {};
 let checklistDataReady = null;
+let checklistContext = null;
+let checklistRequestId = 0;
+let operationId = null;
+let syncIds = {};
+let savedSyncIds = new Set();
+let coletaSyncCoordinator = null;
+export function parseOperationQuantity(value) {
+    if (value === '' || value === null || value === undefined) return 0;
+    const text = String(value).trim();
+    if (!/^\d+$/.test(text)) return null;
+    const quantity = Number(text);
+    return Number.isSafeInteger(quantity) && quantity >= 0 ? quantity : null;
+}
+export function validOperationDate(value, today = operationalToday()) {
+    return validCivilDate(value) && value <= today;
+}
 
 async function init() {
     await db.init();
-    document.getElementById('syncFreshness').textContent = getLastRotasRedeSyncLabel();
+    document.getElementById('syncFreshness').textContent = getLastRoteirosDriveSyncLabel();
 
     const routeSelect = document.getElementById('routeSelect');
     const idSearch = document.getElementById('idSearch');
@@ -25,7 +42,7 @@ async function init() {
     const navToggle = document.getElementById('navToggle');
     const hamburger = document.querySelector('.hamburger-icon');
 
-    document.getElementById('opDate').valueAsDate = new Date();
+    document.getElementById('opDate').value = operationalToday();
     db.getRoteiros().forEach(route => {
         const option = document.createElement('option');
         option.value = route.id;
@@ -39,6 +56,7 @@ async function init() {
             routeSelect.value = previousRouteId;
             return;
         }
+        if (document.getElementById('checklistModal').classList.contains('open')) closeChecklistModal();
         loadRoute(nextRouteId);
     });
     document.getElementById('sortSelect').addEventListener('change', event => {
@@ -51,6 +69,7 @@ async function init() {
     document.getElementById('btnChecklistCancel').addEventListener('click', closeChecklistModal);
     document.getElementById('btnChecklistDownload').addEventListener('click', downloadChecklist);
     document.getElementById('btnChecklistSend').addEventListener('click', sendChecklistToDriveHandler);
+    document.getElementById('btnRetrySync').addEventListener('click', () => coletaSyncCoordinator.refresh());
 
     idSearch.addEventListener('keydown', event => {
         if (event.key === 'Enter') {
@@ -77,6 +96,7 @@ async function init() {
         if (document.getElementById('checklistModal').classList.contains('open')) {
             closeChecklistModal();
         } else if (activeClientId !== null) {
+            if (hasActiveFormEdits() && !confirm('Descartar a digitação deste ponto?')) return;
             resetQuickEntry(true);
         } else {
             navToggle.checked = false;
@@ -90,6 +110,21 @@ async function init() {
         if (!hasUnsavedEntries()) return;
         event.preventDefault();
         event.returnValue = '';
+    });
+
+    coletaSyncCoordinator = startColetaSync(db, {
+        onState(state) {
+            if (operationSaved && state === 'syncing') syncState = 'pending';
+            updateSaveState();
+        },
+        onResult(result) {
+            const pendingIds = new Set(db.getUnsyncedColetas().map(item => item.sync_id));
+            const currentPending = [...savedSyncIds].some(id => pendingIds.has(id));
+            if (operationSaved) syncState = currentPending ? 'error' : 'saved';
+            if (result.ok && !currentPending && savedSyncIds.size) showToast('Operação salva e sincronizada.');
+            else if (!result.ok && currentPending) showToast('Salvo localmente. Sincronização pendente.');
+            updateSaveState();
+        }
     });
 
     updateStats();
@@ -112,6 +147,9 @@ function loadRoute(routeId) {
     currentSort = 'ordem';
     currentFilter = 'all';
     operationSaved = false;
+    operationId = crypto.randomUUID();
+    syncIds = {};
+    savedSyncIds = new Set();
     syncState = 'idle';
 
     document.getElementById('sortSelect').value = 'ordem';
@@ -153,7 +191,13 @@ function selectClientById(rawId) {
         return;
     }
 
-    activeClientId = clientKey(client);
+    const nextClientId = clientKey(client);
+    if (activeClientId !== null && activeClientId !== nextClientId && hasActiveFormEdits()) {
+        commitQuickEntry();
+        if (hasActiveFormEdits()) return;
+    }
+
+    activeClientId = nextClientId;
     const session = sessionData[activeClientId] || {};
     const entryClient = document.getElementById('entryClient');
     entryClient.querySelector('strong').textContent = client.cliente;
@@ -181,9 +225,9 @@ function commitQuickEntry() {
     if (activeClientId === null || operationSaved) return;
 
     const quantityValue = document.getElementById('quickQty').value;
-    const quantity = quantityValue === '' ? 0 : Number.parseInt(quantityValue, 10);
+    const quantity = parseOperationQuantity(quantityValue);
     const issue = document.getElementById('quickIssue').value.trim();
-    if (!Number.isFinite(quantity) || quantity < 0) {
+    if (quantity === null) {
         showEntryError('Informe uma quantidade válida.');
         document.getElementById('quickQty').focus();
         return;
@@ -362,7 +406,12 @@ function bindTableEvents() {
         });
 
         const updateFromRow = () => {
-            const quantity = Number.parseInt(qtyInput.value, 10) || 0;
+            const quantity = parseOperationQuantity(qtyInput.value);
+            if (quantity === null) {
+                showEntryError('Informe uma quantidade inteira, não negativa e segura.');
+                qtyInput.focus();
+                return;
+            }
             setSessionEntry(id, quantity, issueInput.value.trim());
         };
         qtyInput.addEventListener('change', updateFromRow);
@@ -425,7 +474,20 @@ function getEntries() {
 }
 
 function hasUnsavedEntries() {
-    return !operationSaved && getEntries().length > 0;
+    return !operationSaved && (getEntries().length > 0 || hasActiveFormEdits());
+}
+function hasActiveFormEdits() {
+    if (activeClientId === null) return false;
+    return Boolean(document.getElementById('quickQty')?.value.trim() || document.getElementById('quickIssue')?.value.trim());
+}
+
+function hasInvalidTableQuantity() {
+    const invalid = [...document.querySelectorAll('tbody tr[data-id] [data-role="qty"]')]
+        .find(input => parseOperationQuantity(input.value) === null);
+    if (!invalid) return false;
+    showEntryError('Corrija a quantidade inválida antes de salvar.');
+    invalid.focus();
+    return true;
 }
 
 function updateSaveState() {
@@ -434,9 +496,11 @@ function updateSaveState() {
     const label = document.getElementById('btnSaveLabel');
     const summary = document.getElementById('saveSummary');
     const indicator = document.getElementById('syncIndicator');
+    const retry = document.getElementById('btnRetrySync');
     const countLabel = entries.length === 1 ? '1 registro' : `${entries.length} registros`;
 
     indicator.className = `sync-indicator ${syncState}`;
+    retry.hidden = db.getUnsyncedColetas().length === 0;
     if (operationSaved) {
         button.disabled = true;
         label.textContent = 'Operação salva';
@@ -451,6 +515,15 @@ function updateSaveState() {
 
 async function saveOperation() {
     const date = document.getElementById('opDate').value;
+    if (!validOperationDate(date)) {
+        alert('Informe uma data civil válida, até hoje.');
+        return;
+    }
+    if (hasInvalidTableQuantity()) return;
+    if (activeClientId !== null && hasActiveFormEdits()) {
+        commitQuickEntry();
+        if (hasActiveFormEdits()) return;
+    }
     const entries = getEntries();
     if (!date) {
         alert('Selecione a data da operação.');
@@ -462,27 +535,20 @@ async function saveOperation() {
     const roteiroNome = routeSelect.options[routeSelect.selectedIndex]?.textContent || '';
 
     try {
-        const savedColetas = entries.map(([id, entry]) => {
+        const payload = entries.map(([id, entry]) => {
             const client = currentClients.find(item => clientKey(item) === id);
-            const syncId = crypto.randomUUID();
-            const localId = db.addColeta({
-                id_rota: id,
-                data: date,
-                quantidade: entry.qty,
-                intercorrencia: entry.issue || '',
-                sync_id: syncId
-            });
             return {
-                id: localId,
                 id_rota: id,
                 data: date,
                 quantidade: entry.qty,
                 intercorrencia: entry.issue || '',
                 cliente: client ? client.cliente : '',
                 roteiro: roteiroNome,
-                sync_id: syncId
+                sync_id: syncIds[id] || (syncIds[id] = crypto.randomUUID())
             };
         });
+        const savedColetas = await db.saveColetaOperation({ operationId, data: date, roteiro: roteiroNome, entries: payload });
+        savedSyncIds = new Set(savedColetas.map(item => item.sync_id));
 
         operationSaved = true;
         syncState = 'pending';
@@ -491,25 +557,12 @@ async function saveOperation() {
         renderList();
         updateSaveState();
         showToast('Operação salva localmente.');
-        syncColetasToSheet(savedColetas);
+        coletaSyncCoordinator.refresh();
     } catch (error) {
         syncState = 'error';
         updateSaveState();
         alert(`Não foi possível salvar a operação: ${error.message}`);
     }
-}
-
-async function syncColetasToSheet(coletas) {
-    const result = await pushColetas(coletas);
-    if (result.ok) {
-        coletas.forEach(coleta => db.markColetaSynced(coleta.id, coleta.sync_id));
-        syncState = 'saved';
-        showToast('Operação salva e sincronizada.');
-    } else {
-        syncState = 'error';
-        showToast('Salvo localmente. Sincronização pendente.');
-    }
-    updateSaveState();
 }
 
 function showToast(message) {
@@ -556,6 +609,8 @@ function openChecklistModal() {
     requestAnimationFrame(() => document.getElementById('proxData').focus());
 
     const roteiroNome = routeSelect.options[routeSelect.selectedIndex]?.textContent || '';
+    const requestId = ++checklistRequestId;
+    checklistContext = { requestId, roteiroNome };
     ultimasQuantidades = {};
     // Carrega os dois dados do GAS SEQUENCIALMENTE (data da última coleta e
     // quantidades por ponto). Em paralelo, o GAS enfileira as duas execuções
@@ -564,18 +619,20 @@ function openChecklistModal() {
     // que a geração do PDF aguarde ambos antes de montar o documento (senão
     // "Qtd. Ant." sai em branco e "Recipientes Previstos: 0").
     checklistDataReady = (async () => {
-        await loadUltimaColeta(roteiroNome);
-        await loadUltimasQuantidades(roteiroNome);
+        await loadUltimaColeta(roteiroNome, requestId);
+        await loadUltimasQuantidades(roteiroNome, requestId);
     })();
 }
 
-async function waitForChecklistData() {
-    if (!checklistDataReady) return;
-    await checklistDataReady;
+async function waitForChecklistData(requestId = checklistContext?.requestId) {
+    const ready = checklistDataReady;
+    if (!ready) return false;
+    await ready;
+    return requestId === checklistContext?.requestId;
 }
 
-async function loadUltimaColeta(roteiroNome) {
-    const requestId = ++ultimaColetaRequestId;
+async function loadUltimaColeta(roteiroNome, contextId = checklistContext?.requestId) {
+    const requestId = contextId;
     ultimaColetaData = null;
     const field = document.getElementById('ultimaColeta');
     const sendBtn = document.getElementById('btnChecklistSend');
@@ -586,7 +643,7 @@ async function loadUltimaColeta(roteiroNome) {
     const result = await getUltimaColeta(roteiroNome);
 
     sendBtn.disabled = false;
-    if (requestId !== ultimaColetaRequestId) return;
+    if (requestId !== checklistContext?.requestId) return;
 
     if (result.ok && result.data) {
         ultimaColetaData = result.data;
@@ -598,10 +655,10 @@ async function loadUltimaColeta(roteiroNome) {
     }
 }
 
-async function loadUltimasQuantidades(roteiroNome) {
-    const requestId = ultimaColetaRequestId;
+async function loadUltimasQuantidades(roteiroNome, contextId = checklistContext?.requestId) {
+    const requestId = contextId;
     const result = await getUltimasQuantidades(roteiroNome);
-    if (requestId !== ultimaColetaRequestId) return;
+    if (requestId !== checklistContext?.requestId) return;
     if (!result.ok || !Array.isArray(result.data)) {
         const errMsg = result.error || 'resposta inesperada';
         console.warn('getUltimasQuantidades falhou:', errMsg, result);
@@ -623,7 +680,9 @@ async function loadUltimasQuantidades(roteiroNome) {
 }
 
 function closeChecklistModal() {
-    ultimaColetaRequestId++;
+    checklistRequestId++;
+    checklistContext = null;
+    checklistDataReady = null;
     document.getElementById('checklistModal').classList.remove('open');
     document.getElementById('btnChecklist').focus();
 }
@@ -734,7 +793,8 @@ function buildChecklistDoc() {
 }
 
 async function downloadChecklist() {
-    await waitForChecklistData();
+    const requestId = checklistContext?.requestId;
+    if (!await waitForChecklistData(requestId)) return;
     const { doc, filename } = buildChecklistDoc();
     const tauri = window.__TAURI__;
     if (tauri && tauri.core && typeof tauri.core.invoke === 'function') {
@@ -753,13 +813,16 @@ async function sendChecklistToDriveHandler() {
         return;
     }
 
-    await waitForChecklistData();
+    const requestId = checklistContext?.requestId;
+    if (!await waitForChecklistData(requestId)) return;
     const { doc, filename } = buildChecklistDoc();
     const pdfBase64 = doc.output('datauristring').split(',')[1];
     const result = await sendChecklistToDrive(filename, pdfBase64);
-    if (result.ok) {
+    if (result.ok && !result.warning) {
         alert('Checklist enviado para o Drive com sucesso!');
         closeChecklistModal();
+    } else if (result.ok) {
+        alert(`Checklist novo enviado, mas a substituição ficou incompleta: ${result.warning}`);
     } else {
         alert(`Falha ao enviar: ${result.error || 'erro desconhecido'}`);
     }

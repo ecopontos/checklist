@@ -179,6 +179,7 @@
                     <a href="coleta-checklist.html">✅ Coleta</a>
                     <a href="agendamentos.html">📅 Agendamentos</a>
                     <span class="active">📊 Análise</span>
+                    <a href="whatsapp-sender.html">📲 WhatsApp</a>
                     <a href="admin.html">⚙️ Admin</a>
                     <a href="ajuda-coleta.html" target="_blank">❓ Ajuda</a>
                 </nav>
@@ -259,7 +260,7 @@
     <script src="vendor/xlsx.full.min.js"></script>
     <script type="module">
         import db from './database.js';
-        import { pushColetas } from './google-sync.js';
+        import { syncPendingColetas } from './google-sync.js';
 
         async function init() {
             await db.init();
@@ -274,36 +275,57 @@
             const pending = db.getUnsyncedColetas();
             if (!pending.length) { alert('Nenhuma coleta pendente de sincronização!'); return; }
 
-            // Reusa o sync_id já persistido no insert. Assim o reenvio tem o
-            // mesmo id da 1ª tentativa e o GAS deduplica em vez de duplicar a
-            // coleta. Só gera um novo para linhas antigas sem sync_id.
-            const payload = pending.map(c => ({
-                id: c.id,
-                id_rota: c.id_rota,
-                data: c.data,
-                quantidade: c.quantidade,
-                intercorrencia: c.intercorrencia,
-                cliente: c.cliente,
-                roteiro: c.roteiro,
-                sync_id: c.sync_id || crypto.randomUUID()
-            }));
-
-            const result = await pushColetas(payload);
-            if (result.ok) {
-                payload.forEach(c => db.markColetaSynced(c.id, c.sync_id));
-                alert(`${payload.length} coleta(s) sincronizada(s) com sucesso!`);
+            const result = await syncPendingColetas(db);
+            if (result.ok && result.pending === 0) {
+                alert(`${result.count} coleta(s) sincronizada(s) com sucesso!`);
             } else {
-                alert(`Falha ao sincronizar: ${result.error || 'erro desconhecido'}`);
+                alert(`Sincronização incompleta: ${result.error || `${result.pending} coleta(s) pendente(s)`}`);
             }
+            renderStats();
+        }
+
+        function parseHistoryQuantity(value) {
+            if (value === '' || value === null || value === undefined) return null;
+            const quantity = typeof value === 'number'
+                ? value : Number(String(value).trim().replace(',', '.'));
+            return Number.isSafeInteger(quantity) && quantity >= 0 ? quantity : null;
+        }
+
+        function validHistoryDate(value) {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+            const date = new Date(`${value}T12:00:00Z`);
+            return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+        }
+
+        function normalizeHistoryDate(value) {
+            if (value instanceof Date && Number.isFinite(value.getTime())) {
+                const month = String(value.getMonth() + 1).padStart(2, '0');
+                const day = String(value.getDate()).padStart(2, '0');
+                return `${value.getFullYear()}-${month}-${day}`;
+            }
+            if (typeof value === 'number') {
+                const parsed = XLSX.SSF.parse_date_code(value);
+                if (!parsed) return null;
+                return `${String(parsed.y).padStart(4, '0')}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+            }
+            const text = String(value ?? '').trim();
+            if (validHistoryDate(text)) return text;
+            const br = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+            if (!br) return null;
+            const iso = `${br[3]}-${br[2]}-${br[1]}`;
+            return validHistoryDate(iso) ? iso : null;
         }
 
         function renderStats() {
             const res = db.db.exec(`
-                SELECT r.nome, SUM(c.quantidade), COUNT(c.id) 
+                SELECT COALESCE(NULLIF(CASE WHEN c.context_source = 'event' THEN c.roteiro_snapshot
+                                            ELSE COALESCE(NULLIF(c.roteiro_snapshot, ''), r.nome) END, ''),
+                                'Roteiro não identificado'),
+                       SUM(c.quantidade), COUNT(c.id)
                 FROM coletas c
-                JOIN clientes cl ON c.id_rota = cl.id_rota
-                JOIN roteiros r ON cl.roteiro_id = r.id
-                GROUP BY r.nome
+                LEFT JOIN clientes cl ON c.id_rota = cl.id_rota
+                LEFT JOIN roteiros r ON cl.roteiro_id = r.id
+                GROUP BY 1
             `);
 
             const body = document.getElementById('reportStats');
@@ -332,18 +354,23 @@
                 skipEmptyLines: true,
                 complete: function(results) {
                     const data = results.data;
+                    let imported = 0;
+                    let rejected = 0;
                     data.forEach(row => {
                         const idRota = row['ID Rota'] || row['idRota'] || row['id_rota'];
-                        if (idRota) {
+                        const date = normalizeHistoryDate(row.Data || row.data);
+                        const quantity = parseHistoryQuantity(row['Contentores Coletados'] ?? row.quantidade);
+                        if (idRota && date && quantity !== null) {
                             db.addColeta({
                                 id_rota: idRota.toString(),
-                                data: row.Data || row.data,
-                                quantidade: parseInt(row['Contentores Coletados'] || row['quantidade']) || 0,
+                                data: date,
+                                quantidade: quantity,
                                 intercorrencia: row['Intercorrências'] || row['intercorrencia'] || ''
                             });
-                        }
+                            imported++;
+                        } else rejected++;
                     });
-                    alert('Histórico importado com sucesso!');
+                    alert(`${imported} registro(s) importado(s).${rejected ? ` ${rejected} linha(s) inválida(s) rejeitada(s).` : ''}`);
                     renderStats();
                 }
             });
@@ -357,23 +384,27 @@
                 const wb = XLSX.read(data, { type: 'array' });
                 const ws = wb.Sheets[wb.SheetNames[0]];
                 const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
-                
+                let imported = 0;
+                let rejected = 0;
                 json.forEach(row => {
                     // Mapping for tblColeta/tblDetalhesColeta
                     const idRota = row.ID_Rota || row.id_rota || row.ID_Ponto;
                     const dataColeta = row.Data_Coleta || row.Data || row.data;
                     const qtd = row.Quantidade || row.Qtd || row.Bombonas;
-                    
-                    if (idRota && dataColeta) {
+                    const date = normalizeHistoryDate(dataColeta);
+                    const quantity = parseHistoryQuantity(qtd);
+
+                    if (idRota && date && quantity !== null) {
                         db.addColeta({
                             id_rota: idRota.toString(),
-                            data: dataColeta,
-                            quantidade: parseInt(qtd) || 0,
+                            data: date,
+                            quantidade: quantity,
                             intercorrencia: row.Intercorrencia || row.Obs || ''
                         });
-                    }
+                        imported++;
+                    } else rejected++;
                 });
-                alert('Histórico legado importado com sucesso!');
+                alert(`${imported} registro(s) legados importado(s).${rejected ? ` ${rejected} linha(s) inválida(s) rejeitada(s).` : ''}`);
                 renderStats();
             };
             reader.readAsArrayBuffer(file);

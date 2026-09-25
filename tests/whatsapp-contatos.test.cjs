@@ -37,7 +37,7 @@ async function loadModule(context, filename) {
   const db = databaseModule.default;
   await db.init();
 
-  db.addRoteiro('CENTRO LESTE', 'Organicos');
+  db.addRoteiro('CENTRO LESTE');
   const roteiroId = db.getRoteiros().find(r => r.nome === 'CENTRO LESTE').id;
 
   // Cliente com os dois telefones validos -> vira 2 contatos
@@ -83,7 +83,6 @@ async function loadModule(context, filename) {
   assert.strictEqual(padaria[0].telefoneExibicao, '48991234567');
   assert.strictEqual(padaria[0].nome, 'PADARIA X');
   assert.strictEqual(padaria[0].roteiroNome, 'CENTRO LESTE');
-  assert.strictEqual(padaria[0].tipoResiduo, 'Organicos', 'contato deve trazer o tipo de residuo do roteiro');
   assert.strictEqual(padaria[1].slot, 2);
   assert.strictEqual(padaria[1].telefoneDigits, '554833334444');
   assert.strictEqual(padaria[1].telefoneExibicao, '(48) 3333-4444');

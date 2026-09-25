@@ -3,7 +3,7 @@
 1. Crie uma planilha Google Sheets (vazia, qualquer nome) — copie o ID dela
    da URL: `https://docs.google.com/spreadsheets/d/<SPREADSHEET_ID>/edit`.
 2. Crie uma pasta no Google Drive onde o arquivo `cstExportaCheckList.csv`
-   será colocado (e substituído a cada atualização) — copie o ID dela da URL:
+   será colocado a cada exportação do Access — copie o ID dela da URL:
    `https://drive.google.com/drive/folders/<DRIVE_FOLDER_ID>`.
 3. Acesse https://script.google.com/, crie um novo projeto.
 4. Apague o conteúdo padrão de `Code.gs` e cole o conteúdo de
@@ -55,14 +55,24 @@ o conteúdo ao aplicativo.
 curl "<URL>?action=status"
 ```
 
-Esperado: `{"ok":true,"service":"satelite-gas","apiVersion":11,"routeChangesConfigured":true}`.
+Esperado: `{"ok":true,"service":"satelite-gas","apiVersion":12,"routeChangesConfigured":true}`.
 
 ```bash
-curl "<URL>"
+curl "<URL>?action=roteirosCsv"
 ```
 
-Esperado: JSON com `"ok":true`, `"content":"Fonte;idRota;..."`,
-`"modifiedTime"` e `"encoding":"UTF-16LE"` para o arquivo do Access.
+Esperado: JSON com `"ok":true`, `"apiVersion":12`, `"source":"drive-csv"`,
+`"content":"Fonte;idRota;..."`, `"modifiedTime"` e `"encoding":"UTF-16LE"`
+para o arquivo do Access. O GAS escolhe o arquivo mais recente caso existam
+cópias com o mesmo nome. `GET <URL>` e `?action=roteiros` continuam lendo as
+abas do Sheets para consumidores antigos; o app atualizado usa `roteirosCsv`.
+
+O CSV deve manter o cabeçalho exportado pelo Access, incluindo `idRota`,
+`Ordem`, `Roteiro`, `Cliente` e `logradouro`. O app aceita tanto
+`Tipo de Resíduo` quanto `TipoResiduo`. A importação automática funciona no
+app instalado e no navegador, desde que a URL do GAS esteja configurada.
+O processo que gera o CSV precisa colocá-lo nessa pasta do Drive; este
+repositório contém o leitor, não um publicador do export do Access.
 
 ```bash
 curl -X POST "<URL>" -H "Content-Type: text/plain;charset=utf-8" \
@@ -100,8 +110,8 @@ roteiro:
 curl "<URL>?action=intercorrenciasAtuais"
 ```
 
-O contrato da API 11 é
-`{"ok":true,"apiVersion":11,"source":"intercorrenciasAtuais","generatedAt":"...","data":[...],"quality":{...}}`.
+O contrato introduzido na API 11 continua disponível na API 12:
+`{"ok":true,"apiVersion":12,"source":"intercorrenciasAtuais","generatedAt":"...","data":[...],"quality":{...}}`.
 O GAS escolhe a última coleta de cada ponto pela maior data civil e, em empate,
 pela última linha gravada. Só então remove os pontos cuja coleta escolhida não
 tem intercorrência; uma coleta com quantidade zero continua válida. A resposta
@@ -171,27 +181,73 @@ uma versão GAS anterior. As propriedades do script
 `ROUTE_CHANGES_TOKEN`) não são
 alteradas pelo workflow.
 
-## Limitação conhecida: linhas duplicadas em reenvios
+## Reenvio de coletas e histórico do dashboard
 
-O `doPost` sempre adiciona uma nova linha na aba "Coletas" — ele não usa a
-coluna "Sync ID" para evitar duplicatas. Se uma coleta for gravada na
-planilha mas a resposta nunca chegar de volta ao app (ex: conexão caiu logo
-após o envio), o app mantém a coleta como "não sincronizada" localmente e
-vai reenviá-la na próxima sincronização automática ou manual — criando uma
-segunda linha para a mesma coleta na planilha. Isso é aceitável dado que o
-app assume conexão sempre disponível no momento da coleta (sem fila
-offline), mas é bom saber que a coluna "Sync ID" existe justamente para
-permitir identificar e limpar duplicatas manualmente na planilha, caso
-aconteçam.
+O GAS deduplica coletas pela coluna `Sync ID`. O dashboard reenvia pendências
+em lotes de até 100 registros antes de consultar o histórico. O identificador
+é persistido antes do envio, inclusive para registros legados sem ID, e uma
+falha mantém a coleta pendente para a próxima tentativa.
 
-## Limitação conhecida: arquivo duplicado no Drive
+O endpoint `GET ?action=historicoColetas` retorna
+`{ "ok": true, "data": [...], "quality": { "invalidDates": 0, "invalidQuantities": 0, "excludedRecords": 0 } }`.
+O parâmetro opcional `mes=YYYY-MM` filtra o
+mês. Cada registro contém `idRota`, `data`, `cliente`, `roteiro`, `quantidade`,
+`intercorrencia`, `sincronizadoEm` e `syncId`. Datas são normalizadas para
+`YYYY-MM-DD` no fuso operacional `America/Sao_Paulo`. O cache do histórico dura
+até cinco minutos; novas linhas mudam a chave, e falhas de cache não impedem
+a resposta. Desde a API 9, os metadados de qualidade integram o cache. Datas
+impossíveis e quantidades vazias, negativas, fracionárias ou não numéricas
+são excluídas e contabilizadas; zero é uma quantidade válida. As contagens
+de qualidade cobrem toda a aba consultada, mesmo com filtro de mês, e uma
+linha inválida conta uma única vez em `excludedRecords`. Linhas inteiramente
+vazias não contam como registros. O dashboard também exclui e informa datas
+futuras. Servidores sem `quality` permitem exibir totais, mas não comparações.
+
+A API 10 torna o contrato de escrita de coletas estrito: cada item exige
+`id_rota`, `sync_id`, data civil válida até hoje e quantidade inteira não
+negativa. O lote inteiro é validado antes da gravação. A resposta informa
+`count` e `duplicates`, e o app só conclui as pendências quando essa soma
+confirma todos os itens enviados. O reenvio manual, a tela inicial, a tela de
+coleta e o dashboard usam a mesma fila e preservam o `sync_id` entre tentativas.
+
+Ao substituir um checklist no Drive, a API 10 cria primeiro o PDF novo e só
+depois move as cópias anteriores para a lixeira, sob lock. Se a criação falhar,
+o arquivo anterior permanece disponível. Falhas ao limpar versões antigas são
+retornadas em `warning` e exibidas pelo app como substituição incompleta.
+
+Os indicadores de coletas, ranking, intercorrências e resumo mensal usam o
+histórico remoto mais as pendências locais, sem repetir `syncId`. Se a
+consulta falhar, o painel identifica que está mostrando somente dados locais.
+Pontos e roteiros continuam vindo do cadastro local, atualizado pelo CSV do
+Drive via GAS. A agenda cobre hoje e os seis dias seguintes no fuso
+`America/Sao_Paulo`. Edições de agendamentos invalidam o cache geral e o filtrado por data.
+
+O [ADR-0001](../docs/adr/0001-indicadores-dashboard-periodos-e-qualidade-dados.md)
+define os indicadores. O mês atual mostra o total de 1 até hoje; sua variação
+compara apenas dias encerrados equivalentes nos dois meses. Meses passados
+comparam totais de meses completos, com os intervalos visíveis. Atendimentos,
+coletas com retirada e recipientes são medidas distintas. A taxa de
+intercorrências usa atendimentos como denominador e varia em pontos
+percentuais. A visão local parcial ou dados inconsistentes suspendem as
+comparações; meses sem registros não são tratados como zero operacional
+confirmado.
+
+O painel atualiza ao abrir, ao voltar a ficar visível, ao recuperar a conexão
+e a cada cinco minutos enquanto estiver visível. Há também o botão
+"Atualizar agora". Erros e pendências impedem a mensagem de sucesso completo.
+
+Para disponibilizar essas correções, atualize a implantação existente do GAS
+com `gas/Code.gs` e distribua o frontend incluindo `dashboard.html` e
+`dashboard.js` e `dashboard-metrics.js`. Testar o código local não atualiza a
+implantação de produção nem o instalador já gerado.
+
+## Arquivos duplicados no Drive
 
 Se a pasta configurada acabar com mais de um arquivo chamado
 `cstExportaCheckList.csv` (por exemplo, por engano ao enviar um novo em vez
-de substituir o existente), o `doGet` pode retornar qualquer um dos dois —
-não necessariamente o mais recente. Sempre **substitua** o arquivo existente
-na pasta (mantendo um único arquivo com esse nome) em vez de fazer upload de
-uma cópia adicional.
+de substituir o existente), `roteirosCsv` escolhe o de modificação mais
+recente. Ainda assim, mantenha apenas um arquivo com esse nome na pasta para
+evitar ambiguidade quando duas cópias tiverem o mesmo horário.
 
 ## Agendamentos de coleta (aba "verdesagendados")
 

@@ -218,6 +218,19 @@
         </header>
 
         <div class="grid">
+            <!-- DASHBOARD -->
+            <a href="dashboard.html" class="card" style="border-color: var(--secondary);">
+                <div>
+                    <div class="card-icon">📊</div>
+                    <h2 style="color: var(--secondary);">Dashboard</h2>
+                    <p>Visão geral da operação: KPIs, evolução mensal, top roteiros e status de sincronização.</p>
+                </div>
+                <div class="card-footer" style="color: var(--secondary);">
+                    Abrir Dashboard
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                </div>
+            </a>
+
             <!-- COLETA -->
             <a href="coleta-checklist.html" class="card">
                 <div>
@@ -236,7 +249,7 @@
                 <div>
                     <div class="card-icon">⚙️</div>
                     <h2 style="color: var(--accent);">Painel Administrativo</h2>
-                    <p>Gerencie a migração do banco legado, manutenção do SQLite e sincronização com o Google Sheets/Drive para uso em rede.</p>
+                    <p>Gerencie a migração do banco legado, manutenção do SQLite e sincronização com o Google Sheets/Drive entre dispositivos.</p>
                 </div>
                 <div class="card-footer" style="color: var(--accent);">
                     Gerenciar Sistema 
@@ -253,6 +266,19 @@
                 </div>
                 <div class="card-footer">
                     Gerenciar Agendamentos 
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                </div>
+            </a>
+
+            <!-- WHATSAPP -->
+            <a href="whatsapp-sender.html" class="card" style="border-color: #25d366;">
+                <div>
+                    <div class="card-icon">📲</div>
+                    <h2 style="color: #25d366;">Disparo WhatsApp</h2>
+                    <p>Envio manual assistido de mensagens via WhatsApp. Selecione roteiros, personalize a mensagem e envie um contato por vez.</p>
+                </div>
+                <div class="card-footer" style="color: #25d366;">
+                    Iniciar Disparo
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
                 </div>
             </a>
@@ -286,7 +312,8 @@
 
     <script type="module">
         import db from './database.js';
-        import { checkAndImportRoteirosRede, getLastRotasRedeSyncLabel } from './google-sync.js';
+        import { checkAndImportRoteiros, getLastRoteirosDriveSyncLabel } from './google-sync.js';
+        import { startColetaSync } from './coleta-sync.js';
 
         function refreshStats() {
             const roteiros = db.getRoteiros();
@@ -307,12 +334,13 @@
                 await db.init();
                 refreshStats();
                 document.getElementById('btnBackup').onclick = () => db.downloadDatabase();
-                document.getElementById('syncFreshness').textContent = getLastRotasRedeSyncLabel();
+                document.getElementById('syncFreshness').textContent = getLastRoteirosDriveSyncLabel();
+                startColetaSync(db, { onResult: refreshStats });
 
-                checkAndImportRoteirosRede(db).then(result => {
+                checkAndImportRoteiros(db).then(result => {
                     if (result.updated) refreshStats();
-                    document.getElementById('syncFreshness').textContent = getLastRotasRedeSyncLabel();
-                }).catch(e => console.error("Network sync check failed", e));
+                    document.getElementById('syncFreshness').textContent = getLastRoteirosDriveSyncLabel();
+                }).catch(e => console.error("Drive CSV sync check failed", e));
             } catch (e) {
                 console.error("Database error", e);
             }

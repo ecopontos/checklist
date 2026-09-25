@@ -27,6 +27,16 @@ class AppDatabase {
         }
         this.createTables();
         this.migrateSchema();
+        this.migrateColetaSchema();
+        // Importações antigas uniam pontos pelo nome. Força uma nova leitura
+        // do cadastro uma única vez depois da correção da identidade por idRota.
+        if (localStorage.getItem('app3_rota_identity_version') !== '2') {
+            if (typeof localStorage.removeItem === 'function') {
+                localStorage.removeItem('app3_last_drive_sync');
+                localStorage.removeItem('app3_last_roteiros_csv_drive_sync');
+            }
+            localStorage.setItem('app3_rota_identity_version', '2');
+        }
     }
 
     // Migração idempotente: adiciona colunas de cliente em bancos locais já
@@ -65,6 +75,32 @@ class AppDatabase {
         return res[0].values.map(v => v[nameIdx]);
     }
 
+    migrateColetaSchema() {
+        const cols = this._tableColumns('coletas');
+        if (!cols.length) return;
+        const additions = [
+            ['operation_id', 'TEXT'],
+            ['cliente_snapshot', 'TEXT'],
+            ['roteiro_snapshot', 'TEXT'],
+            ['context_source', 'TEXT']
+        ];
+        this._persistAtomic(() => {
+            additions.forEach(([name, type]) => {
+                if (!cols.includes(name)) this.db.run(`ALTER TABLE coletas ADD COLUMN ${name} ${type}`);
+            });
+            // Para registros antigos só é possível congelar o retrato local
+            // disponível na migração. A origem fica explícita para auditoria.
+            this.db.run(`UPDATE coletas SET
+                cliente_snapshot = COALESCE(cliente_snapshot,
+                    (SELECT cliente FROM clientes WHERE id_rota = coletas.id_rota), ''),
+                roteiro_snapshot = COALESCE(roteiro_snapshot,
+                    (SELECT r.nome FROM clientes cl JOIN roteiros r ON r.id = cl.roteiro_id
+                     WHERE cl.id_rota = coletas.id_rota), ''),
+                context_source = 'legacy-local'
+                WHERE context_source IS NULL`);
+        });
+    }
+
     createTables() {
         this.db.run(`
             CREATE TABLE IF NOT EXISTS roteiros (
@@ -100,7 +136,16 @@ class AppDatabase {
                 intercorrencia TEXT,
                 last_sync TEXT,
                 sync_id TEXT,
+                operation_id TEXT,
+                cliente_snapshot TEXT,
+                roteiro_snapshot TEXT,
+                context_source TEXT,
                 FOREIGN KEY (id_rota) REFERENCES clientes(id_rota)
+            );
+
+            CREATE TABLE IF NOT EXISTS coleta_operations (
+                operation_id TEXT PRIMARY KEY,
+                payload TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS whatsapp_campaigns (
@@ -450,19 +495,30 @@ class AppDatabase {
             return this._normalizeOrdem(ordem) !== 0;
         });
 
-        const semDuplicataRoteiroCliente = new Map();
+        const porIdRota = new Map();
         comOrdemValida.forEach(row => {
-            const chave = this._getCsvVal(row, 'Roteiro') + '||' + this._getCsvVal(row, 'Cliente');
-            semDuplicataRoteiroCliente.set(chave, row);
+            const id = String(this._getCsvVal(row, 'idRota') || this._getCsvVal(row, 'id Rota') || '').trim();
+            if (!id) return;
+            const anterior = porIdRota.get(id);
+            if (anterior) {
+                const assinatura = value => JSON.stringify(Object.entries(value)
+                    .map(([key, item]) => [key.trim().toLocaleLowerCase('pt-BR'), item])
+                    .sort(([a], [b]) => a.localeCompare(b)));
+                if (assinatura(anterior) !== assinatura(row)) {
+                    throw new Error(`Conflito no idRota duplicado: ${id}`);
+                }
+            }
+            porIdRota.set(id, row);
         });
-        const data = [...semDuplicataRoteiroCliente.values()];
+        const data = [...porIdRota.values()];
 
         const uniqueRoteiros = [...new Set(data.map(r => this._getCsvVal(r, 'Roteiro')).filter(Boolean))];
         const tipoResiduoPorRoteiro = {};
         data.forEach(row => {
             const nome = this._getCsvVal(row, 'Roteiro');
             if (nome && !(nome in tipoResiduoPorRoteiro)) {
-                tipoResiduoPorRoteiro[nome] = this._getCsvVal(row, 'TipoResiduo') || '';
+                tipoResiduoPorRoteiro[nome] = this._getCsvVal(row, 'TipoResiduo') ||
+                    this._getCsvVal(row, 'Tipo de Resíduo') || '';
             }
         });
         uniqueRoteiros.forEach(name => this.addRoteiro(name, tipoResiduoPorRoteiro[name] || ''));
@@ -992,22 +1048,94 @@ class AppDatabase {
 
     // --- Coletas ---
     addColeta(coleta) {
-        // O sync_id é gerado e persistido já no insert (estável). Assim um
-        // reenvio após falha de resposta carrega o MESMO id, e o GAS
-        // deduplica por ele em vez de gravar a coleta duas vezes.
-        const syncId = coleta.sync_id || crypto.randomUUID();
+        return this._persistAtomic(() => this._insertColeta(coleta));
+    }
+
+    _validateColeta(coleta) {
+        if (!String(coleta.id_rota ?? '').trim()) throw new Error('ID do ponto obrigatório');
+        if (!Number.isSafeInteger(coleta.quantidade) || coleta.quantidade < 0) {
+            throw new Error('Quantidade deve ser um inteiro não negativo');
+        }
+        const day = typeof coleta.data === 'string' ? coleta.data : '';
+        const date = new Date(`${day}T12:00:00Z`);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(date.getTime()) ||
+            date.toISOString().slice(0, 10) !== day) {
+            throw new Error('Data de coleta inválida');
+        }
+        const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
+        }).formatToParts(new Date()).map(part => [part.type, part.value]));
+        if (day > `${parts.year}-${parts.month}-${parts.day}`) {
+            throw new Error('Data de coleta futura não permitida');
+        }
+    }
+
+    _insertColeta(coleta) {
+        this._validateColeta(coleta);
+        const syncId = coleta.sync_id || this._newChangeId();
+        const context = this.getClienteByIdRota(String(coleta.id_rota));
         this.db.run(`
-            INSERT INTO coletas (id_rota, data, quantidade, intercorrencia, sync_id)
-            VALUES (?, ?, ?, ?, ?)
-        `, [coleta.id_rota, coleta.data, coleta.quantidade, coleta.intercorrencia, syncId]);
-        const id = this.db.exec("SELECT last_insert_rowid() AS id")[0].values[0][0];
-        this.save();
-        return id;
+            INSERT INTO coletas
+                (id_rota, data, quantidade, intercorrencia, sync_id, operation_id,
+                 cliente_snapshot, roteiro_snapshot, context_source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'event')
+        `, [
+            String(coleta.id_rota), coleta.data, coleta.quantidade,
+            coleta.intercorrencia || '', syncId, coleta.operation_id || null,
+            coleta.cliente ?? context?.cliente ?? '',
+            coleta.roteiro ?? context?.roteiro_nome ?? ''
+        ]);
+        return this.db.exec('SELECT last_insert_rowid()')[0].values[0][0];
+    }
+
+    saveColetaOperation({ operationId, data, roteiro, entries }) {
+        if (!String(operationId || '').trim() || !Array.isArray(entries) || !entries.length) {
+            throw new Error('Operação sem identidade ou registros');
+        }
+        const normalized = entries.map(entry => ({
+            id_rota: String(entry.id_rota ?? '').trim(), data,
+            quantidade: entry.quantidade, intercorrencia: entry.intercorrencia || '',
+            cliente: entry.cliente ?? '', roteiro: roteiro || '',
+            sync_id: entry.sync_id || `${operationId}:${entry.id_rota}`,
+            operation_id: operationId
+        })).sort((a, b) => a.id_rota.localeCompare(b.id_rota, 'pt-BR', { numeric: true }));
+        normalized.forEach(entry => this._validateColeta(entry));
+        if (new Set(normalized.map(entry => entry.id_rota)).size !== normalized.length ||
+            new Set(normalized.map(entry => entry.sync_id)).size !== normalized.length) {
+            throw new Error('Ponto ou identificador duplicado na operação');
+        }
+        const payload = JSON.stringify(normalized);
+        const previous = this.db.exec(
+            'SELECT payload FROM coleta_operations WHERE operation_id = ?', [operationId]
+        );
+        if (previous.length) {
+            if (previous[0].values[0][0] !== payload) {
+                throw new Error('Operação já salva com conteúdo diferente');
+            }
+        } else {
+            this._persistAtomic(() => {
+                normalized.forEach(entry => {
+                    if (this.db.exec('SELECT id FROM coletas WHERE sync_id = ?', [entry.sync_id]).length) {
+                        throw new Error('Conflito de identificador de coleta');
+                    }
+                    this._insertColeta(entry);
+                });
+                this.db.run(
+                    'INSERT INTO coleta_operations (operation_id, payload) VALUES (?, ?)',
+                    [operationId, payload]
+                );
+            });
+        }
+        const result = this.db.exec(
+            'SELECT id, sync_id, id_rota FROM coletas WHERE operation_id = ? ORDER BY id',
+            [operationId]
+        );
+        return result.length ? result[0].values.map(([id, sync_id, id_rota]) => ({ id, sync_id, id_rota })) : [];
     }
 
     getUltimaQuantidade(idRota) {
         const res = this.db.exec(
-            "SELECT quantidade FROM coletas WHERE id_rota = ? ORDER BY id DESC LIMIT 1",
+            "SELECT quantidade FROM coletas WHERE id_rota = ? ORDER BY data DESC, id DESC LIMIT 1",
             [String(idRota)]
         );
         if (!res.length || !res[0].values.length) return null;
@@ -1016,9 +1144,9 @@ class AppDatabase {
 
     getColetasByDate(data) {
         const res = this.db.exec(`
-            SELECT c.*, cl.cliente
+            SELECT c.*, COALESCE(c.cliente_snapshot, cl.cliente, '') AS cliente
             FROM coletas c
-            JOIN clientes cl ON c.id_rota = cl.id_rota
+            LEFT JOIN clientes cl ON c.id_rota = cl.id_rota
             WHERE c.data = ?
         `, [data]);
         if (!res.length) return [];
@@ -1031,16 +1159,42 @@ class AppDatabase {
     }
 
     markColetaSynced(id, syncId) {
-        this.db.run("UPDATE coletas SET last_sync = ?, sync_id = ? WHERE id = ?", [new Date().toISOString(), syncId, id]);
-        this.save();
+        this.markColetasSynced([{ id, sync_id: syncId }]);
+    }
+
+    markColetasSynced(coletas) {
+        this._persistAtomic(() => {
+            const syncedAt = new Date().toISOString();
+            coletas.forEach(coleta => {
+                const current = this.db.exec('SELECT sync_id FROM coletas WHERE id = ?', [coleta.id]);
+                if (!current.length || current[0].values[0][0] !== coleta.sync_id) {
+                    throw new Error('Identidade da coleta mudou durante o envio');
+                }
+                this.db.run('UPDATE coletas SET last_sync = ? WHERE id = ?', [syncedAt, coleta.id]);
+            });
+        });
+    }
+
+    ensureColetaSyncId(id) {
+        const row = this.db.exec('SELECT sync_id FROM coletas WHERE id = ?', [id]);
+        if (!row.length) throw new Error('Coleta não encontrada');
+        const existing = row[0].values[0][0];
+        if (existing) return existing;
+        const syncId = this._newChangeId();
+        this._persistAtomic(() => {
+            this.db.run('UPDATE coletas SET sync_id = ? WHERE id = ?', [syncId, id]);
+        });
+        return syncId;
     }
 
     getUnsyncedColetas() {
         const res = this.db.exec(`
-            SELECT c.id, c.id_rota, c.data, c.quantidade, c.intercorrencia, cl.cliente, r.nome as roteiro, c.sync_id
+            SELECT c.id, c.id_rota, c.data, c.quantidade, c.intercorrencia,
+                COALESCE(c.cliente_snapshot, cl.cliente, '') AS cliente,
+                COALESCE(c.roteiro_snapshot, r.nome, '') AS roteiro, c.sync_id
             FROM coletas c
-            JOIN clientes cl ON c.id_rota = cl.id_rota
-            JOIN roteiros r ON cl.roteiro_id = r.id
+            LEFT JOIN clientes cl ON c.id_rota = cl.id_rota
+            LEFT JOIN roteiros r ON cl.roteiro_id = r.id
             WHERE c.last_sync IS NULL
             ORDER BY c.data DESC
         `);
@@ -1070,8 +1224,7 @@ class AppDatabase {
 
 // O export do Access (cstExportaCheckList.csv) sai em UTF-16LE com BOM;
 // detecta pelo BOM em vez de assumir UTF-8, para não corromper acentos.
-// Usado tanto pelo upload manual (admin.html) quanto pela leitura automática
-// da pasta de rede (google-sync.js).
+// Usado pelo upload manual do CSV no Admin.
 export function decodeLegacyCsvBytes(buffer) {
     const bytes = new Uint8Array(buffer);
     if (bytes[0] === 0xFF && bytes[1] === 0xFE) {

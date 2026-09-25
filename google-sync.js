@@ -1,14 +1,11 @@
 /**
  * Client for the Google Apps Script (GAS) Web App bridge to
- * Google Sheets (push coletas) and Google Drive (pull rotas/pontos CSV).
+ * Google Sheets (push coletas) and Google Drive (pull rotas/pontos CSV via GAS).
  */
-import { decodeLegacyCsvBytes } from './database.js';
-
 const GAS_URL_KEY = 'app3_gas_url';
-const LAST_DRIVE_SYNC_KEY = 'app3_last_drive_sync';
+const LAST_CSV_DRIVE_SYNC_KEY = 'app3_last_roteiros_csv_drive_sync';
 const GAS_ROUTE_TOKEN_KEY = 'app3_gas_route_token';
-const LAST_ROTAS_REDE_SYNC_KEY = 'app3_last_rotas_rede_sync';
-export const REQUIRED_GAS_API_VERSION = 4;
+export const REQUIRED_GAS_API_VERSION = 12;
 
 function getAppConfig_() {
     return (typeof window !== 'undefined' && window.APP_CONFIG) || {};
@@ -53,9 +50,12 @@ export async function pushColetas(coletas) {
     if (!url) return { ok: false, error: 'URL do GAS não configurada' };
     if (!coletas.length) return { ok: true, count: 0 };
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000);
     try {
         const res = await fetch(url, {
             method: 'POST',
+            signal: controller.signal,
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify({ coletas })
         });
@@ -64,125 +64,130 @@ export async function pushColetas(coletas) {
         }
         return await res.json();
     } catch (e) {
-        return { ok: false, error: e.message };
+        return { ok: false, error: e.name === 'AbortError' ? 'Tempo esgotado ao enviar coletas' : e.message };
+    } finally {
+        clearTimeout(timeout);
     }
+}
+
+const coletaSyncs = new WeakMap();
+
+export function syncPendingColetas(db) {
+    const current = coletaSyncs.get(db);
+    if (current) return current;
+    const task = runPendingColetas_(db).finally(() => coletaSyncs.delete(db));
+    coletaSyncs.set(db, task);
+    return task;
+}
+
+async function runPendingColetas_(db) {
+    const pending = db.getUnsyncedColetas();
+    let count = 0;
+    for (let offset = 0; offset < pending.length; offset += 100) {
+        // Persistir o ID antes da primeira tentativa também para registros legados.
+        const batch = pending.slice(offset, offset + 100).map(c => ({
+            ...c, sync_id: c.sync_id || db.ensureColetaSyncId(c.id)
+        }));
+        const result = await pushColetas(batch);
+        if (!result.ok) return { ...result, count, pending: db.getUnsyncedColetas().length };
+        const inserted = result.count;
+        const duplicates = result.duplicates ?? 0;
+        if (!Number.isInteger(inserted) || !Number.isInteger(duplicates) ||
+            inserted < 0 || duplicates < 0 || inserted + duplicates !== batch.length) {
+            return { ok: false, error: 'O GAS não confirmou todas as coletas do lote', count, pending: db.getUnsyncedColetas().length };
+        }
+        if (typeof db.markColetasSynced === 'function') db.markColetasSynced(batch);
+        else batch.forEach(c => db.markColetaSynced(c.id, c.sync_id));
+        count += batch.length;
+    }
+    return { ok: true, count, pending: db.getUnsyncedColetas().length };
 }
 
 export async function checkAndImportRoteiros(db) {
     const url = getGasUrl();
     if (!url) return { checked: false, reason: 'no-url' };
 
-    // A resposta de roteiros é grande e passa pela etapa de redirecionamento de
-    // conteúdo do Google, que às vezes devolve um 404 transitório. Tenta algumas
-    // vezes antes de desistir, para não confundir uma falha passageira com uma
-    // implantação obsoleta.
-    //
-    // Compatibilidade durante a transição: o GAS novo devolve as linhas
-    // achatadas em `data.rows` (fonte = abas do Sheets); o GAS antigo, ainda não
-    // reimplantado, responde a esta mesma chamada com o CSV em `data.content`.
-    // Aceitamos os dois para não quebrar apps em uso enquanto o GAS não sobe.
+    // A resposta pode passar por um redirecionamento transitório do Google.
+    // A ação específica impede confundir a resposta de roteiros do Sheets com
+    // o CSV do Drive, que contém o logradouro necessário nos formulários.
+    const maxAttempts = 3;
     let res = null;
+    let data = null;
     let lastError = '';
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 45000);
         try {
-            res = await fetch(`${url}?action=roteiros`, { method: 'GET' });
-            if (res.ok) break;
-            lastError = `Falha HTTP ${res.status}`;
+            res = await fetch(`${url}?action=roteirosCsv`, {
+                method: 'GET',
+                signal: controller.signal
+            });
+            if (res.ok) {
+                data = await res.json();
+                break;
+            }
+            const failedGoogleRedirect = res.redirected &&
+                /^https:\/\/script\.googleusercontent\.com(?:\/|$)/i.test(res.url || '');
+            lastError = failedGoogleRedirect
+                ? `Falha HTTP ${res.status} em script.googleusercontent.com`
+                : `Falha HTTP ${res.status}`;
             res = null;
         } catch (e) {
-            lastError = e.message;
+            lastError = e.name === 'AbortError'
+                ? 'Tempo esgotado ao consultar o CSV do Drive'
+                : e.message;
             res = null;
+        } finally {
+            clearTimeout(timeout);
         }
-        if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 1200));
+        if (attempt < maxAttempts) await new Promise(r => setTimeout(r, attempt * 1200));
     }
     if (!res) {
-        return { checked: true, updated: false, error: lastError };
+        return {
+            checked: true,
+            updated: false,
+            error: `${lastError} após ${maxAttempts} tentativas. Use "Verificar agora" para repetir.`
+        };
     }
 
     try {
-        const data = await res.json();
-
         if (!data.ok) {
             return { checked: true, updated: false, error: data.error };
         }
 
-        const lastSync = localStorage.getItem(LAST_DRIVE_SYNC_KEY);
-        if (lastSync && new Date(data.modifiedTime) <= new Date(lastSync)) {
+        if (Number(data.apiVersion) < 12 || data.source !== 'drive-csv' ||
+            typeof data.content !== 'string' || !data.content.trim()) {
+            return { checked: true, updated: false, error: 'O GAS precisa da API 12 com o CSV de roteiros do Drive' };
+        }
+
+        const modifiedTime = Date.parse(data.modifiedTime);
+        if (!Number.isFinite(modifiedTime)) {
+            return { checked: true, updated: false, error: 'Data de modificação do CSV inválida' };
+        }
+
+        const lastSync = localStorage.getItem(LAST_CSV_DRIVE_SYNC_KEY);
+        if (lastSync && modifiedTime <= Date.parse(lastSync)) {
             return { checked: true, updated: false };
         }
 
-        const result = Array.isArray(data.rows)
-            ? db.importRoteirosRows(data.rows)          // GAS novo: abas do Sheets
-            : db.importRoteirosCsv(data.content || ''); // GAS antigo: CSV (fallback)
+        const result = db.importRoteirosCsv(data.content);
 
         if (result.roteiros === 0 && result.clientes === 0) {
             return { checked: true, updated: false, warning: 'Nenhum roteiro/cliente retornado' };
         }
 
-        localStorage.setItem(LAST_DRIVE_SYNC_KEY, data.modifiedTime);
+        localStorage.setItem(LAST_CSV_DRIVE_SYNC_KEY, data.modifiedTime);
         return { checked: true, updated: true, ...result };
     } catch (e) {
         return { checked: true, updated: false, error: e.message };
     }
 }
 
-// Le o CSV completo de roteiros/clientes (cstExportaCheckList.csv) direto da
-// pasta de rede fixa do Access, via comando Rust (so existe dentro do app
-// empacotado com Tauri — no navegador comum, ou em testes sem
-// window.__TAURI__, retorna checked:false). So reimporta quando o arquivo
-// mudou (modified_time_ms), e ignora silenciosamente qualquer falha de
-// acesso a rede: a proxima abertura do app tenta de novo. Substitui o pull
-// de roteiros do Sheets (checkAndImportRoteiros, mantido no código mas sem
-// chamador automático) como fonte de roteiro/cliente/ordem/ativo/logradouro/
-// telefone/complemento — o Sheets continua recebendo só o push de
-// alterações locais pendentes (syncPendingRoteiroChanges/
-// syncPendingClienteChanges). Ver
-// docs/superpowers/specs/2026-08-26-logradouros-rede-design.md.
-export async function checkAndImportRoteirosRede(db) {
-    const tauri = typeof window !== 'undefined' ? window.__TAURI__ : undefined;
-    if (!tauri || !tauri.core || typeof tauri.core.invoke !== 'function') {
-        return { checked: false, reason: 'not-tauri' };
-    }
-
-    let result;
-    try {
-        result = await tauri.core.invoke('read_network_logradouros_csv');
-    } catch (e) {
-        return { checked: true, updated: false, error: typeof e === 'string' ? e : e.message };
-    }
-
-    const lastSync = Number(localStorage.getItem(LAST_ROTAS_REDE_SYNC_KEY) || 0);
-    if (lastSync >= result.modified_time_ms) {
-        return { checked: true, updated: false };
-    }
-
-    const bytes = Uint8Array.from(atob(result.bytes_base64), c => c.charCodeAt(0));
-    const text = decodeLegacyCsvBytes(bytes.buffer);
-    const importResult = db.importRoteirosCsv(text);
-
-    if (importResult.roteiros === 0 && importResult.clientes === 0) {
-        return { checked: true, updated: false, warning: 'Nenhum roteiro/cliente retornado' };
-    }
-
-    localStorage.setItem(LAST_ROTAS_REDE_SYNC_KEY, String(result.modified_time_ms));
-    return { checked: true, ...importResult, updated: true };
-}
-
-// String pronta pra exibir na UI (index.html, coleta-operation.js) com a
-// data/hora de modificacao do CSV mais recente ja importado da pasta de
-// rede — nao a hora em que o app checou, mas a hora em que o Access gerou
-// o arquivo. So leitura de localStorage, nenhuma chamada de rede nova. Ver
-// docs/superpowers/specs/2026-09-01-notificacao-sync-rede-design.md.
-export function getLastRotasRedeSyncLabel() {
-    const tauri = typeof window !== 'undefined' ? window.__TAURI__ : undefined;
-    if (!tauri || !tauri.core || typeof tauri.core.invoke !== 'function') {
-        return 'Sincronização automática só funciona no app instalado';
-    }
-    const ms = Number(localStorage.getItem(LAST_ROTAS_REDE_SYNC_KEY) || 0);
-    if (!ms) {
-        return 'Dados: nunca sincronizados automaticamente';
-    }
-    const date = new Date(ms);
+export function getLastRoteirosDriveSyncLabel() {
+    const lastSync = localStorage.getItem(LAST_CSV_DRIVE_SYNC_KEY);
+    if (!lastSync) return 'Dados: nunca sincronizados do Drive';
+    const date = new Date(lastSync);
+    if (Number.isNaN(date.getTime())) return 'Dados: nunca sincronizados do Drive';
     const data = date.toLocaleDateString('pt-BR');
     const hora = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     return `Dados atualizados em ${data} às ${hora}`;
@@ -268,6 +273,15 @@ export async function getAgendamentos(data = '') {
     const query = data
         ? `?action=agendamentos&data=${encodeURIComponent(data)}`
         : `?action=agendamentos`;
+    return gasGetJsonWithRetry_(`${url}${query}`);
+}
+
+export async function getHistoricoColetas(mes = '') {
+    const url = getGasUrl();
+    if (!url) return { ok: false, error: 'URL do GAS não configurada' };
+    const query = mes
+        ? `?action=historicoColetas&mes=${encodeURIComponent(mes)}`
+        : `?action=historicoColetas`;
     return gasGetJsonWithRetry_(`${url}${query}`);
 }
 

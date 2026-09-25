@@ -221,6 +221,7 @@
                     <a href="index.html">🏠 Início</a>
                     <a href="coleta-checklist.html">✅ Coleta</a>
                     <a href="agendamentos.html">📅 Agendamentos</a>
+                    <a href="whatsapp-sender.html">📲 WhatsApp</a>
                     <span class="active">⚙️ Admin</span>
                     <a href="ajuda-integracao-access.html" target="_blank">🔄 Integração Access</a>
                     <a href="ajuda-coleta.html" target="_blank">❓ Ajuda</a>
@@ -325,7 +326,7 @@
             getGasUrl,
             setGasUrl,
             getGasStatus,
-            checkAndImportRoteirosRede,
+            checkAndImportRoteiros,
             getGasRouteToken,
             setGasRouteToken,
             syncPendingRoteiroChanges,
@@ -382,7 +383,11 @@
             document.getElementById('statPendingRouteCount').textContent = db.getPendingRoteiroChangesCount();
         }
 
+        let driveUpdateGeneration = 0;
+
         window.checkDriveUpdate = async () => {
+            const generation = ++driveUpdateGeneration;
+            const isCurrentGeneration = () => generation === driveUpdateGeneration;
             const dot = document.getElementById('syncStatusDot');
             const text = document.getElementById('syncStatusText');
             const versionText = document.getElementById('gasVersionStatus');
@@ -404,64 +409,97 @@
             routeChangesText.className = 'gas-version-status';
             routeChangesText.textContent = 'Alterações de roteiros: verificando...';
 
-            const [gasStatus, result, routeSync] = await Promise.all([
-                getGasStatus(),
-                checkAndImportRoteirosRede(db),
-                syncPendingRoteiroChanges(db)
-            ]);
+            const errorResult = error => ({
+                ok: false,
+                error: typeof error === 'string' ? error : (error?.message || 'erro desconhecido')
+            });
 
-            if (!gasStatus.ok) {
-                versionText.className = 'gas-version-status error';
-                versionText.textContent = `API GAS: não foi possível verificar (${gasStatus.error || 'erro desconhecido'})`;
-            } else if (Number(gasStatus.apiVersion) < REQUIRED_GAS_API_VERSION) {
-                versionText.className = 'gas-version-status outdated';
-                versionText.textContent = `API GAS v${gasStatus.apiVersion}: atualização v${REQUIRED_GAS_API_VERSION} necessária`;
-            } else {
-                versionText.className = 'gas-version-status compatible';
-                versionText.textContent = `API GAS v${gasStatus.apiVersion}: compatível`;
-            }
+            let gasStatus;
+            let routeSync;
+            const renderRouteStatus = () => {
+                if (!isCurrentGeneration()) return;
+                if (gasStatus?.ok && !gasStatus.routeChangesConfigured) {
+                    routeChangesText.className = 'gas-version-status error';
+                    routeChangesText.textContent = 'Alterações de roteiros: ROUTE_CHANGES_TOKEN não configurado no GAS';
+                } else if (!getGasRouteToken()) {
+                    routeChangesText.className = 'gas-version-status error';
+                    routeChangesText.textContent = 'Alterações de roteiros: informe o token neste app';
+                } else if (!routeSync) {
+                    return;
+                } else if (!routeSync.ok) {
+                    routeChangesText.className = 'gas-version-status error';
+                    routeChangesText.textContent = `Alterações de roteiros: ${routeSync.error || 'erro desconhecido'}`;
+                } else {
+                    routeChangesText.className = 'gas-version-status compatible';
+                    routeChangesText.textContent = routeSync.count
+                        ? `${routeSync.count} alteração(ões) aplicada(s) na planilha`
+                        : 'Alterações de roteiros: fila local sincronizada';
+                }
+            };
 
-            if (gasStatus.ok && !gasStatus.routeChangesConfigured) {
-                routeChangesText.className = 'gas-version-status error';
-                routeChangesText.textContent = 'Alterações de roteiros: ROUTE_CHANGES_TOKEN não configurado no GAS';
-            } else if (!getGasRouteToken()) {
-                routeChangesText.className = 'gas-version-status error';
-                routeChangesText.textContent = 'Alterações de roteiros: informe o token neste app';
-            } else if (!routeSync.ok) {
-                routeChangesText.className = 'gas-version-status error';
-                routeChangesText.textContent = `Alterações de roteiros: ${routeSync.error || 'erro desconhecido'}`;
-            } else {
-                routeChangesText.className = 'gas-version-status compatible';
-                routeChangesText.textContent = routeSync.count
-                    ? `${routeSync.count} alteração(ões) aplicada(s) na planilha`
-                    : 'Alterações de roteiros: fila local sincronizada';
-            }
+            const gasStatusTask = Promise.resolve()
+                .then(() => getGasStatus())
+                .catch(errorResult)
+                .then(result => {
+                    gasStatus = result;
+                    if (!isCurrentGeneration()) return gasStatus;
+                    if (!gasStatus.ok) {
+                        versionText.className = 'gas-version-status error';
+                        versionText.textContent = `API GAS: não foi possível verificar (${gasStatus.error || 'erro desconhecido'})`;
+                    } else if (Number(gasStatus.apiVersion) < REQUIRED_GAS_API_VERSION) {
+                        versionText.className = 'gas-version-status outdated';
+                        versionText.textContent = `API GAS v${gasStatus.apiVersion}: atualização v${REQUIRED_GAS_API_VERSION} necessária`;
+                    } else {
+                        versionText.className = 'gas-version-status compatible';
+                        versionText.textContent = `API GAS v${gasStatus.apiVersion}: compatível`;
+                    }
+                    renderRouteStatus();
+                    return gasStatus;
+                });
 
-            if (result.reason === 'not-tauri') {
+            const routeSyncTask = Promise.resolve()
+                .then(() => syncPendingRoteiroChanges(db))
+                .catch(errorResult)
+                .then(result => {
+                    routeSync = result;
+                    renderRouteStatus();
+                    return routeSync;
+                });
+
+            const slowDriveNotice = setTimeout(() => {
+                if (!isCurrentGeneration()) return;
                 dot.className = 'status-dot status-offline';
-                text.textContent = 'Import automático de rotas só funciona no app instalado (não no navegador)';
-                updateStats();
-                return;
-            }
+                text.textContent = 'O CSV do Drive está demorando; a atualização continua em segundo plano';
+            }, 10000);
 
-            if (result.error) {
-                dot.className = 'status-dot status-offline';
-                text.textContent = `Erro ao ler a pasta de rede: ${result.error}`;
-                return;
-            }
+            const driveStatusTask = Promise.resolve()
+                .then(() => checkAndImportRoteiros(db))
+                .catch(error => ({ checked: true, updated: false, ...errorResult(error) }))
+                .then(result => {
+                    clearTimeout(slowDriveNotice);
+                    if (!isCurrentGeneration()) return;
 
-            if (result.warning) {
-                dot.className = 'status-dot status-offline';
-                text.textContent = result.warning;
-                return;
-            }
+                    if (result.error) {
+                        dot.className = 'status-dot status-offline';
+                        text.textContent = `Erro ao ler o CSV do Drive: ${result.error}`;
+                        return;
+                    }
 
-            dot.className = 'status-dot status-online';
-            text.textContent = result.updated
-                ? `Atualizado agora: ${result.roteiros} roteiros, ${result.clientes} pontos${result.pulados ? ` (${result.pulados} pulado(s) por alteração pendente)` : ''}`
-                : 'Rotas e pontos já estão atualizados';
+                    if (result.warning) {
+                        dot.className = 'status-dot status-offline';
+                        text.textContent = result.warning;
+                        return;
+                    }
 
-            updateStats();
+                    dot.className = 'status-dot status-online';
+                    text.textContent = result.updated
+                        ? `Atualizado agora: ${result.roteiros} roteiros, ${result.clientes} pontos${result.pulados ? ` (${result.pulados} pulado(s) por alteração pendente)` : ''}`
+                        : 'Rotas e pontos já estão atualizados';
+
+                    updateStats();
+                });
+
+            await Promise.all([gasStatusTask, routeSyncTask, driveStatusTask]);
         };
 
         window.backupSQLite = () => db.downloadDatabase();
