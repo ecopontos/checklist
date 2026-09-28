@@ -65,13 +65,18 @@ test('migracao congela contexto local disponivel inclusive quando colunas client
   assert.equal(migrated.db.getUnsyncedColetas()[0].roteiro, 'ANTIGO');
 });
 
-test('importacao preserva pontos de mesmo nome e rejeita conflito de id antes de mutar', async () => {
+test('importacao preserva pontos de mesmo nome e resolve idRota duplicado por last-wins', async () => {
   const h = await setup();
   const row = { Cliente:'Mesmo nome', Roteiro:'R1', Ordem:1, Inativo:0 };
+  // idRotas distintos com mesmo nome: ambos preservados (a chave de dedup e idRota).
   assert.equal(h.db.importRoteirosRows([{ ...row,idRota:'101' },{ ...row,idRota:'102' }]).clientes, 2);
   assert.equal(h.db.getClientesByRoteiro(h.db.getRoteiros()[0].id).length, 2);
-  assert.throws(() => h.db.importRoteirosRows([{ ...row,idRota:'101' },{ ...row,idRota:'101',Roteiro:'R2' }]), /conflito|duplicado/i);
-  assert.equal(h.db.getRoteiros().length, 1);
+  // Mesmo idRota com conteudo divergente: NAO aborta o import (antes derrubava
+  // todos os pontos); aplica last-wins e reporta o idRota em conflitosIdRota.
+  const res = h.db.importRoteirosRows([{ ...row,idRota:'101' },{ ...row,idRota:'101',Roteiro:'R2' }]);
+  assert.deepStrictEqual([...res.conflitosIdRota], ['101']);
+  // last-wins: a ultima linha (Roteiro R2) venceu, entao R2 foi criado.
+  assert.ok(h.db.getRoteiros().some(r => r.nome === 'R2'), 'roteiro da ultima linha (R2) deve existir');
 });
 
 test('validacao rejeita quantidade fracionaria, negativa ou data impossivel antes de salvar lote', async () => {

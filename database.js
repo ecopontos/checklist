@@ -496,6 +496,7 @@ class AppDatabase {
         });
 
         const porIdRota = new Map();
+        const idRotasConflitantes = new Set();
         comOrdemValida.forEach(row => {
             const id = String(this._getCsvVal(row, 'idRota') || this._getCsvVal(row, 'id Rota') || '').trim();
             if (!id) return;
@@ -504,8 +505,14 @@ class AppDatabase {
                 const assinatura = value => JSON.stringify(Object.entries(value)
                     .map(([key, item]) => [key.trim().toLocaleLowerCase('pt-BR'), item])
                     .sort(([a], [b]) => a.localeCompare(b)));
+                // O export do Access as vezes traz o mesmo idRota em duas linhas
+                // divergindo SO no telefone (mesma ordem/roteiro/cliente/logradouro).
+                // Antes isso lancava e abortava o CSV inteiro, derrubando todos os
+                // pontos por causa de um telefone. Agora aplica last-wins (a
+                // estrutura da rota e identica) e apenas registra o idRota para
+                // revisao na origem — reportado em conflitosIdRota.
                 if (assinatura(anterior) !== assinatura(row)) {
-                    throw new Error(`Conflito no idRota duplicado: ${id}`);
+                    idRotasConflitantes.add(id);
                 }
             }
             porIdRota.set(id, row);
@@ -567,7 +574,12 @@ class AppDatabase {
             clientesCount++;
         });
 
-        return { roteiros: uniqueRoteiros.length, clientes: clientesCount, pulados };
+        return {
+            roteiros: uniqueRoteiros.length,
+            clientes: clientesCount,
+            pulados,
+            conflitosIdRota: [...idRotasConflitantes]
+        };
     }
 
     _getPendingRoteiroIdRotas() {

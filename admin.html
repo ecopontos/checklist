@@ -492,9 +492,17 @@
                     }
 
                     dot.className = 'status-dot status-online';
-                    text.textContent = result.updated
+                    // Aviso nao-fatal: idRotas que a fonte trouxe duplicados com
+                    // telefone divergente (last-wins ja resolveu). Nao entra no
+                    // canal result.warning de proposito, para nao derrubar a fila
+                    // do WhatsApp nem marcar o sync como incompleto.
+                    const conflitos = Array.isArray(result.conflitosIdRota) ? result.conflitosIdRota : [];
+                    const avisoConflitos = conflitos.length
+                        ? ` · ${conflitos.length} ponto(s) com telefone divergente na fonte, usado o último (idRota: ${conflitos.slice(0, 8).join(', ')}${conflitos.length > 8 ? '…' : ''})`
+                        : '';
+                    text.textContent = (result.updated
                         ? `Atualizado agora: ${result.roteiros} roteiros, ${result.clientes} pontos${result.pulados ? ` (${result.pulados} pulado(s) por alteração pendente)` : ''}`
-                        : 'Rotas e pontos já estão atualizados';
+                        : 'Rotas e pontos já estão atualizados') + avisoConflitos;
 
                     updateStats();
                 });
