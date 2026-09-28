@@ -41,6 +41,10 @@ var INTERCORRENCIAS_ATUAIS_CACHE_KEY = 'intercorrenciasAtuais:v1';
 // estourar o limite do GAS. Se o roteiro não aparecer na janela, há fallback
 // para varredura completa.
 var COLETAS_RECENT_ROWS = 8000;
+// getIntercorrenciasAtuais_ agrega a última coleta de cada ponto em toda a
+// história (varredura total é inerente à semântica). Para não carregar a aba
+// Coletas inteira na memória de uma vez, lê em blocos deste tamanho.
+var INTERCORRENCIAS_CHUNK_ROWS = 5000;
 
 function getConfig_() {
     var props = PropertiesService.getScriptProperties();
@@ -387,7 +391,7 @@ function getUltimaColeta_(roteiroNome) {
             lastDate = scanLastDate(2);
         }
 
-        cache.put(cacheKey, lastDate || '', 21600);
+        try { cache.put(cacheKey, lastDate || '', 21600); } catch (_) { /* cache é opcional */ }
         return jsonResponse_({ ok: true, data: lastDate });
     } catch (err) {
         return jsonResponse_({ ok: false, error: err.message });
@@ -486,7 +490,9 @@ function getUltimaColetaDetalhada_(roteiroNome) {
         }
         if (data === null) data = [];
 
-        cache.put(cacheKey, JSON.stringify(data), 21600);
+        // put pode lançar se o payload passar de ~100KB por entrada; nesse caso
+        // não cachear equivale a um miss e a resposta consultada segue válida.
+        try { cache.put(cacheKey, JSON.stringify(data), 21600); } catch (_) { /* cache é opcional */ }
         return jsonResponse_({ ok: true, data: data });
     } catch (err) {
         return jsonResponse_({ ok: false, error: err.message });
@@ -587,7 +593,9 @@ function getIntercorrenciasRoteiro_(roteiroNome) {
         }
         if (data === null) data = [];
 
-        cache.put(cacheKey, JSON.stringify(data), 21600);
+        // put pode lançar se o payload passar de ~100KB por entrada; nesse caso
+        // não cachear equivale a um miss e a resposta consultada segue válida.
+        try { cache.put(cacheKey, JSON.stringify(data), 21600); } catch (_) { /* cache é opcional */ }
         return jsonResponse_({ ok: true, data: data });
     } catch (err) {
         return jsonResponse_({ ok: false, error: err.message });
@@ -615,20 +623,23 @@ function legacyOccurrenceId_(item) {
     }).join('');
 }
 
-function buildIntercorrenciasAtuais_(values) {
-    var quality = {
-        invalidDates: 0,
-        missingRouteIds: 0,
-        legacyIds: 0,
-        excludedRecords: 0
+// Estado acumulável para agregar a última coleta por ponto sem carregar a aba
+// Coletas inteira na memória: getIntercorrenciasAtuais_ lê em blocos e dobra
+// cada bloco aqui. buildIntercorrenciasAtuais_ (abaixo) mantém a assinatura
+// antiga (array completo com cabeçalho na linha 0) delegando aos mesmos passos.
+function newIntercorrenciasState_() {
+    return {
+        columns: null,
+        latestByRoute: Object.create(null),
+        quality: { invalidDates: 0, missingRouteIds: 0, legacyIds: 0, excludedRecords: 0 },
+        nextIndex: 1
     };
-    if (!Array.isArray(values) || values.length < 2) {
-        return { data: [], quality: quality };
-    }
+}
 
+function setIntercorrenciasHeader_(state, header) {
     var columns = Object.create(null);
-    values[0].forEach(function (header, index) {
-        columns[String(header == null ? '' : header).trim()] = index;
+    (header || []).forEach(function (name, index) {
+        columns[String(name == null ? '' : name).trim()] = index;
     });
     var required = ['ID Rota', 'Data', 'Cliente', 'Roteiro', 'Quantidade', 'Intercorrência', 'Sincronizado Em', 'Sync ID'];
     for (var r = 0; r < required.length; r++) {
@@ -636,19 +647,24 @@ function buildIntercorrenciasAtuais_(values) {
             throw new Error('Coluna ' + required[r] + ' não encontrada na aba ' + COLETAS_SHEET_NAME);
         }
     }
+    state.columns = columns;
+}
 
+// Dobra um bloco de linhas de dados (sem cabeçalho) no estado. O índice
+// monotônico (nextIndex) reproduz o desempate por posição do laço original:
+// em datas iguais, a linha mais abaixo na aba vence. Como os blocos chegam na
+// ordem da aba, o resultado é idêntico ao da varredura de uma vez só.
+function foldIntercorrenciasRows_(state, rows) {
+    var columns = state.columns;
     var colIdRota = columns['ID Rota'];
     var colData = columns['Data'];
-    var colCliente = columns['Cliente'];
-    var colRoteiro = columns['Roteiro'];
-    var colQuantidade = columns['Quantidade'];
-    var colIntercorrencia = columns['Intercorrência'];
-    var colSincronizadoEm = columns['Sincronizado Em'];
     var colSyncId = columns['Sync ID'];
-    var latestByRoute = Object.create(null);
+    var quality = state.quality;
+    var latestByRoute = state.latestByRoute;
 
-    for (var i = 1; i < values.length; i++) {
-        var row = values[i];
+    for (var k = 0; k < rows.length; k++) {
+        var row = rows[k];
+        var index = state.nextIndex++;
         if (row.every(function (value) { return value === '' || value === null; })) continue;
 
         var idRota = String(row[colIdRota] == null ? '' : row[colIdRota]).trim();
@@ -664,10 +680,23 @@ function buildIntercorrenciasAtuais_(values) {
             quality.legacyIds++;
         }
         var current = latestByRoute[idRota];
-        if (!current || data > current.data || (data === current.data && i > current.index)) {
-            latestByRoute[idRota] = { row: row, idRota: idRota, data: data, index: i };
+        if (!current || data > current.data || (data === current.data && index > current.index)) {
+            latestByRoute[idRota] = { row: row, idRota: idRota, data: data, index: index };
         }
     }
+}
+
+function finalizeIntercorrenciasAtuais_(state) {
+    if (!state.columns) return { data: [], quality: state.quality };
+
+    var columns = state.columns;
+    var colCliente = columns['Cliente'];
+    var colRoteiro = columns['Roteiro'];
+    var colQuantidade = columns['Quantidade'];
+    var colIntercorrencia = columns['Intercorrência'];
+    var colSincronizadoEm = columns['Sincronizado Em'];
+    var colSyncId = columns['Sync ID'];
+    var latestByRoute = state.latestByRoute;
 
     var data = Object.keys(latestByRoute).map(function (idRota) {
         var current = latestByRoute[idRota];
@@ -692,7 +721,19 @@ function buildIntercorrenciasAtuais_(values) {
         };
     }).filter(function (item) { return item.intercorrencia !== ''; });
 
-    return { data: data, quality: quality };
+    return { data: data, quality: state.quality };
+}
+
+// Assinatura antiga preservada (array completo com cabeçalho na linha 0):
+// dobra tudo de uma vez. Mantida para os testes e chamadas diretas.
+function buildIntercorrenciasAtuais_(values) {
+    var state = newIntercorrenciasState_();
+    if (!Array.isArray(values) || values.length < 2) {
+        return { data: [], quality: state.quality };
+    }
+    setIntercorrenciasHeader_(state, values[0]);
+    foldIntercorrenciasRows_(state, values.slice(1));
+    return finalizeIntercorrenciasAtuais_(state);
 }
 
 function getIntercorrenciasAtuais_() {
@@ -725,9 +766,18 @@ function getIntercorrenciasAtuais_() {
             data: [],
             quality: { invalidDates: 0, missingRouteIds: 0, legacyIds: 0, excludedRecords: 0 }
         };
-        if (sheet.getLastRow() >= 2) {
-            var values = sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn()).getValues();
-            var built = buildIntercorrenciasAtuais_(values);
+        var lastRow = sheet.getLastRow();
+        if (lastRow >= 2) {
+            var lastCol = sheet.getLastColumn();
+            var state = newIntercorrenciasState_();
+            setIntercorrenciasHeader_(state, sheet.getRange(1, 1, 1, lastCol).getValues()[0]);
+            // Lê a aba em blocos e dobra cada um no estado, descartando-o em
+            // seguida: o pico de memória fica em um bloco, não na aba inteira.
+            for (var start = 2; start <= lastRow; start += INTERCORRENCIAS_CHUNK_ROWS) {
+                var num = Math.min(INTERCORRENCIAS_CHUNK_ROWS, lastRow - start + 1);
+                foldIntercorrenciasRows_(state, sheet.getRange(start, 1, num, lastCol).getValues());
+            }
+            var built = finalizeIntercorrenciasAtuais_(state);
             result.data = built.data;
             result.quality = built.quality;
         }
@@ -1450,7 +1500,7 @@ function getAgendamentos_(data) {
             });
         }
 
-        cache.put(cacheKey, JSON.stringify(rows), 600);
+        try { cache.put(cacheKey, JSON.stringify(rows), 600); } catch (_) { /* cache é opcional */ }
         return jsonResponse_({ ok: true, data: rows });
     } catch (err) {
         return jsonResponse_({ ok: false, error: err.message });
