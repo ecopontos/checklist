@@ -117,7 +117,7 @@ assert.strictEqual(
 sheets.set('Coletas', new SheetMock(values));
 const response = JSON.parse(context.doGet({ parameter: { action: 'intercorrenciasAtuais' } }).value);
 assert.strictEqual(response.ok, true);
-assert.strictEqual(response.apiVersion, 12);
+assert.strictEqual(response.apiVersion, 13);
 assert.strictEqual(response.source, 'intercorrenciasAtuais');
 assert.ok(Array.isArray(response.data));
 assert.strictEqual(cachePuts.at(-1).ttl, 300);

@@ -34,7 +34,10 @@ var CLIENT_CHANGES_HEADERS = [
     'Status', 'Recebido Em', 'Processado Em', 'Mensagem'
 ];
 var CLIENT_EDITABLE_FIELDS = ['Cliente', 'Número', 'Complemento', 'CEP', 'Telefone1', 'Telefone2'];
-var GAS_API_VERSION = 12;
+// v13: cache.put protegido nas leituras + intercorrências atuais lidas em
+// blocos. Sem mudança de contrato (respostas idênticas); o bump serve só para
+// tornar o deploy verificável via ?action=status.
+var GAS_API_VERSION = 13;
 var INTERCORRENCIAS_ATUAIS_CACHE_KEY = 'intercorrenciasAtuais:v1';
 // Consultas de última coleta varrem apenas as linhas mais recentes da aba
 // Coletas (append-only, cronológica). Varrer a aba inteira chega a ~37s e pode
