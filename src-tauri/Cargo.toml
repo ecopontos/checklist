@@ -1,6 +1,6 @@
 [package]
 name = "satelite-checklist"
-version = "1.6.4"
+version = "1.6.5"
 description = "SATELITE v3 - Operacao de Coleta (app desktop)"
 authors = ["SATELITE"]
 edition = "2021"
