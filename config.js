@@ -6,7 +6,7 @@
 // config.local.example.js para config.local.js (ignorado pelo git) e
 // preencha antes de rodar "npm run build".
 window.APP_CONFIG = window.APP_CONFIG || {
-    gasUrl: 'https://script.google.com/macros/s/AKfycbzVyXmq7XBIVeweoOM27-fJDvUxPL4IWImVRBy4cbpfn92Q-p-rIMoJAFVZKr23Hw0/exec',
+    gasUrl: 'https://script.google.com/macros/s/AKfycbwCzgPFZXvMyqlk41M-9v_yB2SMcCMkl7fA5Uq-y_pznzmlGRFymfh_s2yjlyKkB1rS/exec',
     gasRouteToken: ''
 };
 
