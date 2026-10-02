@@ -277,6 +277,11 @@
                     </a>
                 </div>
 
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <span class="gas-version-status" id="cadastroSyncStatus">Cadastro compartilhado: não sincronizado nesta sessão</span>
+                    <button class="btn btn-outline" onclick="syncCadastroAgora()">Sincronizar cadastro (pontos e roteiros do app)</button>
+                </div>
+
                 <div style="display: flex; gap: 10px;">
                     <button class="btn btn-primary" style="flex: 1;" onclick="checkDriveUpdate()">Verificar agora</button>
                     <button class="btn btn-outline" onclick="backupSQLite()">Backup Local</button>
@@ -338,6 +343,7 @@
             getGasRouteToken,
             setGasRouteToken,
             syncPendingRoteiroChanges,
+            syncCadastro,
             REQUIRED_GAS_API_VERSION
         } from './google-sync.js';
 
@@ -519,6 +525,23 @@
         };
 
         window.backupSQLite = () => db.downloadDatabase();
+
+        window.syncCadastroAgora = async () => {
+            const status = document.getElementById('cadastroSyncStatus');
+            status.className = 'gas-version-status';
+            status.textContent = 'Cadastro compartilhado: sincronizando...';
+            const result = await syncCadastro(db);
+            if (result.ok) {
+                status.className = 'gas-version-status compatible';
+                status.textContent = `Cadastro compartilhado: ${result.enviados} enviado(s), ${result.recebidos} recebido(s)` +
+                    (result.excluidos ? `, ${result.excluidos} excluído(s)` : '') +
+                    (result.invalidos ? `, ${result.invalidos} descartado(s) por dados inválidos` : '');
+                updateStats();
+            } else {
+                status.className = 'gas-version-status error';
+                status.textContent = `Cadastro compartilhado: ${result.error} (${db.getCadastroPendenteCount()} pendente(s))`;
+            }
+        };
 
         window.resetDatabase = async () => {
             if (confirm("TEM CERTEZA? Todos os dados locais serão apagados permanentemente.")) {

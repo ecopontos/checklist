@@ -168,7 +168,12 @@ class AppDatabase {
             }
         };
         addColumn('clientes', 'editado_em');
+        addColumn('clientes', 'enviado_em');
         addColumn('roteiros', 'editado_em');
+        addColumn('roteiros', 'enviado_em');
+        // chave: nome original do roteiro (imutável), identifica o mesmo
+        // roteiro em todos os dispositivos mesmo depois de renomeado.
+        addColumn('roteiros', 'chave');
         this.db.run(`
             CREATE TABLE IF NOT EXISTS roteiro_alias (
                 nome_origem TEXT PRIMARY KEY,
@@ -179,6 +184,7 @@ class AppDatabase {
                 excluido_em TEXT NOT NULL
             );
         `);
+        addColumn('cliente_excluido', 'enviado_em');
         this.save();
     }
 
@@ -561,7 +567,8 @@ class AppDatabase {
         if (ids.some(id => !currentById.has(id))) {
             throw new Error('A lista reordenada não corresponde ao roteiro selecionado.');
         }
-        const routeResult = this.db.exec('SELECT nome FROM roteiros WHERE id = ?', [roteiroId]);
+        // O Access só conhece o nome original do roteiro (a chave).
+        const routeResult = this.db.exec('SELECT COALESCE(chave, nome) FROM roteiros WHERE id = ?', [roteiroId]);
         if (!routeResult.length) throw new Error('Roteiro não encontrado.');
         const roteiroNome = String(routeResult[0].values[0][0]);
         const changed = ids.reduce((result, id, index) => {
@@ -622,6 +629,197 @@ class AppDatabase {
         };
     }
 
+    // --- Sincronização do cadastro entre dispositivos (GAS v14) ---
+    getDeviceId() {
+        let origem = localStorage.getItem('app3_device_id');
+        if (!origem) {
+            origem = this._newChangeId();
+            localStorage.setItem('app3_device_id', origem);
+        }
+        return origem;
+    }
+
+    getCadastroRev() {
+        const rev = Number(localStorage.getItem('app3_cadastro_rev'));
+        return Number.isFinite(rev) && rev > 0 ? rev : 0;
+    }
+
+    setCadastroRev(rev) {
+        localStorage.setItem('app3_cadastro_rev', String(Math.max(0, Number(rev) || 0)));
+    }
+
+    _roteiroChave(roteiroId) {
+        const res = this.db.exec('SELECT COALESCE(chave, nome) FROM roteiros WHERE id = ?', [roteiroId]);
+        return res.length ? String(res[0].values[0][0]) : '';
+    }
+
+    _findRoteiroIdByChave(chave) {
+        const lookups = [
+            ['SELECT id FROM roteiros WHERE chave = ?', [chave]],
+            ['SELECT id FROM roteiros WHERE nome = ?', [chave]],
+            ['SELECT roteiro_id FROM roteiro_alias WHERE nome_origem = ?', [chave]]
+        ];
+        for (const [sql, params] of lookups) {
+            const res = this.db.exec(sql, params);
+            if (res.length) return Number(res[0].values[0][0]);
+        }
+        return null;
+    }
+
+    // Registros que mudaram neste aparelho e ainda não foram confirmados pelo GAS.
+    getCadastroPendente({ maxPontos = 200, maxRoteiros = 100 } = {}) {
+        const origem = this.getDeviceId();
+        const editados = this._queryRows(`
+            SELECT c.id_rota, c.cliente, c.logradouro, c.numero, c.complemento, c.cep, c.telefone1,
+                   c.telefone2, c.ordem, c.ativo, c.editado_em, COALESCE(r.chave, r.nome) AS roteiro
+            FROM clientes c JOIN roteiros r ON r.id = c.roteiro_id
+            WHERE c.editado_em IS NOT NULL AND (c.enviado_em IS NULL OR c.enviado_em < c.editado_em)
+            ORDER BY c.editado_em, c.id_rota LIMIT ?`, [maxPontos]);
+        const pontos = editados.map(row => ({
+            id_rota: String(row.id_rota), cliente: row.cliente || '', logradouro: row.logradouro || '',
+            numero: row.numero || '', complemento: row.complemento || '', cep: row.cep || '',
+            telefone1: row.telefone1 || '', telefone2: row.telefone2 || '', roteiro: row.roteiro,
+            ordem: this._normalizeOrdem(row.ordem), ativo: row.ativo ? 1 : 0, excluido: 0,
+            editado_em: row.editado_em, origem
+        }));
+        this._queryRows(`
+            SELECT id_rota, excluido_em FROM cliente_excluido
+            WHERE enviado_em IS NULL OR enviado_em < excluido_em
+            ORDER BY excluido_em LIMIT ?`, [Math.max(0, maxPontos - pontos.length)]
+        ).forEach(row => pontos.push({
+            id_rota: String(row.id_rota), cliente: '', roteiro: '', excluido: 1,
+            editado_em: row.excluido_em, origem
+        }));
+        const roteiros = this._queryRows(`
+            SELECT id, nome, COALESCE(chave, nome) AS chave, tipo_residuo, editado_em FROM roteiros
+            WHERE editado_em IS NOT NULL AND (enviado_em IS NULL OR enviado_em < editado_em)
+            ORDER BY editado_em LIMIT ?`, [maxRoteiros]).map(row => ({
+            chave: row.chave, nome: row.nome, tipo_residuo: row.tipo_residuo || '',
+            apelidos: this._queryRows('SELECT nome_origem FROM roteiro_alias WHERE roteiro_id = ?', [row.id])
+                .map(alias => alias.nome_origem).filter(nome => nome !== row.nome),
+            editado_em: row.editado_em, origem
+        }));
+        return { pontos, roteiros };
+    }
+
+    getCadastroPendenteCount() {
+        const count = sql => Number(this.db.exec(sql)[0]?.values[0][0] || 0);
+        return count(`SELECT COUNT(*) FROM clientes WHERE editado_em IS NOT NULL AND (enviado_em IS NULL OR enviado_em < editado_em)`)
+            + count(`SELECT COUNT(*) FROM cliente_excluido WHERE enviado_em IS NULL OR enviado_em < excluido_em`)
+            + count(`SELECT COUNT(*) FROM roteiros WHERE editado_em IS NOT NULL AND (enviado_em IS NULL OR enviado_em < editado_em)`);
+    }
+
+    // Marca como enviado o horário exato que foi ao GAS: se o registro foi
+    // editado de novo durante o envio, continua pendente.
+    marcarCadastroEnviado({ pontos = [], roteiros = [] }) {
+        pontos.forEach(p => {
+            if (p.excluido) {
+                this.db.run('UPDATE cliente_excluido SET enviado_em = ? WHERE id_rota = ? AND excluido_em <= ?',
+                    [p.editado_em, p.id_rota, p.editado_em]);
+            } else {
+                this.db.run('UPDATE clientes SET enviado_em = ? WHERE id_rota = ?', [p.editado_em, p.id_rota]);
+            }
+        });
+        roteiros.forEach(r => {
+            this.db.run('UPDATE roteiros SET enviado_em = ? WHERE COALESCE(chave, nome) = ?', [r.editado_em, r.chave]);
+        });
+        this.save();
+    }
+
+    // Aplica registros vindos do GAS. Sem `forcar`, uma edição local mais nova
+    // que a remota é mantida (ela será enviada na próxima rodada); com `forcar`
+    // (conflitos que o GAS decidiu a favor do servidor) a versão remota vale.
+    aplicarCadastroRemoto({ pontos = [], roteiros = [] }, { forcar = false } = {}) {
+        const resumo = { roteiros: 0, pontos: 0, excluidos: 0, ignorados: 0, avisos: [] };
+        this._persistAtomic(() => {
+            roteiros.forEach(r => this._aplicarRoteiroRemoto(r, forcar, resumo));
+            pontos.forEach(p => this._aplicarPontoRemoto(p, forcar, resumo));
+        });
+        return resumo;
+    }
+
+    _aplicarRoteiroRemoto(remoto, forcar, resumo) {
+        let id = this._findRoteiroIdByChave(remoto.chave);
+        if (id === null) {
+            const mesmoNome = this.db.exec('SELECT id FROM roteiros WHERE nome = ? COLLATE NOCASE', [remoto.nome]);
+            if (mesmoNome.length) id = Number(mesmoNome[0].values[0][0]);
+        }
+        if (id === null) {
+            this.db.run('INSERT INTO roteiros (nome, tipo_residuo, chave, editado_em, enviado_em) VALUES (?, ?, ?, ?, ?)',
+                [remoto.nome, remoto.tipo_residuo || '', remoto.chave, remoto.editado_em, remoto.editado_em]);
+            id = Number(this.db.exec('SELECT id FROM roteiros WHERE nome = ?', [remoto.nome])[0].values[0][0]);
+            (remoto.apelidos || []).filter(a => a !== remoto.nome).forEach(apelido =>
+                this.db.run('INSERT OR REPLACE INTO roteiro_alias (nome_origem, roteiro_id) VALUES (?, ?)', [apelido, id]));
+            if (remoto.chave !== remoto.nome) {
+                this.db.run('INSERT OR REPLACE INTO roteiro_alias (nome_origem, roteiro_id) VALUES (?, ?)', [remoto.chave, id]);
+            }
+            resumo.roteiros++;
+            return;
+        }
+        const atual = this._queryRows('SELECT nome, editado_em FROM roteiros WHERE id = ?', [id])[0];
+        if (!forcar && atual.editado_em && atual.editado_em > remoto.editado_em) { resumo.ignorados++; return; }
+        let nome = atual.nome;
+        if (remoto.nome !== atual.nome) {
+            const ocupado = this.db.exec('SELECT id FROM roteiros WHERE nome = ? COLLATE NOCASE AND id <> ?', [remoto.nome, id]);
+            if (ocupado.length) {
+                resumo.avisos.push(`Roteiro "${remoto.nome}" não pôde ser renomeado: já existe outro com esse nome.`);
+            } else {
+                nome = remoto.nome;
+            }
+        }
+        this.db.run('UPDATE roteiros SET nome = ?, tipo_residuo = ?, chave = ?, editado_em = ?, enviado_em = ? WHERE id = ?',
+            [nome, remoto.tipo_residuo || '', remoto.chave, remoto.editado_em, remoto.editado_em, id]);
+        const antigos = new Set([...(remoto.apelidos || []), remoto.chave, atual.nome]);
+        antigos.delete(nome);
+        antigos.forEach(apelido =>
+            this.db.run('INSERT OR REPLACE INTO roteiro_alias (nome_origem, roteiro_id) VALUES (?, ?)', [apelido, id]));
+        this.db.run('DELETE FROM roteiro_alias WHERE nome_origem = ? COLLATE NOCASE', [nome]);
+        resumo.roteiros++;
+    }
+
+    _aplicarPontoRemoto(remoto, forcar, resumo) {
+        const idRota = String(remoto.id_rota);
+        const local = this._queryRows('SELECT editado_em, roteiro_id FROM clientes WHERE id_rota = ?', [idRota])[0];
+        const lapide = this._queryRows('SELECT excluido_em FROM cliente_excluido WHERE id_rota = ?', [idRota])[0];
+        const tempoLocal = [local?.editado_em, lapide?.excluido_em].filter(Boolean).sort().pop();
+        if (!forcar && tempoLocal && tempoLocal > remoto.editado_em) { resumo.ignorados++; return; }
+
+        if (remoto.excluido) {
+            const coletas = Number(this.db.exec('SELECT COUNT(*) FROM coletas WHERE id_rota = ?', [idRota])[0].values[0][0]);
+            if (local && coletas > 0) {
+                // Há histórico de coleta neste aparelho: só inativa para não quebrar relatórios.
+                this.db.run('UPDATE clientes SET ativo = 0, editado_em = ?, enviado_em = ? WHERE id_rota = ?',
+                    [remoto.editado_em, remoto.editado_em, idRota]);
+            } else {
+                this.db.run('DELETE FROM clientes WHERE id_rota = ?', [idRota]);
+                this.db.run('INSERT OR REPLACE INTO cliente_excluido (id_rota, excluido_em, enviado_em) VALUES (?, ?, ?)',
+                    [idRota, remoto.editado_em, remoto.editado_em]);
+            }
+            resumo.excluidos++;
+            return;
+        }
+
+        let roteiroId = this._findRoteiroIdByChave(remoto.roteiro);
+        if (roteiroId === null) {
+            this.db.run('INSERT INTO roteiros (nome, tipo_residuo, chave) VALUES (?, ?, ?)', [remoto.roteiro, '', remoto.roteiro]);
+            roteiroId = Number(this.db.exec('SELECT id FROM roteiros WHERE nome = ?', [remoto.roteiro])[0].values[0][0]);
+        }
+        this.db.run(`
+            INSERT INTO clientes (id_rota, cliente, logradouro, numero, complemento, cep, telefone1, telefone2,
+                                  roteiro_id, ordem, ativo, editado_em, enviado_em)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id_rota) DO UPDATE SET
+                cliente = excluded.cliente, logradouro = excluded.logradouro, numero = excluded.numero,
+                complemento = excluded.complemento, cep = excluded.cep, telefone1 = excluded.telefone1,
+                telefone2 = excluded.telefone2, roteiro_id = excluded.roteiro_id, ordem = excluded.ordem,
+                ativo = excluded.ativo, editado_em = excluded.editado_em, enviado_em = excluded.enviado_em
+        `, [idRota, remoto.cliente, remoto.logradouro || '', remoto.numero || '', remoto.complemento || '',
+            remoto.cep || '', remoto.telefone1 || '', remoto.telefone2 || '', roteiroId,
+            this._normalizeOrdem(remoto.ordem), remoto.ativo ? 1 : 0, remoto.editado_em, remoto.editado_em]);
+        this.db.run('DELETE FROM cliente_excluido WHERE id_rota = ?', [idRota]);
+        resumo.pontos++;
+    }
+
     _upsertRoteiroImportado(nome, tipoResiduo, sobrescrever) {
         this.db.run(`
             INSERT INTO roteiros (nome, tipo_residuo) VALUES (?, ?)
@@ -652,8 +850,8 @@ class AppDatabase {
     criarRoteiro(nome, tipoResiduo = '') {
         const limpo = this._requireNome(nome, 'nome do roteiro');
         if (this._roteiroExiste(limpo)) throw new Error(`Já existe um roteiro chamado "${limpo}".`);
-        this.db.run('INSERT INTO roteiros (nome, tipo_residuo, editado_em) VALUES (?, ?, ?)',
-            [limpo, String(tipoResiduo || '').trim(), new Date().toISOString()]);
+        this.db.run('INSERT INTO roteiros (nome, tipo_residuo, editado_em, chave) VALUES (?, ?, ?, ?)',
+            [limpo, String(tipoResiduo || '').trim(), new Date().toISOString(), limpo]);
         this.save();
         return this.getRoteiros().find(r => r.nome === limpo);
     }
@@ -672,8 +870,8 @@ class AppDatabase {
         }
         const agora = new Date().toISOString();
         this._persistAtomic(() => {
-            this.db.run('UPDATE roteiros SET nome = ?, tipo_residuo = ?, editado_em = ? WHERE id = ?',
-                [novoNome, novoTipo, agora, atual.id]);
+            this.db.run('UPDATE roteiros SET nome = ?, tipo_residuo = ?, editado_em = ?, chave = COALESCE(chave, ?) WHERE id = ?',
+                [novoNome, novoTipo, agora, atual.nome, atual.id]);
             if (novoNome !== atual.nome) {
                 this.db.run('INSERT OR REPLACE INTO roteiro_alias (nome_origem, roteiro_id) VALUES (?, ?)',
                     [atual.nome, atual.id]);
@@ -1008,7 +1206,7 @@ class AppDatabase {
             id_rota: String(cliente.id_rota),
             inativo: cliente.ativo ? 0 : 1,
             ordem: this._normalizeOrdem(cliente.ordem),
-            roteiro: cliente.roteiro_nome,
+            roteiro: this._roteiroChave(cliente.roteiro_id) || cliente.roteiro_nome,
             alterado_em: new Date().toISOString(),
             origem
         };
@@ -1114,6 +1312,7 @@ class AppDatabase {
             if (col === 'numero') value = this._normalizeNumero(value);
             this.db.run(`UPDATE clientes SET ${col} = ? WHERE id_cliente = ?`, [value, id]);
         });
+        this.db.run('UPDATE clientes SET editado_em = ? WHERE id_cliente = ?', [new Date().toISOString(), id]);
         this.save();
     }
 

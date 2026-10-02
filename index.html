@@ -320,7 +320,7 @@
 
     <script type="module">
         import db from './database.js';
-        import { checkAndImportRoteiros, getLastRoteirosDriveSyncLabel } from './google-sync.js';
+        import { checkAndImportRoteiros, getLastRoteirosDriveSyncLabel, syncCadastro } from './google-sync.js';
         import { startColetaSync } from './coleta-sync.js';
 
         function refreshStats() {
@@ -349,6 +349,12 @@
                     if (result.updated) refreshStats();
                     document.getElementById('syncFreshness').textContent = getLastRoteirosDriveSyncLabel();
                 }).catch(e => console.error("Drive CSV sync check failed", e));
+
+                // Cadastro editado no app (pontos/roteiros) compartilhado entre aparelhos.
+                syncCadastro(db).then(result => {
+                    if (result.ok && (result.recebidos || result.excluidos)) refreshStats();
+                    if (!result.ok && !result.skipped) console.warn('Sincronização do cadastro:', result.error);
+                }).catch(e => console.error("Cadastro sync failed", e));
             } catch (e) {
                 console.error("Database error", e);
             }

@@ -372,7 +372,8 @@
         </div>
 
         <h1>Gestão de Roteiros</h1>
-        <p class="subtitle">Gerenciamento completo dos pontos de coleta e definição de rotas.</p>
+        <p class="subtitle">Gerenciamento completo dos pontos de coleta e definição de rotas.
+            <span id="cadastroStatus" style="display:block; font-size:0.8rem; opacity:.75; margin-top:4px;"></span></p>
 
         <div class="toolbar">
             <select id="routeFilter">
@@ -584,7 +585,7 @@
     <script src="vendor/sql-wasm.js"></script>
     <script type="module">
         import db from './database.js';
-        import { syncPendingRoteiroChanges, syncPendingClienteChanges } from './google-sync.js';
+        import { syncPendingRoteiroChanges, syncPendingClienteChanges, syncCadastro } from './google-sync.js';
 
         const organizerState = {
             routeId: '',
@@ -595,20 +596,45 @@
             saving: false
         };
 
+        const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
         async function init() {
             await db.init();
             renderRoteiros();
             renderClients();
+            sincronizarCadastro();
+        }
+
+        // Envia as edições deste aparelho e traz as dos outros (GAS v14+).
+        // Chamada ao abrir a página e depois de cada alteração de cadastro.
+        async function sincronizarCadastro() {
+            const status = document.getElementById('cadastroStatus');
+            status.textContent = '☁ Sincronizando cadastro…';
+            const result = await syncCadastro(db);
+            if (result.ok) {
+                status.textContent = '☁ Cadastro sincronizado';
+                if (result.recebidos || result.excluidos) { renderRoteiros(); renderClients(); }
+            } else if (result.skipped) {
+                status.textContent = 'Cadastro salvo só neste aparelho (configure a URL e o token na tela Admin para compartilhar).';
+            } else {
+                const pendentes = db.getCadastroPendenteCount();
+                status.textContent = `⚠ ${pendentes} alteração(ões) aguardando envio — ${result.error}`;
+            }
         }
 
         function renderRoteiros() {
             const roteiros = db.getRoteiros();
             const filter = document.getElementById('routeFilter');
             const formSelect = document.getElementById('f_roteiro');
-            
-            const options = roteiros.map(r => `<option value="${r.id}">${r.nome}</option>`).join('');
+            const filtroAtual = filter.value;
+            const formAtual = formSelect.value;
+
+            const options = roteiros.map(r => `<option value="${r.id}">${esc(r.nome)}</option>`).join('');
             filter.innerHTML = '<option value="">Todos os Roteiros</option>' + options;
             formSelect.innerHTML = options;
+            // Recriar as opções não pode jogar o filtro de volta para "Todos".
+            if (roteiros.some(r => String(r.id) === filtroAtual)) filter.value = filtroAtual;
+            if (roteiros.some(r => String(r.id) === formAtual)) formSelect.value = formAtual;
         }
 
         function renderClients() {
@@ -875,6 +901,7 @@
 
             window.closeOrganizer(true);
             renderClients();
+            sincronizarCadastro();
             let syncResult;
             try {
                 syncResult = await syncPendingRoteiroChanges(db);
@@ -992,6 +1019,7 @@
             db.db.run("UPDATE clientes SET ativo = ? WHERE id_rota = ?", [current ? 0 : 1, idRota]);
             db.marcarPontosEditados(idRota);
             renderClients();
+            sincronizarCadastro();
             await queueAndSyncAccessChange(idRota);
         };
 
@@ -1024,7 +1052,8 @@
                     });
                     closeModal('editModal');
                     renderClients();
-                    alert(`Ponto ${id} criado neste aparelho.`);
+                    alert(`Ponto ${id} criado.`);
+                    sincronizarCadastro();
                 } catch (error) {
                     alert(error.message);
                 }
@@ -1070,9 +1099,10 @@
 
             closeModal('editModal');
             renderClients();
+            sincronizarCadastro();
 
             // Pontos criados no app (ids "APP-n") não existem no Access/planilha:
-            // ficam só neste aparelho e não entram nas filas de sincronização.
+            // são compartilhados pelo cadastro, mas não entram nas filas do Access.
             if (!/^\d+$/.test(String(existing.id_rota))) return;
 
             // Ordem/status/roteiro do ponto (subprojeto A)
@@ -1109,11 +1139,10 @@
             }
             closeModal('editModal');
             renderClients();
+            sincronizarCadastro();
         };
 
         // --- Gerenciar roteiros ---
-        const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
         function renderRoteirosModal() {
             const contagem = new Map();
             const res = db.db.exec('SELECT roteiro_id, COUNT(*) FROM clientes GROUP BY roteiro_id');
@@ -1148,6 +1177,7 @@
             renderRoteiros();
             renderClients();
             renderRoteirosModal();
+            sincronizarCadastro();
         });
 
         document.getElementById('roteiroNovoForm').onsubmit = (event) => {
@@ -1161,6 +1191,7 @@
             event.target.reset();
             renderRoteiros();
             renderRoteirosModal();
+            sincronizarCadastro();
         };
 
         window.exportCsv = () => db.downloadRoteirosCsv();
@@ -1200,6 +1231,7 @@
                 document.getElementById('csvFile').value = '';
                 alert(`Importação concluída: ${result.clientes} ponto(s) atualizado(s)` +
                     (result.preservados ? `, ${result.preservados} preservado(s) por terem sido editados no app` : '') + '.');
+                sincronizarCadastro();
             };
             reader.readAsText(file);
         }
