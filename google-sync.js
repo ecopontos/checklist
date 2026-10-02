@@ -511,3 +511,94 @@ export async function syncPendingClienteChanges(db) {
         pending: db.getPendingClienteChangesCount()
     };
 }
+
+// --- Cadastro compartilhado (pontos e roteiros editados no app) ---
+// Envia o que mudou neste aparelho e recebe o que mudou nos outros, pela ação
+// cadastroSync do GAS (v14+). Conflitos: vence a edição mais recente.
+export const CADASTRO_MIN_GAS_API_VERSION = 14;
+const CADASTRO_MAX_ROUNDS = 100;
+const cadastroSyncs = new WeakMap();
+
+export function syncCadastro(db) {
+    const current = cadastroSyncs.get(db);
+    if (current) return current;
+    const task = runCadastroSync_(db)
+        .catch(error => ({ ok: false, error: error.message }))
+        .finally(() => cadastroSyncs.delete(db));
+    cadastroSyncs.set(db, task);
+    return task;
+}
+
+async function postCadastro_(url, body) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            signal: controller.signal,
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(body)
+        });
+        if (!res.ok) return { ok: false, error: `Falha HTTP ${res.status}` };
+        return await res.json();
+    } catch (e) {
+        return { ok: false, error: e.name === 'AbortError' ? 'Tempo esgotado ao sincronizar o cadastro' : e.message };
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+async function runCadastroSync_(db) {
+    const url = getGasUrl();
+    if (!url) return { ok: false, skipped: true, error: 'URL do GAS não configurada' };
+    const token = getGasRouteToken();
+    if (!token) return { ok: false, skipped: true, error: 'Token de alterações não configurado' };
+
+    const total = { enviados: 0, recebidos: 0, excluidos: 0, invalidos: 0, avisos: [] };
+    for (let round = 0; round < CADASTRO_MAX_ROUNDS; round++) {
+        const pendente = db.getCadastroPendente({ maxPontos: 200, maxRoteiros: 100 });
+        const result = await postCadastro_(url, {
+            action: 'cadastroSync',
+            token,
+            since: db.getCadastroRev(),
+            origem: db.getDeviceId(),
+            pontos: pendente.pontos,
+            roteiros: pendente.roteiros
+        });
+        if (!result.ok) return { ...result, ...total, pendentes: db.getCadastroPendenteCount() };
+
+        // Um GAS antigo desconhece a ação e responde ok como se fosse uma coleta
+        // vazia: sem estes campos nada foi realmente gravado.
+        if (Number(result.apiVersion) < CADASTRO_MIN_GAS_API_VERSION || !result.accepted || !result.conflitos) {
+            return {
+                ok: false,
+                error: `O GAS precisa ser atualizado para a API v${CADASTRO_MIN_GAS_API_VERSION} (cadastro compartilhado).`,
+                ...total,
+                pendentes: db.getCadastroPendenteCount()
+            };
+        }
+
+        // Todo registro válido do lote foi aceito, rejeitado (conflito) ou
+        // descartado como inválido: nenhum deve ser reenviado.
+        db.marcarCadastroEnviado(pendente);
+        total.enviados += pendente.pontos.length + pendente.roteiros.length;
+        total.invalidos += (result.invalid?.pontos?.length || 0) + (result.invalid?.roteiros?.length || 0);
+
+        const conflitos = db.aplicarCadastroRemoto(result.conflitos, { forcar: true });
+        const recebidos = db.aplicarCadastroRemoto({ pontos: result.pontos || [], roteiros: result.roteiros || [] });
+        total.recebidos += recebidos.pontos + recebidos.roteiros + conflitos.pontos + conflitos.roteiros;
+        total.excluidos += recebidos.excluidos + conflitos.excluidos;
+        total.avisos.push(...recebidos.avisos, ...conflitos.avisos);
+
+        db.setCadastroRev(result.hasMore ? result.cursor : result.rev);
+        if (!result.hasMore && db.getCadastroPendenteCount() === 0) {
+            return { ok: true, ...total, pendentes: 0 };
+        }
+    }
+    return {
+        ok: false,
+        error: 'O cadastro excedeu o limite de segurança de rodadas; tente sincronizar novamente.',
+        ...total,
+        pendentes: db.getCadastroPendenteCount()
+    };
+}

@@ -91,6 +91,14 @@
         
         .error-msg { color: red; text-align: center; padding: 50px; display: none; }
     </style>
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#0b0e14">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="SATELITE">
+    <script src="pwa.js" defer></script>
 </head>
 <body>
     <div class="no-print" style="text-align: center; background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 30px; border: 1px solid #ddd;">
@@ -224,6 +232,6 @@
 
         init();
     </script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+    <script src="vendor/sql-wasm.js"></script>
 </body>
 </html>
