@@ -25,3 +25,9 @@
 - O app é instalável como PWA quando servido por HTTPS (ou `localhost`): `manifest.webmanifest`, ícones em `icons/` e o service worker `sw.js`, registrado por `pwa.js` em todas as páginas. No Tauri o service worker não é registrado.
 - O `sw.js` guarda todo o app no cache para uso offline. **A cada release, atualize `VERSION` em `sw.js` junto com o `package.json`** — é isso que faz os PWAs instalados baixarem a versão nova (o `npm test` acusa se as versões divergirem ou se um arquivo novo ficar fora do `PRECACHE`).
 - O banco local fica no IndexedDB (`satelite-checklist` → `kv` → `app3_db`), sem o limite de ~5 MB do localStorage. Na primeira abertura o banco antigo do localStorage é migrado automaticamente. O estado anterior a essa mudança está registrado em `docs/PRE-PWA.md`.
+
+## Cadastro editado no app
+
+- O app é o dono de clientes e roteiros. O que é criado ou editado nele (`editado_em`) **nunca** é sobrescrito pela importação do CSV do Access, nem pela automática nem pela manual, a menos que se marque "Sobrescrever" na importação manual. Pontos excluídos no app também não voltam.
+- Pontos novos recebem ids `APP-n` e roteiros renomeados mantêm o nome antigo como apelido (`roteiro_alias`). "Exportar CSV" gera o arquivo no formato do Access (`;`, ordem `1,00`, BOM) e reimporta sem perdas.
+- **Ainda não sincronizam entre aparelhos:** pontos `APP-n`, roteiros criados/renomeados e exclusões ficam só no aparelho (e no backup `.db`). Isso exige uma etapa no GAS.

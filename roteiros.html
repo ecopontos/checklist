@@ -236,6 +236,22 @@
             border: 1px solid var(--card-border);
         }
 
+        /* Formulários altos rolam dentro da tela em vez de cortar o botão Salvar. */
+        #editModal .modal-content, #roteirosModal .modal-content, #importModal .modal-content {
+            max-height: 94vh;
+            overflow-y: auto;
+        }
+        #editModal .modal-footer { position: sticky; bottom: -40px; background: var(--surface); padding: 14px 0 4px; }
+        @media (max-width: 640px) {
+            #editModal .modal-content, #roteirosModal .modal-content, #importModal .modal-content {
+                padding: 20px 16px;
+                border-radius: 16px;
+                max-height: 100vh;
+            }
+            #editModal .modal-footer { bottom: -20px; }
+            #editModal .form-group { margin-bottom: 14px; }
+        }
+
         .form-group { margin-bottom: 20px; }
         .form-group label { display: block; margin-bottom: 8px; color: var(--text-dim); font-size: 0.9rem; }
         .form-group input, .form-group select { width: 100%; }
@@ -371,6 +387,8 @@
                 Importar CSV
             </button>
             <button class="btn btn-outline" onclick="openAddModal()">+ Novo Ponto</button>
+            <button class="btn btn-outline" onclick="openRoteirosModal()">⚙ Gerenciar roteiros</button>
+            <button class="btn btn-outline" onclick="exportCsv()">⬇ Exportar CSV</button>
             <button class="btn btn-outline" style="border-color: #f1c40f; color: #f1c40f;" onclick="openLegacyModal()">
                 📦 Importar Legado (Access/Excel)
             </button>
@@ -456,19 +474,24 @@
         <div class="modal-content">
             <h2 id="modalTitle">Editar Ponto</h2>
             <p class="subtitle" style="font-size: 0.8rem;">
-                Dados do cliente (nome, endereço, telefone) valem para <strong>todos os roteiros</strong> e são salvos na planilha.
+                Dados do cliente (nome, endereço, telefone) valem para <strong>todos os roteiros</strong> do cliente.
                 Ordem e status são deste roteiro. Para mudar a sequência, feche este formulário e use <strong>Organizar roteiro</strong>.
+                Alterações feitas aqui não são desfeitas pela importação do CSV do Access.
             </p>
             <form id="editForm">
                 <div class="form-group">
                     <label>ID Rota</label>
-                    <input type="text" id="f_idRota" required>
+                    <input type="text" id="f_idRota" placeholder="Gerado automaticamente">
                 </div>
                 <div class="form-group">
                     <label>Cliente</label>
                     <input type="text" id="f_cliente" required>
                 </div>
                 <input type="hidden" id="f_idCliente">
+                <div class="form-group">
+                    <label>Logradouro</label>
+                    <input type="text" id="f_logradouro">
+                </div>
                 <div class="form-group">
                     <label>Número</label>
                     <input type="text" id="f_numero">
@@ -505,10 +528,29 @@
                     </select>
                 </div>
                 <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" id="btnExcluirPonto" style="display:none; border-color: var(--danger, #e74c3c); color: var(--danger, #e74c3c); margin-right:auto;" onclick="excluirPontoAtual()">Excluir ponto</button>
                     <button type="button" class="btn btn-outline" onclick="closeModal('editModal')">Cancelar</button>
                     <button type="submit" class="btn btn-primary">Salvar Alterações</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <div id="roteirosModal" class="modal">
+        <div class="modal-content">
+            <h2>Gerenciar roteiros</h2>
+            <p class="subtitle" style="font-size: 0.8rem;">
+                Renomear um roteiro mantém o nome antigo como apelido: a importação do Access continua encontrando o roteiro.
+            </p>
+            <div id="roteirosList" style="display:flex; flex-direction:column; gap:8px; max-height:45vh; overflow:auto;"></div>
+            <form id="roteiroNovoForm" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:14px;">
+                <input type="text" id="rn_nome" placeholder="Novo roteiro" required style="flex:2; min-width:140px;">
+                <input type="text" id="rn_tipo" placeholder="Tipo de resíduo" style="flex:2; min-width:140px;">
+                <button type="submit" class="btn btn-primary">+ Criar</button>
+            </form>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" onclick="closeModal('roteirosModal')">Fechar</button>
+            </div>
         </div>
     </div>
 
@@ -521,6 +563,10 @@
                 <p>Clique para selecionar o arquivo CSV</p>
             </div>
             <input type="file" id="csvFile" accept=".csv" style="display: none;">
+            <label style="display:flex; gap:8px; align-items:flex-start; margin-top:12px; font-size:0.85rem;">
+                <input type="checkbox" id="importSobrescrever" style="margin-top:3px;">
+                <span>Sobrescrever também os pontos que foram criados ou editados no app (por padrão eles são preservados).</span>
+            </label>
 
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline" onclick="closeModal('importModal')">Cancelar</button>
@@ -876,6 +922,7 @@
                 document.getElementById('f_idRota').disabled = true;
                 document.getElementById('f_idCliente').value = row.id_cliente || '';
                 document.getElementById('f_cliente').value = row.cliente;
+                document.getElementById('f_logradouro').value = row.logradouro || '';
                 document.getElementById('f_numero').value = row.numero || '';
                 document.getElementById('f_complemento').value = row.complemento || '';
                 document.getElementById('f_cep').value = row.cep || '';
@@ -887,6 +934,7 @@
                 document.getElementById('f_status').value = row.ativo;
                 
                 document.getElementById('modalTitle').textContent = 'Editar Ponto';
+                document.getElementById('btnExcluirPonto').style.display = '';
                 document.getElementById('editModal').style.display = 'flex';
             }
         };
@@ -896,15 +944,19 @@
             document.getElementById('f_idRota').disabled = false;
             document.getElementById('f_idCliente').value = '';
             document.getElementById('f_cliente').value = '';
+            document.getElementById('f_logradouro').value = '';
             document.getElementById('f_numero').value = '';
             document.getElementById('f_complemento').value = '';
             document.getElementById('f_cep').value = '';
             document.getElementById('f_telefone1').value = '';
             document.getElementById('f_telefone2').value = '';
-            document.getElementById('f_ordem').value = '100';
+            const filtro = document.getElementById('routeFilter').value;
+            if (filtro) document.getElementById('f_roteiro').value = filtro;
+            document.getElementById('f_ordem').value = db.proximaOrdemRoteiro(document.getElementById('f_roteiro').value);
             document.getElementById('f_ordem').disabled = false;
             document.getElementById('f_status').value = '1';
-            
+            document.getElementById('btnExcluirPonto').style.display = 'none';
+
             document.getElementById('modalTitle').textContent = 'Novo Ponto';
             document.getElementById('editModal').style.display = 'flex';
         };
@@ -938,7 +990,7 @@
 
         window.toggleStatus = async (idRota, current) => {
             db.db.run("UPDATE clientes SET ativo = ? WHERE id_rota = ?", [current ? 0 : 1, idRota]);
-            db.save();
+            db.marcarPontosEditados(idRota);
             renderClients();
             await queueAndSyncAccessChange(idRota);
         };
@@ -947,11 +999,10 @@
         document.getElementById('editForm').onsubmit = async (e) => {
             e.preventDefault();
             const idRotaInput = document.getElementById('f_idRota');
-            const isExistingAccessPoint = idRotaInput.disabled;
-            const existing = isExistingAccessPoint
-                ? db.getClienteByIdRota(idRotaInput.value)
-                : null;
+            const isExisting = idRotaInput.disabled;
+            const existing = isExisting ? db.getClienteByIdRota(idRotaInput.value) : null;
             const idCliente = document.getElementById('f_idCliente').value;
+            const roteiroId = Number(document.getElementById('f_roteiro').value);
             const form = {
                 Cliente: document.getElementById('f_cliente').value,
                 'Número': document.getElementById('f_numero').value,
@@ -960,46 +1011,72 @@
                 Telefone1: document.getElementById('f_telefone1').value,
                 Telefone2: document.getElementById('f_telefone2').value
             };
-            const data = {
-                idRota: idRotaInput.value,
-                idCliente,
-                logradouro: existing?.logradouro || '',
-                roteiro_id: document.getElementById('f_roteiro').value,
-                Ordem: Number(document.getElementById('f_ordem').value),
-                ativo: document.getElementById('f_status').value == '1',
-                ...form
-            };
-            db.upsertCliente(data);
+            const logradouro = document.getElementById('f_logradouro').value.trim();
+            const ativo = document.getElementById('f_status').value == '1';
+
+            if (!isExisting) {
+                try {
+                    const id = db.criarPonto({
+                        idRota: idRotaInput.value,
+                        cliente: form.Cliente, logradouro, numero: form['Número'], complemento: form.Complemento,
+                        cep: form.CEP, telefone1: form.Telefone1, telefone2: form.Telefone2,
+                        roteiroId, ordem: document.getElementById('f_ordem').value, ativo
+                    });
+                    closeModal('editModal');
+                    renderClients();
+                    alert(`Ponto ${id} criado neste aparelho.`);
+                } catch (error) {
+                    alert(error.message);
+                }
+                return;
+            }
+
+            const mudouRoteiro = Number(existing.roteiro_id) !== roteiroId;
+            try {
+                db.upsertCliente({
+                    idRota: idRotaInput.value,
+                    idCliente,
+                    logradouro,
+                    roteiro_id: roteiroId,
+                    Ordem: mudouRoteiro ? db.proximaOrdemRoteiro(roteiroId) : Number(document.getElementById('f_ordem').value),
+                    ativo,
+                    ...form
+                }, { origemApp: true });
+                // O upsert não limpa o logradouro; permite apagá-lo de propósito.
+                if (!logradouro && existing.logradouro) {
+                    db.db.run("UPDATE clientes SET logradouro = '' WHERE id_rota = ?", [idRotaInput.value]);
+                    db.save();
+                }
+            } catch (error) {
+                alert(error.message);
+                return;
+            }
 
             // Campos de cliente que mudaram (valem para todos os roteiros dele).
             const originais = {
-                Cliente: existing?.cliente ?? '',
-                'Número': existing?.numero ?? '',
-                Complemento: existing?.complemento ?? '',
-                CEP: existing?.cep ?? '',
-                Telefone1: existing?.telefone1 ?? '',
-                Telefone2: existing?.telefone2 ?? ''
+                Cliente: existing.cliente ?? '',
+                'Número': existing.numero ?? '',
+                Complemento: existing.complemento ?? '',
+                CEP: existing.cep ?? '',
+                Telefone1: existing.telefone1 ?? '',
+                Telefone2: existing.telefone2 ?? ''
             };
             const campos = {};
             Object.keys(form).forEach(k => {
                 if (String(form[k] ?? '') !== String(originais[k] ?? '')) campos[k] = form[k];
             });
             const temCampoCliente = Object.keys(campos).length > 0;
-
-            if (isExistingAccessPoint && idCliente && temCampoCliente) {
-                db.updateClienteLocal(idCliente, campos);
-            }
+            if (idCliente && temCampoCliente) db.updateClienteLocal(idCliente, campos);
 
             closeModal('editModal');
             renderClients();
 
-            if (!isExistingAccessPoint) {
-                alert('Novo ponto salvo apenas localmente. O cadastro de clientes novos na planilha será tratado em uma etapa futura.');
-                return;
-            }
+            // Pontos criados no app (ids "APP-n") não existem no Access/planilha:
+            // ficam só neste aparelho e não entram nas filas de sincronização.
+            if (!/^\d+$/.test(String(existing.id_rota))) return;
 
-            // Ordem/status do ponto (subprojeto A)
-            await queueAndSyncAccessChange(data.idRota);
+            // Ordem/status/roteiro do ponto (subprojeto A)
+            await queueAndSyncAccessChange(existing.id_rota);
 
             // Dados do cliente (subprojeto B)
             if (temCampoCliente && !idCliente) {
@@ -1019,6 +1096,75 @@
             }
         };
 
+        window.excluirPontoAtual = () => {
+            const id = document.getElementById('f_idRota').value;
+            const ponto = db.getClienteByIdRota(id);
+            if (!ponto) return;
+            if (!confirm(`Excluir o ponto ${id} (${ponto.cliente})? A importação do Access não o trará de volta.`)) return;
+            try {
+                db.excluirPonto(id);
+            } catch (error) {
+                alert(error.message);
+                return;
+            }
+            closeModal('editModal');
+            renderClients();
+        };
+
+        // --- Gerenciar roteiros ---
+        const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+        function renderRoteirosModal() {
+            const contagem = new Map();
+            const res = db.db.exec('SELECT roteiro_id, COUNT(*) FROM clientes GROUP BY roteiro_id');
+            if (res.length) res[0].values.forEach(v => contagem.set(Number(v[0]), v[1]));
+            document.getElementById('roteirosList').innerHTML = db.getRoteiros().map(r => `
+                <div class="roteiro-row" data-id="${r.id}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <input type="text" class="rr-nome" value="${esc(r.nome)}" style="flex:2; min-width:120px;" aria-label="Nome do roteiro">
+                    <input type="text" class="rr-tipo" value="${esc(r.tipo_residuo)}" placeholder="Tipo de resíduo" style="flex:2; min-width:120px;" aria-label="Tipo de resíduo">
+                    <span style="opacity:.7; font-size:.8rem; min-width:60px;">${contagem.get(r.id) || 0} ${(contagem.get(r.id) || 0) === 1 ? 'ponto' : 'pontos'}</span>
+                    <button class="btn btn-outline" data-salvar-roteiro="${r.id}">Salvar</button>
+                </div>`).join('') || '<p class="subtitle">Nenhum roteiro ainda.</p>';
+        }
+
+        window.openRoteirosModal = () => {
+            renderRoteirosModal();
+            document.getElementById('roteirosModal').style.display = 'flex';
+        };
+
+        document.getElementById('roteirosList').addEventListener('click', event => {
+            const button = event.target.closest('[data-salvar-roteiro]');
+            if (!button) return;
+            const row = button.closest('.roteiro-row');
+            try {
+                db.atualizarRoteiro(button.dataset.salvarRoteiro, {
+                    nome: row.querySelector('.rr-nome').value,
+                    tipoResiduo: row.querySelector('.rr-tipo').value
+                });
+            } catch (error) {
+                alert(error.message);
+                return;
+            }
+            renderRoteiros();
+            renderClients();
+            renderRoteirosModal();
+        });
+
+        document.getElementById('roteiroNovoForm').onsubmit = (event) => {
+            event.preventDefault();
+            try {
+                db.criarRoteiro(document.getElementById('rn_nome').value, document.getElementById('rn_tipo').value);
+            } catch (error) {
+                alert(error.message);
+                return;
+            }
+            event.target.reset();
+            renderRoteiros();
+            renderRoteirosModal();
+        };
+
+        window.exportCsv = () => db.downloadRoteirosCsv();
+
         // Filters
         document.getElementById('routeFilter').onchange = renderClients;
         document.getElementById('searchClient').oninput = renderClients;
@@ -1034,9 +1180,14 @@
 
             const reader = new FileReader();
             reader.onload = function(e) {
-                const result = db.importRoteirosCsv(e.target.result);
+                const sobrescreverEditados = document.getElementById('importSobrescrever').checked;
+                if (sobrescreverEditados && !confirm('Os pontos criados ou editados no app serão substituídos pelos dados do CSV. Continuar?')) {
+                    document.getElementById('loader').style.display = 'none';
+                    return;
+                }
+                const result = db.importRoteirosCsv(e.target.result, { sobrescreverEditados });
 
-                if (result.clientes === 0) {
+                if (result.clientes === 0 && !result.preservados) {
                     alert('Arquivo vazio ou formato inválido.');
                     document.getElementById('loader').style.display = 'none';
                     return;
@@ -1046,6 +1197,9 @@
                 renderClients();
                 document.getElementById('loader').style.display = 'none';
                 closeModal('importModal');
+                document.getElementById('csvFile').value = '';
+                alert(`Importação concluída: ${result.clientes} ponto(s) atualizado(s)` +
+                    (result.preservados ? `, ${result.preservados} preservado(s) por terem sido editados no app` : '') + '.');
             };
             reader.readAsText(file);
         }
