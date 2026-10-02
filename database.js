@@ -3,10 +3,91 @@
  * Uses sql.js (SQLite WebAssembly)
  */
 
+// O banco SQLite inteiro é persistido como um único blob. No navegador/PWA
+// vai para o IndexedDB (sem o limite de ~5 MB do localStorage); onde não há
+// IndexedDB (ex.: testes em node:vm) continua no localStorage como antes.
+const DB_KEY = 'app3_db';
+const IDB_NAME = 'satelite-checklist';
+const IDB_STORE = 'kv';
+
+function idbOpen() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(IDB_NAME, 1);
+        request.onupgradeneeded = () => request.result.createObjectStore(IDB_STORE);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+        request.onblocked = () => reject(new Error('IndexedDB bloqueado por outra aba.'));
+    });
+}
+
+function idbRun(conn, mode, operation) {
+    return new Promise((resolve, reject) => {
+        const tx = conn.transaction(IDB_STORE, mode);
+        const request = operation(tx.objectStore(IDB_STORE));
+        tx.oncomplete = () => resolve(request.result);
+        tx.onerror = () => reject(tx.error || request.error);
+        tx.onabort = () => reject(tx.error || new Error('Transação IndexedDB abortada.'));
+    });
+}
+
 class AppDatabase {
     constructor() {
         this.db = null;
         this.SQL = null;
+        this._idb = null;
+        this._pendingBytes = null;
+        this._writing = null;
+        this._resetting = false;
+        this._saveErrorNotified = false;
+    }
+
+    // Abre o IndexedDB e devolve os bytes salvos. Na primeira execução migra o
+    // banco antigo do localStorage. Se um banco antigo reaparecer depois da
+    // migração (versão pré-PWA usada de novo), ele é guardado como cópia de
+    // segurança no IndexedDB em vez de sobrescrever o banco atual.
+    async _loadFromIndexedDb() {
+        this._idb = await idbOpen();
+        const stored = await idbRun(this._idb, 'readonly', store => store.get(DB_KEY));
+        const legacy = localStorage.getItem(DB_KEY);
+        let bytes = stored ? new Uint8Array(stored) : null;
+        if (legacy) {
+            const legacyBytes = new Uint8Array(JSON.parse(legacy));
+            if (bytes) {
+                const backupKey = `${DB_KEY}_localstorage_${new Date().toISOString()}`;
+                await idbRun(this._idb, 'readwrite', store => store.put(legacyBytes, backupKey));
+                console.warn(`Banco antigo do localStorage preservado no IndexedDB como "${backupKey}".`);
+            } else {
+                await idbRun(this._idb, 'readwrite', store => store.put(legacyBytes, DB_KEY));
+                bytes = legacyBytes;
+            }
+            localStorage.removeItem(DB_KEY);
+        }
+        if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
+            navigator.storage.persist().catch(() => {});
+        }
+        return bytes;
+    }
+
+    _installUnloadGuard() {
+        if (typeof window === 'undefined' || typeof document === 'undefined') return;
+        // Gravações no IndexedDB são assíncronas e o app troca de página a
+        // cada menu: segura a navegação por link até o banco terminar de
+        // gravar, e pede confirmação se a página for fechada no meio.
+        document.addEventListener('click', event => {
+            if (!this.hasPendingWrites()) return;
+            const link = event.target.closest && event.target.closest('a[href]');
+            if (!link || link.target === '_blank' || link.hasAttribute('download')) return;
+            if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey) return;
+            const href = link.href;
+            if (!href || href.startsWith('javascript:') || new URL(href).origin !== location.origin) return;
+            event.preventDefault();
+            this.flush().finally(() => { location.href = href; });
+        }, true);
+        window.addEventListener('beforeunload', event => {
+            if (!this.hasPendingWrites()) return;
+            event.preventDefault();
+            event.returnValue = '';
+        });
     }
 
     async init() {
@@ -17,14 +98,21 @@ class AppDatabase {
             locateFile: file => `./vendor/${file}`
         });
 
-        // Try to load from localStorage
-        const savedDb = localStorage.getItem('app3_db');
-        if (savedDb) {
-            const uInt8Array = new Uint8Array(JSON.parse(savedDb));
-            this.db = new this.SQL.Database(uInt8Array);
-        } else {
-            this.db = new this.SQL.Database();
+        let savedBytes = null;
+        if (typeof indexedDB !== 'undefined' && indexedDB) {
+            try {
+                savedBytes = await this._loadFromIndexedDb();
+                this._installUnloadGuard();
+            } catch (error) {
+                console.warn('IndexedDB indisponível; usando localStorage.', error);
+                this._idb = null;
+            }
         }
+        if (!this._idb) {
+            const savedDb = localStorage.getItem(DB_KEY);
+            if (savedDb) savedBytes = new Uint8Array(JSON.parse(savedDb));
+        }
+        this.db = savedBytes ? new this.SQL.Database(savedBytes) : new this.SQL.Database();
         this.createTables();
         this.migrateSchema();
         this.migrateColetaSchema();
@@ -210,9 +298,59 @@ class AppDatabase {
     }
 
     save() {
+        if (this._resetting) return;
         const data = this.db.export();
+        if (this._idb) {
+            this._pendingBytes = data;
+            this._writeToIndexedDb();
+            return;
+        }
         const array = Array.from(data);
-        localStorage.setItem('app3_db', JSON.stringify(array));
+        localStorage.setItem(DB_KEY, JSON.stringify(array));
+    }
+
+    // Grava sempre o retrato mais recente; saves feitos durante uma gravação
+    // em andamento são coalescidos na próxima volta do laço.
+    _writeToIndexedDb() {
+        if (this._writing) return this._writing;
+        this._writing = (async () => {
+            try {
+                while (this._pendingBytes) {
+                    const bytes = this._pendingBytes;
+                    this._pendingBytes = null;
+                    await idbRun(this._idb, 'readwrite', store => store.put(bytes, DB_KEY));
+                }
+            } catch (error) {
+                console.error('Falha ao gravar o banco local no IndexedDB.', error);
+                if (!this._saveErrorNotified && typeof alert === 'function') {
+                    this._saveErrorNotified = true;
+                    alert('Não foi possível salvar os dados locais neste dispositivo. '
+                        + 'Faça um backup pela tela Admin antes de fechar o app.');
+                }
+            } finally {
+                this._writing = null;
+            }
+        })();
+        return this._writing;
+    }
+
+    hasPendingWrites() {
+        return Boolean(this._writing || this._pendingBytes);
+    }
+
+    // Resolve quando o último save() já estiver gravado no disco.
+    async flush() {
+        while (this._writing) await this._writing;
+    }
+
+    // Apaga o banco local (Admin > Resetar). Depois disso nenhum save() grava
+    // mais nada até a página ser recarregada.
+    async resetStorage() {
+        this._resetting = true;
+        this._pendingBytes = null;
+        await this.flush();
+        if (this._idb) await idbRun(this._idb, 'readwrite', store => store.delete(DB_KEY));
+        localStorage.removeItem(DB_KEY);
     }
 
     _persistAtomic(action) {

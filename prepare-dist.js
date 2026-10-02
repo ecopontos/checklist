@@ -75,7 +75,7 @@ for (const entry of rootEntries) {
   } else {
     // Copy files matching our asset patterns
     const ext = path.extname(entry.name).toLowerCase();
-    if (['.html', '.css', '.js', '.json'].includes(ext)) {
+    if (['.html', '.css', '.js', '.json', '.webmanifest'].includes(ext)) {
       copyFile(entry.name, entry.name);
     }
   }
