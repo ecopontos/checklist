@@ -51,7 +51,7 @@ test('GAS devolve o CSV mais recente do Drive sem alterar colunas ou acentos', (
   const response = JSON.parse(gas.doGet({ parameter: { action: 'roteirosCsv' } }).value);
   assert.equal(response.ok, true);
   assert.equal(response.source, 'drive-csv');
-  assert.equal(response.apiVersion, 13);
+  assert.equal(response.apiVersion, 14);
   assert.equal(response.modifiedTime, '2026-09-25T10:00:00.000Z');
   assert.equal(response.content, currentCsv);
   assert.equal(response.encoding, 'UTF-16LE');

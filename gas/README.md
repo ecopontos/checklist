@@ -55,7 +55,7 @@ o conteúdo ao aplicativo.
 curl "<URL>?action=status"
 ```
 
-Esperado: `{"ok":true,"service":"satelite-gas","apiVersion":12,"routeChangesConfigured":true}`.
+Esperado: `{"ok":true,"service":"satelite-gas","apiVersion":14,"routeChangesConfigured":true,"cadastro":true}`.
 
 ```bash
 curl "<URL>?action=roteirosCsv"
@@ -318,3 +318,45 @@ curl "<URL>?action=agendamentoFotos&id=abc-123&incluirBase64=true"
 Esperado: `{"ok":true,"fotos":[{"nome":"foto_1.jpg","slot":"foto_1"}]}`
 (com `base64` e `mime` por foto quando `incluirBase64=true`). Se o agendamento
 não tiver pasta de fotos, retorna `{"ok":true,"fotos":[]}`.
+
+
+## Cadastro compartilhado (API v14)
+
+A versão 14 adiciona a ação `cadastroSync`, que permite vários aparelhos
+compartilharem os pontos e roteiros criados ou editados no app.
+
+- **Nada novo para configurar:** usa `SPREADSHEET_ID` e o mesmo
+  `ROUTE_CHANGES_TOKEN`. As abas `CadastroPontos` e `CadastroRoteiros` são
+  criadas sozinhas na primeira sincronização. Só o GAS escreve nelas; as
+  tabelas do Access (`tblRotas`, `shtClientes`, `tblRoteiros`) não são tocadas.
+- **Publicar sem trocar a URL:** siga "Atualização sem trocar a URL dos
+  aplicativos" acima (Nova versão na implantação ativa). Os apps antigos
+  continuam funcionando; só não compartilham o cadastro até serem atualizados.
+- **Conflitos:** vence a edição mais recente (`Editado Em`); em empate exato
+  vence a maior `Origem`. Relógio adiantado mais de 5 minutos é limitado ao
+  horário do servidor. Quem perde recebe a versão do servidor na própria
+  resposta.
+- **Exclusões** ficam como lápide (`Excluido=1`) para chegar aos outros
+  aparelhos.
+- **Roteiros renomeados:** `Chave` guarda o nome original e `Apelidos` os nomes
+  antigos. As consultas `ultimaColeta`, `ultimaColetaDetalhada` e
+  `intercorrenciasRoteiro` passam a considerar todos esses nomes, então
+  renomear um roteiro no app não zera o histórico.
+- **Planilha:** não edite as abas `Cadastro*` à mão (as colunas `Rev` e
+  `Editado Em` controlam a sincronização).
+
+Teste manual (substitua `<URL>` e `<TOKEN>`):
+
+```bash
+curl -X POST "<URL>" -H "Content-Type: text/plain;charset=utf-8" \
+  -d '{"action":"cadastroSync","token":"<TOKEN>","since":0,"pontos":[],"roteiros":[]}'
+```
+
+Esperado: `"ok":true`, `"apiVersion":14`, `"rev"` e as listas `pontos`/`roteiros`
+(vazias numa planilha nova).
+
+## Cópia de teste
+
+Para testar sem acesso à produção, `gas-teste/README.md` explica como montar uma
+cópia no seu próprio Google com o script `gas-teste/PrepararTeste.gs` (que
+propositalmente não fica nesta pasta).

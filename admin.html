@@ -209,6 +209,14 @@
     <script src="theme.js"></script>
     <script src="config.js"></script>
     <script src="config.local.js"></script>
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#0b0e14">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="SATELITE">
+    <script src="pwa.js" defer></script>
 </head>
 <body>
     <div class="container">
@@ -267,6 +275,11 @@
                     <a href="ajuda-integracao-access.html" target="_blank" style="color: var(--accent); font-size: 0.9rem;">
                         ❓ Como enviar alterações de roteiros para o Access
                     </a>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <span class="gas-version-status" id="cadastroSyncStatus">Cadastro compartilhado: não sincronizado nesta sessão</span>
+                    <button class="btn btn-outline" onclick="syncCadastroAgora()">Sincronizar cadastro (pontos e roteiros do app)</button>
                 </div>
 
                 <div style="display: flex; gap: 10px;">
@@ -330,6 +343,7 @@
             getGasRouteToken,
             setGasRouteToken,
             syncPendingRoteiroChanges,
+            syncCadastro,
             REQUIRED_GAS_API_VERSION
         } from './google-sync.js';
 
@@ -512,9 +526,26 @@
 
         window.backupSQLite = () => db.downloadDatabase();
 
-        window.resetDatabase = () => {
+        window.syncCadastroAgora = async () => {
+            const status = document.getElementById('cadastroSyncStatus');
+            status.className = 'gas-version-status';
+            status.textContent = 'Cadastro compartilhado: sincronizando...';
+            const result = await syncCadastro(db);
+            if (result.ok) {
+                status.className = 'gas-version-status compatible';
+                status.textContent = `Cadastro compartilhado: ${result.enviados} enviado(s), ${result.recebidos} recebido(s)` +
+                    (result.excluidos ? `, ${result.excluidos} excluído(s)` : '') +
+                    (result.invalidos ? `, ${result.invalidos} descartado(s) por dados inválidos` : '');
+                updateStats();
+            } else {
+                status.className = 'gas-version-status error';
+                status.textContent = `Cadastro compartilhado: ${result.error} (${db.getCadastroPendenteCount()} pendente(s))`;
+            }
+        };
+
+        window.resetDatabase = async () => {
             if (confirm("TEM CERTEZA? Todos os dados locais serão apagados permanentemente.")) {
-                localStorage.removeItem('app3_db');
+                await db.resetStorage();
                 location.reload();
             }
         };

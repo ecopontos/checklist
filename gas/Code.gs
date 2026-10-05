@@ -37,7 +37,9 @@ var CLIENT_EDITABLE_FIELDS = ['Cliente', 'Número', 'Complemento', 'CEP', 'Telef
 // v13: cache.put protegido nas leituras + intercorrências atuais lidas em
 // blocos. Sem mudança de contrato (respostas idênticas); o bump serve só para
 // tornar o deploy verificável via ?action=status.
-var GAS_API_VERSION = 13;
+// v14: cadastro compartilhado (action=cadastroSync) e consultas por roteiro que
+// entendem nomes antigos de roteiros renomeados no app.
+var GAS_API_VERSION = 14;
 var INTERCORRENCIAS_ATUAIS_CACHE_KEY = 'intercorrenciasAtuais:v1';
 // Consultas de última coleta varrem apenas as linhas mais recentes da aba
 // Coletas (append-only, cronológica). Varrer a aba inteira chega a ~37s e pode
@@ -72,7 +74,8 @@ function doGet(e) {
             ok: true,
             service: 'satelite-gas',
             apiVersion: GAS_API_VERSION,
-            routeChangesConfigured: Boolean(getConfig_().routeChangesToken)
+            routeChangesConfigured: Boolean(getConfig_().routeChangesToken),
+            cadastro: true
         });
     }
 
@@ -346,13 +349,14 @@ function getUltimaColeta_(roteiroNome) {
         }
 
         var roteiroAlvo = roteiroNome.trim();
+        var nomesAlvo = nameSet_(getRoteiroNomesEquivalentes_(ss, roteiroAlvo));
         var lastRow = sheet.getLastRow();
 
         // Cache com chave que inclui lastRow: novas coletas mudam lastRow e
         // invalidam a entrada automaticamente. Evita revarrer a aba Coletas
         // (que pode ter milhares de linhas) a cada geração de checklist.
         var cache = CacheService.getScriptCache();
-        var cacheKey = 'uc:' + lastRow + ':' + roteiroAlvo;
+        var cacheKey = 'uc:' + lastRow + ':' + roteiroAlvo + nameSetCacheSuffix_(nomesAlvo);
         var cached = cache.get(cacheKey);
         if (cached !== null) {
             return jsonResponse_({ ok: true, data: cached === '' ? null : cached });
@@ -378,7 +382,7 @@ function getUltimaColeta_(roteiroNome) {
             var values = sheet.getRange(startRow, minCol + 1, num, width).getValues();
             var ld = null;
             for (var i = 0; i < values.length; i++) {
-                if (String(values[i][rOff]).trim() !== roteiroAlvo) continue;
+                if (nomesAlvo[String(values[i][rOff]).trim()] !== true) continue;
                 var normalized = normalizeDateValue_(values[i][dOff]);
                 if (normalized && (!ld || normalized > ld)) {
                     ld = normalized;
@@ -427,10 +431,11 @@ function getUltimaColetaDetalhada_(roteiroNome) {
         }
 
         var roteiroAlvo = roteiroNome.trim();
+        var nomesAlvo = nameSet_(getRoteiroNomesEquivalentes_(ss, roteiroAlvo));
         var lastRow = sheet.getLastRow();
 
         var cache = CacheService.getScriptCache();
-        var cacheKey = 'ucd:' + lastRow + ':' + roteiroAlvo;
+        var cacheKey = 'ucd:' + lastRow + ':' + roteiroAlvo + nameSetCacheSuffix_(nomesAlvo);
         var cached = cache.get(cacheKey);
         if (cached !== null) {
             return jsonResponse_({ ok: true, data: JSON.parse(cached) });
@@ -462,7 +467,7 @@ function getUltimaColetaDetalhada_(roteiroNome) {
             var values = sheet.getRange(startRow, minCol + 1, num, width).getValues();
             var ld = null;
             for (var i = 0; i < values.length; i++) {
-                if (String(values[i][rOff]).trim() !== roteiroAlvo) continue;
+                if (nomesAlvo[String(values[i][rOff]).trim()] !== true) continue;
                 var normalized = normalizeDateValue_(values[i][dOff]);
                 if (normalized && (!ld || normalized > ld)) {
                     ld = normalized;
@@ -471,7 +476,7 @@ function getUltimaColetaDetalhada_(roteiroNome) {
             if (!ld) return null;
             var pontos = {};
             for (var j = 0; j < values.length; j++) {
-                if (String(values[j][rOff]).trim() !== roteiroAlvo) continue;
+                if (nomesAlvo[String(values[j][rOff]).trim()] !== true) continue;
                 if (normalizeDateValue_(values[j][dOff]) !== ld) continue;
                 var idRota = String(values[j][iOff]).trim();
                 if (!idRota) continue;
@@ -526,10 +531,11 @@ function getIntercorrenciasRoteiro_(roteiroNome) {
         }
 
         var roteiroAlvo = roteiroNome.trim();
+        var nomesAlvo = nameSet_(getRoteiroNomesEquivalentes_(ss, roteiroAlvo));
         var lastRow = sheet.getLastRow();
 
         var cache = CacheService.getScriptCache();
-        var cacheKey = 'ic:' + lastRow + ':' + roteiroAlvo;
+        var cacheKey = 'ic:' + lastRow + ':' + roteiroAlvo + nameSetCacheSuffix_(nomesAlvo);
         var cached = cache.get(cacheKey);
         if (cached !== null) {
             return jsonResponse_({ ok: true, data: JSON.parse(cached) });
@@ -559,7 +565,7 @@ function getIntercorrenciasRoteiro_(roteiroNome) {
             var ultimaPorPonto = {};
             var achouRoteiro = false;
             for (var i = 0; i < values.length; i++) {
-                if (String(values[i][rOff]).trim() !== roteiroAlvo) continue;
+                if (nomesAlvo[String(values[i][rOff]).trim()] !== true) continue;
                 achouRoteiro = true;
                 var idRota = String(values[i][iOff]).trim();
                 if (!idRota) continue;
@@ -803,6 +809,10 @@ function doPost(e) {
 
         if (body.action === 'clientChanges') {
             return saveClientChanges_(body.changes || [], body.token || '');
+        }
+
+        if (body.action === 'cadastroSync') {
+            return cadastroSync_(body);
         }
 
         if (body.action === 'getRouteChanges') {
@@ -2004,4 +2014,423 @@ function saveChecklist_(checklist) {
     } finally {
         lock.releaseLock();
     }
+}
+
+// ===== Cadastro compartilhado (v14) =====
+//
+// O app é o dono dos pontos e roteiros editados nele. Cada dispositivo envia
+// os registros que alterou e recebe os alterados pelos outros, usando duas abas
+// que só o GAS escreve (as tabelas do Access - tblRotas/shtClientes/tblRoteiros -
+// não são tocadas):
+//
+//   CadastroPontos   - uma linha por ponto (chave: ID Rota; "APP-n" ou o idRota do Access)
+//   CadastroRoteiros - uma linha por roteiro (chave imutável = nome original)
+//
+// Conflitos: vence a edição mais recente (Editado Em); em empate exato vence a
+// maior Origem, para todos os dispositivos chegarem ao mesmo resultado. Cada
+// gravação recebe um número de revisão crescente (Rev) e o dispositivo pede
+// "tudo com Rev maior que X". Excluir um ponto grava Excluido=1 (lápide).
+var CADASTRO_PONTOS_SHEET_NAME = 'CadastroPontos';
+var CADASTRO_PONTOS_HEADERS = [
+    'ID Rota', 'Cliente', 'Logradouro', 'Número', 'Complemento', 'CEP',
+    'Telefone1', 'Telefone2', 'Roteiro', 'Ordem', 'Ativo', 'Excluido',
+    'Editado Em', 'Origem', 'Rev', 'Atualizado Em'
+];
+var CADASTRO_ROTEIROS_SHEET_NAME = 'CadastroRoteiros';
+var CADASTRO_ROTEIROS_HEADERS = [
+    'Chave', 'Nome', 'Tipo Resíduo', 'Apelidos', 'Editado Em', 'Origem', 'Rev', 'Atualizado Em'
+];
+var CADASTRO_MAX_PONTOS_POR_LOTE = 200;
+var CADASTRO_MAX_ROTEIROS_POR_LOTE = 100;
+var CADASTRO_PULL_LIMIT = 1500;
+var CADASTRO_FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
+var CADASTRO_MAX_APELIDOS = 50;
+
+function cadastroText_(value, max, label) {
+    var text = value === null || value === undefined ? '' : String(value);
+    // Quebras de linha e tabs não fazem sentido em campos de uma linha e
+    // quebrariam a planilha; viram espaço em vez de derrubar o registro.
+    text = text.replace(/[\t\r\n]+/g, ' ').trim();
+    if (text.length > max) throw new Error(label + ' excede ' + max + ' caracteres');
+    return text;
+}
+
+function cadastroFlag_(value, label) {
+    if (value === true || value === 1 || value === '1') return 1;
+    if (value === false || value === 0 || value === '0' || value === '' || value === null || value === undefined) return 0;
+    throw new Error(label + ' inválido');
+}
+
+// Data da edição no dispositivo. Relógio adiantado demais é limitado ao
+// "agora" do servidor, senão um aparelho com data errada venceria todos os
+// conflitos para sempre.
+function cadastroTimestamp_(value, nowMs) {
+    var parsed = new Date(value || '');
+    if (isNaN(parsed.getTime())) throw new Error('Data da edição inválida');
+    var ms = parsed.getTime();
+    if (ms > nowMs + CADASTRO_FUTURE_TOLERANCE_MS) ms = nowMs;
+    return new Date(ms).toISOString();
+}
+
+function normalizeCadastroPonto_(raw, nowMs) {
+    raw = raw || {};
+    var idRota = String(raw.id_rota === null || raw.id_rota === undefined ? '' : raw.id_rota).trim();
+    if (!/^[A-Za-z0-9._-]{1,64}$/.test(idRota)) throw new Error('ID Rota inválido');
+    var excluido = cadastroFlag_(raw.excluido, 'Excluido');
+    var cliente = cadastroText_(raw.cliente, 255, 'Cliente');
+    var roteiro = cadastroText_(raw.roteiro, 255, 'Roteiro');
+    if (!excluido && (!cliente || !roteiro)) throw new Error('Cliente e roteiro são obrigatórios');
+    var ordem = Number(String(raw.ordem === null || raw.ordem === undefined || raw.ordem === '' ? 0 : raw.ordem).replace(',', '.'));
+    if (!isFinite(ordem) || ordem < 0 || ordem > 1000000) throw new Error('Ordem inválida');
+    var origem = cadastroText_(raw.origem, 100, 'Origem');
+    if (!origem) throw new Error('Origem obrigatória');
+    return {
+        idRota: idRota,
+        cliente: cliente,
+        logradouro: cadastroText_(raw.logradouro, 255, 'Logradouro'),
+        numero: cadastroText_(raw.numero, 255, 'Número'),
+        complemento: cadastroText_(raw.complemento, 255, 'Complemento'),
+        cep: cadastroText_(raw.cep, 255, 'CEP'),
+        telefone1: cadastroText_(raw.telefone1, 255, 'Telefone1'),
+        telefone2: cadastroText_(raw.telefone2, 255, 'Telefone2'),
+        roteiro: roteiro,
+        ordem: ordem,
+        ativo: cadastroFlag_(raw.ativo === undefined ? 1 : raw.ativo, 'Ativo'),
+        excluido: excluido,
+        editadoEm: cadastroTimestamp_(raw.editado_em, nowMs),
+        origem: origem
+    };
+}
+
+function normalizeCadastroRoteiro_(raw, nowMs) {
+    raw = raw || {};
+    var chave = cadastroText_(raw.chave, 255, 'Chave');
+    var nome = cadastroText_(raw.nome, 255, 'Nome');
+    if (!chave || !nome) throw new Error('Chave e nome do roteiro são obrigatórios');
+    var apelidos = [];
+    if (raw.apelidos !== undefined && raw.apelidos !== null) {
+        if (!Array.isArray(raw.apelidos) || raw.apelidos.length > CADASTRO_MAX_APELIDOS) {
+            throw new Error('Apelidos inválidos');
+        }
+        raw.apelidos.forEach(function (item) {
+            var apelido = cadastroText_(item, 255, 'Apelido');
+            if (apelido && apelidos.indexOf(apelido) === -1) apelidos.push(apelido);
+        });
+    }
+    var origem = cadastroText_(raw.origem, 100, 'Origem');
+    if (!origem) throw new Error('Origem obrigatória');
+    return {
+        chave: chave,
+        nome: nome,
+        tipoResiduo: cadastroText_(raw.tipo_residuo, 255, 'Tipo de resíduo'),
+        apelidos: apelidos,
+        editadoEm: cadastroTimestamp_(raw.editado_em, nowMs),
+        origem: origem
+    };
+}
+
+function cadastroPontoSignature_(r) {
+    return JSON.stringify([r.cliente, r.logradouro, r.numero, r.complemento, r.cep, r.telefone1,
+        r.telefone2, r.roteiro, Number(r.ordem), Number(r.ativo), Number(r.excluido)]);
+}
+
+function cadastroRoteiroSignature_(r) {
+    return JSON.stringify([r.nome, r.tipoResiduo, r.apelidos]);
+}
+
+// Regra de conflito (função pura): true se `incoming` deve substituir `existing`.
+function cadastroIncomingWins_(incoming, existing, signatureOf) {
+    if (!existing) return true;
+    var novo = Date.parse(incoming.editadoEm);
+    var atual = Date.parse(existing.editadoEm);
+    if (novo !== atual) return novo > atual;
+    if (signatureOf(incoming) === signatureOf(existing)) return false;
+    return incoming.origem > existing.origem;
+}
+
+// Função pura: aplica `incoming` sobre `existingByKey` (mapa chave -> registro)
+// e devolve o novo mapa mais as listas accepted/rejected/unchanged. Registros
+// repetidos no mesmo lote são resolvidos pela mesma regra.
+function mergeCadastro_(existingByKey, incoming, keyOf, signatureOf) {
+    var current = {};
+    Object.keys(existingByKey).forEach(function (key) { current[key] = existingByKey[key]; });
+    var result = { current: current, changed: {}, accepted: [], rejected: [], unchanged: [] };
+    incoming.forEach(function (record) {
+        var key = keyOf(record);
+        var existing = current[key];
+        if (cadastroIncomingWins_(record, existing, signatureOf)) {
+            current[key] = record;
+            result.changed[key] = true;
+            result.accepted.push(key);
+        } else if (existing && signatureOf(existing) === signatureOf(record)) {
+            result.unchanged.push(key);
+        } else {
+            result.rejected.push(key);
+        }
+    });
+    return result;
+}
+
+function cadastroPontoToRow_(r, rev, atualizadoEm) {
+    return [r.idRota, r.cliente, r.logradouro, r.numero, r.complemento, r.cep, r.telefone1, r.telefone2,
+        r.roteiro, r.ordem, r.ativo, r.excluido, r.editadoEm, r.origem, rev, atualizadoEm];
+}
+
+function cadastroRowToPonto_(row) {
+    return {
+        idRota: String(row[0]).trim(), cliente: String(row[1]), logradouro: String(row[2]),
+        numero: String(row[3]), complemento: String(row[4]), cep: String(row[5]),
+        telefone1: String(row[6]), telefone2: String(row[7]), roteiro: String(row[8]),
+        ordem: Number(row[9]) || 0, ativo: Number(row[10]) === 1 ? 1 : 0,
+        excluido: Number(row[11]) === 1 ? 1 : 0, editadoEm: String(row[12]),
+        origem: String(row[13]), rev: Number(row[14]) || 0, atualizadoEm: String(row[15] || '')
+    };
+}
+
+function cadastroRoteiroToRow_(r, rev, atualizadoEm) {
+    return [r.chave, r.nome, r.tipoResiduo, JSON.stringify(r.apelidos), r.editadoEm, r.origem, rev, atualizadoEm];
+}
+
+function parseApelidos_(value) {
+    try {
+        var parsed = JSON.parse(String(value || '[]'));
+        return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+function cadastroRowToRoteiro_(row) {
+    return {
+        chave: String(row[0]), nome: String(row[1]), tipoResiduo: String(row[2]),
+        apelidos: parseApelidos_(row[3]), editadoEm: String(row[4]), origem: String(row[5]),
+        rev: Number(row[6]) || 0, atualizadoEm: String(row[7] || '')
+    };
+}
+
+function cadastroPontoToJson_(r) {
+    return {
+        id_rota: r.idRota, cliente: r.cliente, logradouro: r.logradouro, numero: r.numero,
+        complemento: r.complemento, cep: r.cep, telefone1: r.telefone1, telefone2: r.telefone2,
+        roteiro: r.roteiro, ordem: r.ordem, ativo: r.ativo, excluido: r.excluido,
+        editado_em: r.editadoEm, origem: r.origem
+    };
+}
+
+function cadastroRoteiroToJson_(r) {
+    return {
+        chave: r.chave, nome: r.nome, tipo_residuo: r.tipoResiduo, apelidos: r.apelidos,
+        editado_em: r.editadoEm, origem: r.origem
+    };
+}
+
+function getCadastroSheet_(name, headers) {
+    var config = getConfig_();
+    if (!config.spreadsheetId) throw new Error('SPREADSHEET_ID não configurado');
+    var spreadsheet = SpreadsheetApp.openById(config.spreadsheetId);
+    var sheet = spreadsheet.getSheetByName(name);
+    if (!sheet) sheet = spreadsheet.insertSheet(name);
+    if (sheet.getLastRow() === 0) {
+        sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+        sheet.setFrozenRows(1);
+        return sheet;
+    }
+    var header = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
+    for (var i = 0; i < headers.length; i++) {
+        if (String(header[i]) !== headers[i]) throw new Error('Cabeçalho inválido na aba ' + name);
+    }
+    return sheet;
+}
+
+function readCadastroRows_(sheet, width) {
+    var lastRow = sheet.getLastRow();
+    return lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, width).getValues() : [];
+}
+
+// Grava o bloco inteiro de uma vez (uma chamada à planilha). O formato de
+// texto ('@') é aplicado ANTES dos valores: assim CEP e telefones mantêm o zero
+// à esquerda e nenhum valor é interpretado como fórmula.
+function writeCadastroTable_(sheet, rows, width) {
+    if (!rows.length) return;
+    var range = sheet.getRange(2, 1, rows.length, width);
+    range.setNumberFormat('@');
+    range.setValues(rows);
+}
+
+// Recorta as páginas por Rev sem partir um grupo de mesma revisão ao meio.
+// Devolve os registros e o cursor a usar como "since" na próxima chamada.
+function paginateCadastroByRev_(records, limit) {
+    records.sort(function (a, b) { return a.rev - b.rev; });
+    if (records.length <= limit) return { records: records, hasMore: false, cursor: null };
+    var cut = limit;
+    var lastRev = records[cut - 1].rev;
+    if (records[cut].rev === lastRev) {
+        while (cut > 0 && records[cut - 1].rev === lastRev) cut--;
+        if (cut === 0) cut = limit; // grupo maior que o limite: segue assim mesmo
+        return { records: records.slice(0, cut), hasMore: true, cursor: cut === limit ? lastRev : records[cut - 1].rev };
+    }
+    return { records: records.slice(0, cut), hasMore: true, cursor: lastRev };
+}
+
+function cadastroSync_(body) {
+    var authError = routeChangesAuthError_(body.token);
+    if (authError) return jsonResponse_({ ok: false, error: authError });
+
+    var pontosIn = body.pontos === undefined ? [] : body.pontos;
+    var roteirosIn = body.roteiros === undefined ? [] : body.roteiros;
+    if (!Array.isArray(pontosIn) || pontosIn.length > CADASTRO_MAX_PONTOS_POR_LOTE) {
+        return jsonResponse_({ ok: false, error: 'O lote deve conter no máximo ' + CADASTRO_MAX_PONTOS_POR_LOTE + ' pontos' });
+    }
+    if (!Array.isArray(roteirosIn) || roteirosIn.length > CADASTRO_MAX_ROTEIROS_POR_LOTE) {
+        return jsonResponse_({ ok: false, error: 'O lote deve conter no máximo ' + CADASTRO_MAX_ROTEIROS_POR_LOTE + ' roteiros' });
+    }
+    var since = Number(body.since === undefined ? 0 : body.since);
+    if (!isFinite(since) || since < 0) return jsonResponse_({ ok: false, error: 'Parâmetro since inválido' });
+
+    try {
+        var nowMs = Date.now();
+        var invalid = { pontos: [], roteiros: [] };
+        var pontos = [];
+        pontosIn.forEach(function (raw) {
+            try { pontos.push(normalizeCadastroPonto_(raw, nowMs)); }
+            catch (err) { invalid.pontos.push(String((raw && raw.id_rota) || '')); }
+        });
+        var roteiros = [];
+        roteirosIn.forEach(function (raw) {
+            try { roteiros.push(normalizeCadastroRoteiro_(raw, nowMs)); }
+            catch (err) { invalid.roteiros.push(String((raw && raw.chave) || '')); }
+        });
+
+        var lock = LockService.getScriptLock();
+        lock.waitLock(30000);
+        try {
+            var sheetP = getCadastroSheet_(CADASTRO_PONTOS_SHEET_NAME, CADASTRO_PONTOS_HEADERS);
+            var sheetR = getCadastroSheet_(CADASTRO_ROTEIROS_SHEET_NAME, CADASTRO_ROTEIROS_HEADERS);
+            var widthP = CADASTRO_PONTOS_HEADERS.length;
+            var widthR = CADASTRO_ROTEIROS_HEADERS.length;
+            var rowsP = readCadastroRows_(sheetP, widthP);
+            var rowsR = readCadastroRows_(sheetR, widthR);
+
+            var existingP = {};
+            var orderP = [];
+            rowsP.forEach(function (row) {
+                var record = cadastroRowToPonto_(row);
+                if (!record.idRota) return;
+                if (!existingP[record.idRota]) orderP.push(record.idRota);
+                existingP[record.idRota] = record;
+            });
+            var existingR = {};
+            var orderR = [];
+            rowsR.forEach(function (row) {
+                var record = cadastroRowToRoteiro_(row);
+                if (!record.chave) return;
+                if (!existingR[record.chave]) orderR.push(record.chave);
+                existingR[record.chave] = record;
+            });
+
+            var maxRev = 0;
+            orderP.forEach(function (key) { maxRev = Math.max(maxRev, existingP[key].rev); });
+            orderR.forEach(function (key) { maxRev = Math.max(maxRev, existingR[key].rev); });
+
+            var mergedP = mergeCadastro_(existingP, pontos, function (r) { return r.idRota; }, cadastroPontoSignature_);
+            var mergedR = mergeCadastro_(existingR, roteiros, function (r) { return r.chave; }, cadastroRoteiroSignature_);
+            var wrote = mergedP.accepted.length > 0 || mergedR.accepted.length > 0;
+            var rev = wrote ? maxRev + 1 : maxRev;
+
+            if (wrote) {
+                var agora = new Date(nowMs).toISOString();
+                Object.keys(mergedP.changed).forEach(function (key) {
+                    if (orderP.indexOf(key) === -1) orderP.push(key);
+                    mergedP.current[key].rev = rev;
+                });
+                Object.keys(mergedR.changed).forEach(function (key) {
+                    if (orderR.indexOf(key) === -1) orderR.push(key);
+                    mergedR.current[key].rev = rev;
+                });
+                if (Object.keys(mergedP.changed).length) {
+                    writeCadastroTable_(sheetP, orderP.map(function (key) {
+                        var record = mergedP.current[key];
+                        return cadastroPontoToRow_(record, record.rev, mergedP.changed[key] ? agora : (record.atualizadoEm || agora));
+                    }), widthP);
+                }
+                if (Object.keys(mergedR.changed).length) {
+                    writeCadastroTable_(sheetR, orderR.map(function (key) {
+                        var record = mergedR.current[key];
+                        return cadastroRoteiroToRow_(record, record.rev, mergedR.changed[key] ? agora : (record.atualizadoEm || agora));
+                    }), widthR);
+                }
+            }
+
+            // Tudo que mudou depois de `since`, menos o que este próprio envio acabou de gravar.
+            var pullP = orderP.map(function (key) { return mergedP.current[key]; })
+                .filter(function (r) { return r.rev > since && !(wrote && r.rev === rev); });
+            var pullR = orderR.map(function (key) { return mergedR.current[key]; })
+                .filter(function (r) { return r.rev > since && !(wrote && r.rev === rev); });
+            var page = paginateCadastroByRev_(pullP, CADASTRO_PULL_LIMIT);
+
+            return jsonResponse_({
+                ok: true,
+                apiVersion: GAS_API_VERSION,
+                rev: rev,
+                hasMore: page.hasMore,
+                cursor: page.cursor,
+                pontos: page.records.map(cadastroPontoToJson_),
+                roteiros: pullR.map(cadastroRoteiroToJson_),
+                accepted: {
+                    pontos: mergedP.accepted.concat(mergedP.unchanged),
+                    roteiros: mergedR.accepted.concat(mergedR.unchanged)
+                },
+                // Edições rejeitadas por serem mais antigas: o dispositivo adota a versão do servidor.
+                conflitos: {
+                    pontos: mergedP.rejected.map(function (key) { return cadastroPontoToJson_(existingP[key]); }),
+                    roteiros: mergedR.rejected.map(function (key) { return cadastroRoteiroToJson_(existingR[key]); })
+                },
+                invalid: invalid
+            });
+        } finally {
+            lock.releaseLock();
+        }
+    } catch (err) {
+        return jsonResponse_({ ok: false, error: err.message });
+    }
+}
+
+// ===== Roteiros renomeados: nomes equivalentes nas consultas de coleta =====
+
+// Nomes pelos quais um roteiro já foi chamado (chave original, nome atual e
+// apelidos). A aba Coletas guarda o nome que o roteiro tinha na época da
+// coleta; sem isso, renomear um roteiro zeraria "última coleta" e intercorrências.
+function getRoteiroNomesEquivalentes_(ss, nome) {
+    var alvo = String(nome || '').trim();
+    var nomes = [alvo];
+    try {
+        var sheet = ss.getSheetByName(CADASTRO_ROTEIROS_SHEET_NAME);
+        if (!sheet || sheet.getLastRow() < 2) return nomes;
+        var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getValues();
+        values.forEach(function (row) {
+            var grupo = [String(row[0]).trim(), String(row[1]).trim()]
+                .concat(parseApelidos_(row[3]).map(function (item) { return item.trim(); }))
+                .filter(function (item) { return item; });
+            if (grupo.indexOf(alvo) === -1) return;
+            grupo.forEach(function (item) { if (nomes.indexOf(item) === -1) nomes.push(item); });
+        });
+    } catch (_) { /* sem cadastro, vale só o nome pedido */ }
+    return nomes;
+}
+
+function nameSet_(names) {
+    var set = {};
+    names.forEach(function (name) { set[name] = true; });
+    return set;
+}
+
+// Sufixo da chave de cache: muda quando o conjunto de nomes muda (renomeação),
+// invalidando respostas antigas sem esperar o TTL.
+function nameSetCacheSuffix_(set) {
+    var names = Object.keys(set).sort();
+    if (names.length < 2) return '';
+    var hash = 5381;
+    var text = names.join('|');
+    for (var i = 0; i < text.length; i++) hash = ((hash * 33) ^ text.charCodeAt(i)) >>> 0;
+    return ':n' + names.length + 'h' + hash;
 }

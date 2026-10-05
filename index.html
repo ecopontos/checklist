@@ -208,6 +208,14 @@
     <script src="theme.js"></script>
     <script src="config.js"></script>
     <script src="config.local.js"></script>
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#0b0e14">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="SATELITE">
+    <script src="pwa.js" defer></script>
 </head>
 <body>
     <div class="container">
@@ -312,7 +320,7 @@
 
     <script type="module">
         import db from './database.js';
-        import { checkAndImportRoteiros, getLastRoteirosDriveSyncLabel } from './google-sync.js';
+        import { checkAndImportRoteiros, getLastRoteirosDriveSyncLabel, syncCadastro } from './google-sync.js';
         import { startColetaSync } from './coleta-sync.js';
 
         function refreshStats() {
@@ -341,6 +349,12 @@
                     if (result.updated) refreshStats();
                     document.getElementById('syncFreshness').textContent = getLastRoteirosDriveSyncLabel();
                 }).catch(e => console.error("Drive CSV sync check failed", e));
+
+                // Cadastro editado no app (pontos/roteiros) compartilhado entre aparelhos.
+                syncCadastro(db).then(result => {
+                    if (result.ok && (result.recebidos || result.excluidos)) refreshStats();
+                    if (!result.ok && !result.skipped) console.warn('Sincronização do cadastro:', result.error);
+                }).catch(e => console.error("Cadastro sync failed", e));
             } catch (e) {
                 console.error("Database error", e);
             }

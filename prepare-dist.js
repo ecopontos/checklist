@@ -21,6 +21,7 @@ const EXCLUDE = new Set([
   'node_modules',
   'electron',
   'gas',
+  'gas-teste',
   'legado',
   'tests',
   'docs',
@@ -75,7 +76,7 @@ for (const entry of rootEntries) {
   } else {
     // Copy files matching our asset patterns
     const ext = path.extname(entry.name).toLowerCase();
-    if (['.html', '.css', '.js', '.json'].includes(ext)) {
+    if (['.html', '.css', '.js', '.json', '.webmanifest'].includes(ext)) {
       copyFile(entry.name, entry.name);
     }
   }

@@ -46,6 +46,7 @@ function loadAdmin(overrides = {}) {
     getGasStatus: async () => ({ ok: true, apiVersion: 12, routeChangesConfigured: true }),
     checkAndImportRoteiros: async () => ({ checked: true, updated: false }),
     syncPendingRoteiroChanges: async () => ({ ok: true, count: 0 }),
+    syncCadastro: async () => ({ ok: true, enviados: 0, recebidos: 0 }),
     REQUIRED_GAS_API_VERSION: 12,
     ...overrides
   });
