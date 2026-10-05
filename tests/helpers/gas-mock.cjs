@@ -16,6 +16,11 @@ class Range {
     this.sheet.writes.push({ row: this.row, rows: this.rows });
     return this;
   }
+  setValue(value) {
+    this.sheet.rows[this.row - 1] ||= [];
+    this.sheet.rows[this.row - 1][this.col - 1] = value;
+    return this;
+  }
   setNumberFormat(format) {
     this.sheet.formatCalls.push({ format, writesBefore: this.sheet.writes.length });
     this.sheet.textRows ||= new Set();
@@ -27,6 +32,7 @@ class Sheet {
   constructor() { this.rows = []; this.writes = []; this.formatCalls = []; }
   getRange(r, c, rs = 1, cs = 1) { return new Range(this, r, c, rs, cs); }
   getLastRow() { return this.rows.length; }
+  getDataRange() { return new Range(this, 1, 1, this.rows.length || 1, this.getLastColumn() || 1); }
   getLastColumn() { return this.rows.reduce((m, r) => Math.max(m, r.length), 0); }
   setFrozenRows() {}
 }

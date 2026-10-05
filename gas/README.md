@@ -354,3 +354,9 @@ curl -X POST "<URL>" -H "Content-Type: text/plain;charset=utf-8" \
 
 Esperado: `"ok":true`, `"apiVersion":14`, `"rev"` e as listas `pontos`/`roteiros`
 (vazias numa planilha nova).
+
+## Cópia de teste
+
+Para testar sem acesso à produção, `gas-teste/README.md` explica como montar uma
+cópia no seu próprio Google com o script `gas-teste/PrepararTeste.gs` (que
+propositalmente não fica nesta pasta).

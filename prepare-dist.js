@@ -21,6 +21,7 @@ const EXCLUDE = new Set([
   'node_modules',
   'electron',
   'gas',
+  'gas-teste',
   'legado',
   'tests',
   'docs',
