@@ -246,10 +246,24 @@ function getRoteirosFlat_() {
 }
 
 // Fun\u00E7\u00E3o pura (sem chamadas ao Sheets), test\u00E1vel: recebe as matrizes de
-// getValues() das 3 abas e devolve a vis\u00E3o achatada. Junta tblRotas -> cliente
-// por idPJ e -> roteiro por idRoteiro.
-function buildFlatRoteiros_(rotasValues, clientesValues, roteirosValues) {
-    if (!rotasValues || rotasValues.length < 2) return { rows: [], skipped: 0 };
+// getValues() das 3 abas (tblRotas, shtClientes, tblRoteiros) e devolve a
+// vis\u00E3o normalizada { clientes, roteiros, skipped } do contrato roteiros/v1.
+// Junta tblRotas -> cliente por idPJ e -> roteiro por idRoteiro; emite cliente
+// deduplicado por idUnico (= idUnico2). logradouro \u00E9 lido defensivamente
+// (coluna a confirmar na aba real; "" se ausente). Tipo de Res\u00EDduo N\u00C3O faz
+// parte do contrato v1.
+// Ordem vem do Sheets como n\u00FAmero (1) ou texto com v\u00EDrgula decimal do
+// export do Access ("1,00"). Number("1,00") \u00E9 NaN; troca a v\u00EDrgula antes.
+function parseOrdem_(val) {
+    if (val === '' || val === null || val === undefined) return 0;
+    var num = (typeof val === 'number') ? val : Number(String(val).trim().replace(',', '.'));
+    return isNaN(num) ? 0 : num;
+}
+
+function buildRoteirosNormalizados_(rotasValues, clientesValues, roteirosValues) {
+    if (!rotasValues || rotasValues.length < 2) {
+        return { clientes: [], roteiros: [], skipped: 0 };
+    }
 
     function headerMap_(headers) {
         var map = {};
@@ -264,19 +278,22 @@ function buildFlatRoteiros_(rotasValues, clientesValues, roteirosValues) {
     var mapClientes = headerMap_(clientesValues[0]);
     var mapRoteiros = headerMap_(roteirosValues[0]);
 
+    var colLogradouro = mapClientes['logradouro'];
     var clientesByIdPJ = {};
     for (var c = 1; c < clientesValues.length; c++) {
         var rowC = clientesValues[c];
         var keyPJ = cleanIntString_(rowC[mapClientes['idPJ']]);
         if (!keyPJ) continue;
         clientesByIdPJ[keyPJ] = {
-            idCliente: String(rowC[mapClientes['idUnico2']] || '').trim(),
-            Cliente: String(rowC[mapClientes['Cliente']] || '').trim(),
-            Numero: cleanIntString_(rowC[mapClientes['N\u00FAmero']]),
-            Complemento: String(rowC[mapClientes['Complemento']] || '').trim(),
-            CEP: cleanIntString_(rowC[mapClientes['CEP']]),
-            Telefone1: formatPhone_(rowC[mapClientes['Telefone1']]),
-            Telefone2: formatPhone_(rowC[mapClientes['Telefone2']])
+            idUnico: String(rowC[mapClientes['idUnico2']] || '').trim(),
+            uuid: null,
+            cliente: String(rowC[mapClientes['Cliente']] || '').trim(),
+            logradouro: colLogradouro === undefined ? '' : String(rowC[colLogradouro] || '').trim(),
+            numero: cleanIntString_(rowC[mapClientes['N\u00FAmero']]),
+            cep: cleanIntString_(rowC[mapClientes['CEP']]),
+            complemento: String(rowC[mapClientes['Complemento']] || '').trim(),
+            telefone1: formatPhone_(rowC[mapClientes['Telefone1']]),
+            telefone2: formatPhone_(rowC[mapClientes['Telefone2']])
         };
     }
 
@@ -288,34 +305,48 @@ function buildFlatRoteiros_(rotasValues, clientesValues, roteirosValues) {
         roteirosById[keyRoteiro] = String(rowT[mapRoteiros['Roteiro']] || '').trim();
     }
 
-    var rows = [];
+    var clientesByIdUnico = {};
+    var gruposByRoteiro = {};
+    var ordemGrupos = [];
     var skipped = 0;
+
     for (var r = 1; r < rotasValues.length; r++) {
         var rowR = rotasValues[r];
         var cliente = clientesByIdPJ[cleanIntString_(rowR[mapRotas['idPJ']])];
 
-        // Ponto sem cliente correspondente: o app j\u00E1 o descartaria (sem nome).
-        if (!cliente || !cliente.Cliente) { skipped++; continue; }
+        // Ponto sem cliente, sem nome, ou sem idUnico (a FK do contrato): descarta.
+        if (!cliente || !cliente.cliente || !cliente.idUnico) { skipped++; continue; }
+
+        var nomeRoteiro = roteirosById[cleanIntString_(rowR[mapRotas['idRoteiro']])] || '';
+
+        if (!gruposByRoteiro[nomeRoteiro]) {
+            gruposByRoteiro[nomeRoteiro] = { roteiro: nomeRoteiro, pontos: [] };
+            ordemGrupos.push(nomeRoteiro);
+        }
 
         var ordemVal = rowR[mapRotas['Ordem']];
         var inativoVal = rowR[mapRotas['Inativo']];
 
-        rows.push({
-            Roteiro: roteirosById[cleanIntString_(rowR[mapRotas['idRoteiro']])] || '',
-            idCliente: cliente.idCliente,
-            Cliente: cliente.Cliente,
+        gruposByRoteiro[nomeRoteiro].pontos.push({
             idRota: cleanIntString_(rowR[mapRotas['idRota']]),
-            Ordem: (ordemVal !== '' && ordemVal !== null && !isNaN(ordemVal)) ? Number(ordemVal) : 0,
-            'N\u00FAmero': cliente.Numero,
-            Complemento: cliente.Complemento,
-            CEP: cliente.CEP,
-            Inativo: (inativoVal === true || String(inativoVal).trim() === '1' || String(inativoVal).toLowerCase() === 'true') ? 1 : 0,
-            Telefone1: cliente.Telefone1,
-            Telefone2: cliente.Telefone2
+            idUnico: cliente.idUnico,
+            ordem: parseOrdem_(ordemVal),
+            inativo: (inativoVal === true || String(inativoVal).trim() === '1' || String(inativoVal).toLowerCase() === 'true') ? 1 : 0
         });
+
+        clientesByIdUnico[cliente.idUnico] = cliente;
     }
 
-    return { rows: rows, skipped: skipped };
+    var clientes = [];
+    for (var k in clientesByIdUnico) {
+        if (Object.prototype.hasOwnProperty.call(clientesByIdUnico, k)) {
+            clientes.push(clientesByIdUnico[k]);
+        }
+    }
+
+    var roteiros = ordemGrupos.map(function (nome) { return gruposByRoteiro[nome]; });
+
+    return { clientes: clientes, roteiros: roteiros, skipped: skipped };
 }
 
 // Remove o ".0" artificial que o Sheets pode anexar a inteiros (o app trata
@@ -323,13 +354,15 @@ function buildFlatRoteiros_(rotasValues, clientesValues, roteirosValues) {
 // chegam sem o ".0"; o regex cobre o caso de c\u00E9lula textual.
 function cleanIntString_(val) {
     if (val === undefined || val === null || val === '') return '';
-    return String(val).trim().replace(/\.0+$/, '');
+    // Remove o sufixo ".0"/",00" que o Sheets/export do Access pode anexar a
+    // inteiros. Só casa quando TUDO após o separador é zero — "1,50" fica intacto.
+    return String(val).trim().replace(/[.,]0+$/, '');
 }
 
 function formatPhone_(val) {
     if (val === undefined || val === null || val === '') return '';
     if (typeof val === 'number') return val.toFixed(0);
-    return String(val).trim().replace(/\.0+$/, '');
+    return String(val).trim().replace(/[.,]0+$/, '');
 }
 
 function getUltimaColeta_(roteiroNome) {
