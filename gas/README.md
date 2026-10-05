@@ -55,13 +55,13 @@ o conteúdo ao aplicativo.
 curl "<URL>?action=status"
 ```
 
-Esperado: `{"ok":true,"service":"satelite-gas","apiVersion":14,"routeChangesConfigured":true,"cadastro":true}`.
+Esperado: `{"ok":true,"service":"satelite-gas","apiVersion":15,"routeChangesConfigured":true,"cadastro":true}`.
 
 ```bash
 curl "<URL>?action=roteirosCsv"
 ```
 
-Esperado: JSON com `"ok":true`, `"apiVersion":12`, `"source":"drive-csv"`,
+Esperado: JSON com `"ok":true`, `"apiVersion":15`, `"source":"drive-csv"`,
 `"content":"Fonte;idRota;..."`, `"modifiedTime"` e `"encoding":"UTF-16LE"`
 para o arquivo do Access. O GAS escolhe o arquivo mais recente caso existam
 cópias com o mesmo nome. `GET <URL>` e `?action=roteiros` continuam lendo as
@@ -352,7 +352,7 @@ curl -X POST "<URL>" -H "Content-Type: text/plain;charset=utf-8" \
   -d '{"action":"cadastroSync","token":"<TOKEN>","since":0,"pontos":[],"roteiros":[]}'
 ```
 
-Esperado: `"ok":true`, `"apiVersion":14`, `"rev"` e as listas `pontos`/`roteiros`
+Esperado: `"ok":true`, `"apiVersion":15`, `"rev"` e as listas `pontos`/`roteiros`
 (vazias numa planilha nova).
 
 ## Cópia de teste

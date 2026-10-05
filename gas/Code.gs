@@ -39,7 +39,7 @@ var CLIENT_EDITABLE_FIELDS = ['Cliente', 'Número', 'Complemento', 'CEP', 'Telef
 // tornar o deploy verificável via ?action=status.
 // v14: cadastro compartilhado (action=cadastroSync) e consultas por roteiro que
 // entendem nomes antigos de roteiros renomeados no app.
-var GAS_API_VERSION = 14;
+var GAS_API_VERSION = 15;
 var INTERCORRENCIAS_ATUAIS_CACHE_KEY = 'intercorrenciasAtuais:v1';
 // Consultas de última coleta varrem apenas as linhas mais recentes da aba
 // Coletas (append-only, cronológica). Varrer a aba inteira chega a ~37s e pode
@@ -115,9 +115,9 @@ function doGet(e) {
         return getRoteirosCsv_();
     }
 
-    // Fonte de roteiros: antes um CSV no Drive (exportado do Access), agora
-    // montada direto das abas do Sheets. Vale como action=roteiros e como padrão.
-    return getRoteirosFlat_();
+    // Fonte de roteiros: snapshot normalizado (contrato roteiros/v1) montado das
+    // abas do Sheets. Vale como action=roteiros e como padrão.
+    return getRoteirosNormalizados_();
 }
 
 // O CSV do Access permanece no Drive. Devolve o texto original para que o
@@ -187,10 +187,10 @@ function detectCsvEncoding_(bytes) {
     return 'UTF-8';
 }
 
-// L\u00EA tblRotas + shtClientes + tblRoteiros e devolve a vis\u00E3o achatada que o app
-// j\u00E1 consome (mesmas colunas do antigo CSV). Substitui a leitura do
-// cstExportaCheckList.csv no Drive.
-function getRoteirosFlat_() {
+// L\u00EA tblRotas + shtClientes + tblRoteiros e devolve o snapshot normalizado
+// (contrato roteiros/v1) que o desktop/logistics consome. Substitui o antigo
+// formato achatado.
+function getRoteirosNormalizados_() {
     var config = getConfig_();
     if (!config.spreadsheetId) {
         return jsonResponse_({ ok: false, error: 'SPREADSHEET_ID n\u00E3o configurado' });
@@ -216,15 +216,16 @@ function getRoteirosFlat_() {
     }
 
     try {
-        var flat = buildFlatRoteiros_(
+        var norm = buildRoteirosNormalizados_(
             sheetRotas.getDataRange().getValues(),
             sheetClientes.getDataRange().getValues(),
             sheetRoteiros.getDataRange().getValues()
         );
 
-        // "S\u00F3 reimporta quando muda": usa a data de modifica\u00E7\u00E3o da planilha.
-        // Muda a cada edi\u00E7\u00E3o de qualquer aba; reimportar a mais \u00E9 barato (o
-        // upsert \u00E9 idempotente). Se falhar, cai para agora (reimport inofensivo).
+        var pontos = 0;
+        for (var i = 0; i < norm.roteiros.length; i++) pontos += norm.roteiros[i].pontos.length;
+
+        // "S\u00F3 reimporta quando muda": data de modifica\u00E7\u00E3o da planilha.
         var modifiedTime;
         try {
             modifiedTime = DriveApp.getFileById(config.spreadsheetId).getLastUpdated().toISOString();
@@ -235,10 +236,12 @@ function getRoteirosFlat_() {
         return jsonResponse_({
             ok: true,
             apiVersion: GAS_API_VERSION,
+            contract: 'roteiros/v1',
             modifiedTime: modifiedTime,
-            count: flat.rows.length,
-            skipped: flat.skipped,
-            rows: flat.rows
+            counts: { clientes: norm.clientes.length, roteiros: norm.roteiros.length, pontos: pontos },
+            skipped: norm.skipped,
+            clientes: norm.clientes,
+            roteiros: norm.roteiros
         });
     } catch (err) {
         return jsonResponse_({ ok: false, error: err.message });
