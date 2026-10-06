@@ -504,6 +504,7 @@
                 <div class="form-group">
                     <label>CEP</label>
                     <input type="text" id="f_cep">
+                    <small id="cepStatus" role="status" style="color: var(--text-dim, #888); font-size: 0.75rem;"></small>
                 </div>
                 <div class="form-group">
                     <label>Telefone 1</label>
@@ -603,6 +604,44 @@
             renderRoteiros();
             renderClients();
             sincronizarCadastro();
+            wireCepLookup();
+        }
+
+        // Busca automática de endereço pelo ViaCEP ao terminar de digitar o CEP.
+        // Preenche o logradouro quando o campo está vazio (nunca sobrescreve o
+        // que o usuário já digitou). Falha de rede/CEP inválido não bloqueia o
+        // formulário: só informa no status e o cadastro segue manual.
+        function wireCepLookup() {
+            const input = document.getElementById('f_cep');
+            const status = document.getElementById('cepStatus');
+            input.addEventListener('blur', () => buscarCep(input.value));
+            input.addEventListener('keydown', event => {
+                if (event.key === 'Enter') { event.preventDefault(); buscarCep(input.value); }
+            });
+
+            async function buscarCep(valor) {
+                const cep = String(valor || '').replace(/\D/g, '');
+                status.textContent = '';
+                if (cep.length !== 8) return;
+                status.textContent = 'Consultando CEP…';
+                try {
+                    const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+                    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                    const data = await resp.json();
+                    if (data.erro) {
+                        status.textContent = 'CEP não encontrado.';
+                        return;
+                    }
+                    const logradouro = document.getElementById('f_logradouro');
+                    if (!logradouro.value.trim() && data.logradouro) {
+                        logradouro.value = data.logradouro;
+                    }
+                    const partes = [data.logradouro, data.bairro, data.localidade, data.uf].filter(Boolean);
+                    status.textContent = partes.length ? `✓ ${partes.join(', ')}` : 'CEP válido.';
+                } catch (err) {
+                    status.textContent = 'Sem conexão com o ViaCEP — preencha manualmente.';
+                }
+            }
         }
 
         // Envia as edições deste aparelho e traz as dos outros (GAS v14+).
