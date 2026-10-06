@@ -2,11 +2,12 @@
 // Servem de fallback quando o usuário ainda não configurou manualmente
 // a URL/token na tela Admin (localStorage sempre tem prioridade).
 // Não coloque segredos reais aqui — este arquivo é versionado no git.
-// Para embutir os valores reais no instalador, copie
-// config.local.example.js para config.local.js (ignorado pelo git) e
-// preencha antes de rodar "npm run build".
+// A URL do GAS NÃO vem embarcada de propósito (decisão de 2026-10-06): o repo
+// é público e a URL do web app de produção não deve estar nele. Configure na
+// tela Admin (fica no localStorage do aparelho) ou embuta no instalador via
+// config.local.js (copie de config.local.example.js antes do npm run build).
 window.APP_CONFIG = window.APP_CONFIG || {
-    gasUrl: 'https://script.google.com/macros/s/AKfycbwCzgPFZXvMyqlk41M-9v_yB2SMcCMkl7fA5Uq-y_pznzmlGRFymfh_s2yjlyKkB1rS/exec',
+    gasUrl: '',
     gasRouteToken: ''
 };
 
