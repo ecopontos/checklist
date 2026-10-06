@@ -35,7 +35,7 @@
 - Consumes: helpers já existentes em `Code.gs`: `cleanIntString_(val) -> string`, `formatPhone_(val) -> string`.
 - Produces: `buildRoteirosNormalizados_(rotasValues, clientesValues, roteirosValues) -> { clientes: Array<{idUnico, uuid, cliente, logradouro, numero, cep, complemento, telefone1, telefone2}>, roteiros: Array<{roteiro, pontos: Array<{idRota, idUnico, ordem, inativo}>}>, skipped: number }`. Função pura (sem chamadas ao Sheets), acessível no teste como `context.buildRoteirosNormalizados_`.
 
-- [ ] **Step 1: Escrever o teste que falha**
+- [x] **Step 1: Escrever o teste que falha**
 
 Criar `tests/gas-roteiros-normalizado.test.cjs`:
 
@@ -118,12 +118,12 @@ assert.strictEqual(out2.clientes[0].logradouro, '', 'logradouro vira "" quando a
 console.log('buildRoteirosNormalizados_: dedup, FK, skipped, limpeza, logradouro defensivo: OK');
 ```
 
-- [ ] **Step 2: Rodar o teste e confirmar que falha**
+- [x] **Step 2: Rodar o teste e confirmar que falha**
 
 Run: `node tests/gas-roteiros-normalizado.test.cjs`
 Expected: FAIL — `TypeError: context.buildRoteirosNormalizados_ is not a function` (a função ainda não existe; só há `buildFlatRoteiros_`).
 
-- [ ] **Step 3: Substituir `buildFlatRoteiros_` por `buildRoteirosNormalizados_`**
+- [x] **Step 3: Substituir `buildFlatRoteiros_` por `buildRoteirosNormalizados_`**
 
 Em `gas/Code.gs`, apagar a função `buildFlatRoteiros_` inteira (do comentário em ~linha 155 até o `}` de fechamento em ~linha 226) e colocar no lugar:
 
@@ -227,12 +227,12 @@ function buildRoteirosNormalizados_(rotasValues, clientesValues, roteirosValues)
 
 Nota: `getRoteirosFlat_` (que ainda chama `buildFlatRoteiros_`) fica quebrada ao fim deste passo — é consertada na Task 2. Isso é aceitável entre tarefas; o teste desta task exercita só a função pura.
 
-- [ ] **Step 4: Rodar o teste e confirmar que passa**
+- [x] **Step 4: Rodar o teste e confirmar que passa**
 
 Run: `node tests/gas-roteiros-normalizado.test.cjs`
 Expected: PASS — imprime `buildRoteirosNormalizados_: ... : OK`.
 
-- [ ] **Step 5: Registrar o teste no `package.json`**
+- [x] **Step 5: Registrar o teste no `package.json`**
 
 Em `package.json`, no script `test`, acrescentar ao final da cadeia (antes das aspas de fechamento):
 
@@ -240,7 +240,7 @@ Em `package.json`, no script `test`, acrescentar ao final da cadeia (antes das a
  && node tests/gas-roteiros-normalizado.test.cjs
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add gas/Code.gs tests/gas-roteiros-normalizado.test.cjs package.json
@@ -259,7 +259,7 @@ git commit -m "feat(gas): builder normalizado de roteiros/clientes (contrato rot
 - Consumes: `buildRoteirosNormalizados_` (Task 1); helpers `getConfig_`, `jsonResponse_`; constantes `TBL_ROTAS`, `TBL_CLIENTES`, `TBL_ROTEIROS`, `GAS_API_VERSION`.
 - Produces: `getRoteirosNormalizados_() -> ContentService JSON` com envelope `{ ok, apiVersion, contract:"roteiros/v1", modifiedTime, counts:{clientes,roteiros,pontos}, skipped, clientes, roteiros }`; e `doGet` roteando `action=roteiros` (e default) para ela.
 
-- [ ] **Step 1: Anexar o teste de envelope que falha**
+- [x] **Step 1: Anexar o teste de envelope que falha**
 
 Ao final de `tests/gas-roteiros-normalizado.test.cjs`, acrescentar:
 
@@ -302,12 +302,12 @@ assert.strictEqual(respDefault.contract, 'roteiros/v1');
 console.log('doGet(action=roteiros): envelope roteiros/v1, counts, apiVersion 9: OK');
 ```
 
-- [ ] **Step 2: Rodar o teste e confirmar que falha**
+- [x] **Step 2: Rodar o teste e confirmar que falha**
 
 Run: `node tests/gas-roteiros-normalizado.test.cjs`
 Expected: FAIL — o envelope ainda é o antigo (`getRoteirosFlat_` referencia `buildFlatRoteiros_`, agora inexistente → `ReferenceError`, ou `contract`/`counts` ausentes).
 
-- [ ] **Step 3: Subir o `apiVersion`**
+- [x] **Step 3: Subir o `apiVersion`**
 
 Em `gas/Code.gs` linha 35, trocar:
 
@@ -319,7 +319,7 @@ por
 var GAS_API_VERSION = 9;
 ```
 
-- [ ] **Step 4: Substituir `getRoteirosFlat_` por `getRoteirosNormalizados_`**
+- [x] **Step 4: Substituir `getRoteirosFlat_` por `getRoteirosNormalizados_`**
 
 Em `gas/Code.gs`, substituir a função `getRoteirosFlat_` inteira (do comentário em ~linha 97 até o `}` em ~linha 153) por:
 
@@ -386,7 +386,7 @@ function getRoteirosNormalizados_() {
 }
 ```
 
-- [ ] **Step 5: Apontar o `doGet` para a nova função**
+- [x] **Step 5: Apontar o `doGet` para a nova função**
 
 Em `gas/Code.gs` (~linha 92–94), substituir:
 
@@ -402,12 +402,12 @@ por
     return getRoteirosNormalizados_();
 ```
 
-- [ ] **Step 6: Rodar o teste e confirmar que passa**
+- [x] **Step 6: Rodar o teste e confirmar que passa**
 
 Run: `node tests/gas-roteiros-normalizado.test.cjs`
 Expected: PASS — imprime tanto a linha do builder quanto `doGet(action=roteiros): ... : OK`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add gas/Code.gs tests/gas-roteiros-normalizado.test.cjs
@@ -422,17 +422,17 @@ git commit -m "feat(gas): envelope roteiros/v1 no doGet e apiVersion 9"
 
 **Interfaces:** Nenhuma.
 
-- [ ] **Step 1: Rodar a suíte inteira**
+- [x] **Step 1: Rodar a suíte inteira**
 
 Run: `npm test`
 Expected: PASS em todos os testes da cadeia, incluindo `tests/gas-roteiros-normalizado.test.cjs`. Nenhum teste deve assertar `apiVersion === 8` (a mudança para 9 não pode quebrar `action=status` nem outros).
 
-- [ ] **Step 2: Confirmar que nenhum código-cliente depende do formato flat antigo**
+- [x] **Step 2: Confirmar que nenhum código-cliente depende do formato flat antigo**
 
 Run: `grep -rn "action=roteiros\|getRoteirosFlat_\|buildFlatRoteiros_" --include=*.js --include=*.html --include=*.cjs .`
 Expected: as únicas ocorrências de `getRoteirosFlat_`/`buildFlatRoteiros_` são as que acabamos de remover (nenhuma restante fora de docs). Se algum HTML/JS cliente consumir `action=roteiros` esperando o array flat `rows[...]`, anotar no relatório — pela premissa do plano não há consumidor de produção, mas um consumidor inesperado precisa ser sinalizado, não silenciado.
 
-- [ ] **Step 3: Relatar resultados**
+- [x] **Step 3: Relatar resultados**
 
 Resumir pass/fail de cada checagem. Registrar explicitamente as 2 dependências abertas que ficaram resolvidas de forma defensiva e ainda precisam de confirmação contra o Sheets real na hora do deploy:
 1. `logradouro` existe em `shtClientes`? (se não, sai `""`)

@@ -135,7 +135,8 @@ function verificarTeste() {
     var cadastro = JSON.parse(cadastroSync_({ token: token, since: 0, pontos: [], roteiros: [] }).getContent());
     item('cadastroSync responde', cadastro.ok, cadastro.error || ('rev ' + cadastro.rev));
     var planilha = JSON.parse(doGet({ parameter: {} }).getContent());
-    item('Leitura de roteiros pelas abas', planilha.ok && planilha.count > 0, planilha.error || (planilha.count + ' pontos'));
+    item('Leitura de roteiros pelas abas', planilha.ok && planilha.counts && planilha.counts.pontos > 0,
+        planilha.error || ((planilha.counts ? planilha.counts.pontos : 0) + ' pontos'));
     var csv = JSON.parse(doGet({ parameter: { action: 'roteirosCsv' } }).getContent());
     item('Leitura do CSV no Drive', csv.ok, csv.error || csv.modifiedTime);
 

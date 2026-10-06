@@ -93,11 +93,16 @@ test('o GAS le as abas criadas e o CSV gerado e importado pelo proprio app', asy
 
   const abas = JSON.parse(a.context.doGet({ parameter: {} }).value);
   assert.equal(abas.ok, true, abas.error);
-  assert.equal(abas.count, 6);
-  const clienteCompartilhado = abas.rows.filter(r => r.Cliente === 'Padaria Teste');
-  assert.equal(clienteCompartilhado.length, 2, 'o mesmo cliente em dois roteiros');
-  assert.equal(clienteCompartilhado[0].CEP, '88010000');
-  assert.equal(abas.rows.find(r => r.Cliente === 'Mercado Teste').CEP, '01001000', 'zero a esquerda preservado');
+  assert.equal(abas.contract, 'roteiros/v1');
+  assert.equal(abas.counts.pontos, 6);
+  assert.equal(abas.counts.clientes, 5, 'clientes deduplicados por idUnico');
+  assert.equal(abas.counts.roteiros, 2);
+  const padaria = abas.clientes.find(c => c.cliente === 'Padaria Teste');
+  assert.ok(padaria, 'cliente Padaria Teste presente');
+  assert.equal(padaria.cep, '88010000');
+  const usos = abas.roteiros.reduce((n, r) => n + r.pontos.filter(p => p.idUnico === padaria.idUnico).length, 0);
+  assert.equal(usos, 2, 'o mesmo cliente em dois roteiros');
+  assert.equal(abas.clientes.find(c => c.cliente === 'Mercado Teste').cep, '01001000', 'zero a esquerda preservado');
 
   const csv = JSON.parse(a.context.doGet({ parameter: { action: 'roteirosCsv' } }).value);
   assert.equal(csv.ok, true, csv.error);
