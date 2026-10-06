@@ -1,4 +1,4 @@
-import db from './database.js';
+import db, { newUuid } from './database.js';
 import { getIntercorrenciasAtuais, checkAndImportRoteiros } from './google-sync.js';
 import { buildWhatsappMessage, buildWhatsappQueue, summarizeWhatsappItems } from './whatsapp-campaign.js';
 
@@ -202,8 +202,8 @@ export async function startWhatsappCampaign() {
         const messageTemplate = element('campaignMessage').value.trim();
         if (!selected.length || !messageTemplate) throw new Error('Selecione ocorrências e preencha a mensagem.');
         const campaign = {
-            campaignId: crypto.randomUUID(), messageTemplate, createdAt: new Date().toISOString(),
-            items: selected.map(item => ({ ...item, itemId: crypto.randomUUID(), coletaData: item.data,
+            campaignId: newUuid(), messageTemplate, createdAt: new Date().toISOString(),
+            items: selected.map(item => ({ ...item, itemId: newUuid(), coletaData: item.data,
                 phones: item.phones.map(phone => ({ ...phone })),
                 message: buildWhatsappMessage(messageTemplate, item) }))
         };
