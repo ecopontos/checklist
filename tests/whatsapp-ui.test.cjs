@@ -18,6 +18,11 @@ function campaign() {
 async function setup({ active = false, remote = { ok: true, data: [occurrence] },
   storage = new Map(), contactDirectory = null, driveReader = null } = {}) {
   assert.ok(fs.existsSync('whatsapp-sender.js'), 'o módulo externo da fila deve existir');
+  // O config.js versionado NÃO traz URL do GAS embarcada (decisão de 2026-10-06,
+  // repo público). Aparelho real configura pela tela Admin (localStorage); o
+  // teste faz o mesmo, senão getGasUrl() devolve vazio e as chamadas de rede
+  // nem acontecem.
+  if (!storage.has('app3_gas_url')) storage.set('app3_gas_url', 'https://gas.test.invalid/macros/s/TESTE/exec');
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(([, id]) => [id, {
     id, textContent: '', innerHTML: '', value: '', hidden: false, disabled: false,
     classList: { toggle() {} }, setAttribute() {}, focus() {}
