@@ -462,6 +462,7 @@
     <script src="vendor/jspdf.umd.min.js"></script>
     <script src="vendor/jspdf.plugin.autotable.min.js"></script>
     <script type="module">
+        import { newUuid } from './database.js';
         import {
             getAgendamentos,
             syncAgendamentos,
@@ -843,7 +844,7 @@
                 return;
             }
 
-            const id = crypto.randomUUID();
+            const id = newUuid();
             const op = { op: 'upsert', id, ...form };
 
             setBusy(true);

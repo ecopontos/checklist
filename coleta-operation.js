@@ -1,4 +1,4 @@
-import db from './database.js';
+import db, { newUuid } from './database.js';
 import { sendChecklistToDrive, getUltimaColeta, getUltimasQuantidades, getLastRoteirosDriveSyncLabel } from './google-sync.js';
 import { operationalToday, validCivilDate } from './dashboard-metrics.js';
 import { startColetaSync } from './coleta-sync.js';
@@ -147,7 +147,7 @@ function loadRoute(routeId) {
     currentSort = 'ordem';
     currentFilter = 'all';
     operationSaved = false;
-    operationId = crypto.randomUUID();
+    operationId = newUuid();
     syncIds = {};
     savedSyncIds = new Set();
     syncState = 'idle';
@@ -544,7 +544,7 @@ async function saveOperation() {
                 intercorrencia: entry.issue || '',
                 cliente: client ? client.cliente : '',
                 roteiro: roteiroNome,
-                sync_id: syncIds[id] || (syncIds[id] = crypto.randomUUID())
+                sync_id: syncIds[id] || (syncIds[id] = newUuid())
             };
         });
         const savedColetas = await db.saveColetaOperation({ operationId, data: date, roteiro: roteiroNome, entries: payload });

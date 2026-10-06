@@ -1792,5 +1792,19 @@ export function decodeLegacyCsvBytes(buffer) {
     return new TextDecoder('utf-8').decode(buffer);
 }
 
+// UUID v4 com fallback para origens inseguras (http://IP-da-LAN): o
+// crypto.randomUUID só existe em contexto seguro (HTTPS/localhost); sem o
+// fallback, telas inteiras quebram com TypeError ao servir o app por IP.
+export function newUuid() {
+    if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
+        return globalThis.crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, char => {
+        const random = Math.floor(Math.random() * 16);
+        const value = char === 'x' ? random : (random & 0x3) | 0x8;
+        return value.toString(16);
+    });
+}
+
 const db = new AppDatabase();
 export default db;
