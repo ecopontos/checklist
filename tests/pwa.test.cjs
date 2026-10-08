@@ -14,6 +14,17 @@ test('versao do cache do service worker acompanha o package.json', () => {
     'Atualize VERSION em sw.js junto com a versao do app para os PWAs instalados receberem a atualizacao.');
 });
 
+test('todos os arquivos de versao (app, instalador e service worker) estao alinhados', () => {
+  const versao = require('../package.json').version;
+  const tauri = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8')).version;
+  const cargoToml = fs.readFileSync('src-tauri/Cargo.toml', 'utf8').match(/^version = "([^"]+)"/m)[1];
+  const cargoLock = fs.readFileSync('src-tauri/Cargo.lock', 'utf8').match(/name = "satelite-checklist"\nversion = "([^"]+)"/)[1];
+  const alvo = { 'tauri.conf.json': tauri, 'Cargo.toml': cargoToml, 'Cargo.lock': cargoLock };
+  for (const [arquivo, valor] of Object.entries(alvo)) {
+    assert.equal(valor, versao, `${arquivo} (${valor}) difere do package.json (${versao}); suba todos juntos no release.`);
+  }
+});
+
 test('todo arquivo pre-cacheado existe', () => {
   for (const file of precache.filter(f => f !== './')) {
     assert.ok(fs.existsSync(file), `sw.js pre-cacheia ${file}, que nao existe`);
