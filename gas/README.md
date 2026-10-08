@@ -368,6 +368,7 @@ Desde a versão 15, `GET <URL>` e `?action=roteiros` devolvem o contrato
 ```json
 {"ok":true,"apiVersion":15,"contract":"roteiros/v1","modifiedTime":"...",
  "counts":{"clientes":0,"roteiros":0,"pontos":0},"skipped":0,
+ "skippedDetalhe":{"semCliente":0,"semRoteiro":0,"idUnicoConflitante":0},"conflitosIdUnico":[],
  "clientes":[{"idUnico":"...","uuid":null,"cliente":"...","logradouro":"...","numero":"...",
               "cep":"...","complemento":"...","telefone1":"...","telefone2":"..."}],
  "roteiros":[{"roteiro":"SAT01","pontos":[{"idRota":"3","idUnico":"...","ordem":1,"inativo":0}]}]}
@@ -378,6 +379,13 @@ Desde a versão 15, `GET <URL>` e `?action=roteiros` devolvem o contrato
   pontos `APP-n`, edições, exclusões e roteiros renomeados no app não aparecem.
 - `logradouro` vem da coluna `logradouro` de `shtClientes`, se existir; sem
   ela, sai vazio.
+- Pontos descartados entram em `skipped`, detalhados em `skippedDetalhe`:
+  `semCliente` (idPJ sem cliente, sem nome ou sem `idUnico2`), `semRoteiro`
+  (`idRoteiro` que não existe em `tblRoteiros`) e `idUnicoConflitante`.
+- **`conflitosIdUnico`**: `idUnico2` usado por dois ou mais `idPJ` com dados
+  diferentes. Os pontos desses clientes ficam de fora do snapshot (em vez de
+  mostrarem os dados do cliente errado) até o `idUnico2` ser corrigido no
+  Access. Cópias idênticas do mesmo cliente não contam como conflito.
 - O tipo de resíduo não faz parte do contrato.
 - Mudança incompatível com a API 14: quem lia `rows`/`count` precisa migrar.
   O app não usa este endereço (usa `roteirosCsv`).
