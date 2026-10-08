@@ -38,3 +38,10 @@ test('imprimir.html: showError usa textContent, nunca innerHTML com mensagem', (
   assert.match(html, /p\.textContent = msg/);
   assert.doesNotMatch(html, /innerHTML \+= `.*\$\{msg\}/, 'mensagem de erro não pode virar HTML');
 });
+
+test('roteiros.html: id_rota nunca entra em codigo de onclick (usa data-* e delegacao)', () => {
+  const html = fs.readFileSync('roteiros.html', 'utf8');
+  assert.doesNotMatch(html, /onclick="(editItem|toggleStatus)\(/, 'id_rota dentro de onclick: o navegador desfaz o escape antes de executar');
+  assert.match(html, /data-acao="editar" data-id-rota="\$\{esc\(row\.id_rota\)\}"/);
+  assert.match(html, /getElementById\('clientsBody'\)\.addEventListener\('click'/);
+});

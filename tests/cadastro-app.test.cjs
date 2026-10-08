@@ -115,3 +115,23 @@ test('exporta o CSV legado e reimporta sem perder dados', async () => {
   assert.equal(ponto(outro, 'APP-1').logradouro, 'Rua Nova');
   assert.equal(ponto(outro, '1').cliente, 'Cliente; com "aspas"');
 });
+
+test('id_rota so aceita letras, numeros, ponto, hifen e sublinhado (ate 64)', async () => {
+  const db = await setup();
+  const rid = db.criarRoteiro('SAT01').id;
+  for (const ruim of ["x');alert(1);//", 'a b', '<img>', 'x'.repeat(65), 'ação']) {
+    assert.throws(() => db.criarPonto({ idRota: ruim, cliente: 'X', roteiroId: rid }), /ID Rota inválido/, ruim);
+  }
+  assert.equal(db.criarPonto({ idRota: '  123  ', cliente: 'Aparado', roteiroId: rid }), '123');
+  assert.equal(db.criarPonto({ idRota: 'APP-9.x_1', cliente: 'Ok', roteiroId: rid }), 'APP-9.x_1');
+  assert.equal(ponto(db, '123').cliente, 'Aparado');
+});
+
+test('importacao ignora linhas com id_rota invalido e informa quais', async () => {
+  const db = await setup();
+  const r = db.importRoteirosCsv(csv(linha(1, 'SAT01', 'Bom', 1), linha("9' onclick=alert(1)", 'SAT01', 'Ruim', 2), linha(3, 'SAT01', 'Outro bom', 3)));
+  assert.equal(r.clientes, 2);
+  assert.equal(r.idRotasInvalidos.length, 1);
+  assert.equal(ponto(db, '1').cliente, 'Bom');
+  assert.equal(ponto(db, '3').cliente, 'Outro bom');
+});

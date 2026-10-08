@@ -7,6 +7,14 @@
 // vai para o IndexedDB (sem o limite de ~5 MB do localStorage); onde não há
 // IndexedDB (ex.: testes em node:vm) continua no localStorage como antes.
 const DB_KEY = 'app3_db';
+// Mesmo formato que o GAS aceita no cadastro compartilhado. O id_rota aparece
+// na tela e em atributos HTML; restringir os caracteres fecha a porta para
+// injeção de código vinda de CSV ou digitação.
+const ID_ROTA_RE = /^[A-Za-z0-9._-]{1,64}$/;
+
+export function idRotaValido(value) {
+    return ID_ROTA_RE.test(String(value ?? '').trim());
+}
 const IDB_NAME = 'satelite-checklist';
 const IDB_STORE = 'kv';
 
@@ -419,6 +427,10 @@ class AppDatabase {
     // independente da ordem entre o import do CSV e o primeiro sync de uma rota
     // nova vinda do Sheets.
     upsertCliente(cliente, { origemApp = false } = {}) {
+        if (!idRotaValido(cliente.idRota)) {
+            throw new Error(`ID Rota inválido: "${String(cliente.idRota ?? '').slice(0, 40)}". Use só letras, números, ponto, hífen ou sublinhado (até 64).`);
+        }
+        cliente = { ...cliente, idRota: String(cliente.idRota).trim() };
         this.db.run(`
             INSERT INTO clientes (id_rota, id_cliente, cliente, logradouro, numero, complemento, cep, telefone1, telefone2, roteiro_id, ordem, ativo)
             VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), (SELECT logradouro FROM logradouro_legado WHERE id_rota = ?)), ?, ?, ?, ?, ?, ?, ?, ?)
@@ -778,7 +790,8 @@ class AppDatabase {
     }
 
     _aplicarPontoRemoto(remoto, forcar, resumo) {
-        const idRota = String(remoto.id_rota);
+        const idRota = String(remoto.id_rota ?? '').trim();
+        if (!idRotaValido(idRota)) { resumo.ignorados++; return; }
         const local = this._queryRows('SELECT editado_em, roteiro_id FROM clientes WHERE id_rota = ?', [idRota])[0];
         const lapide = this._queryRows('SELECT excluido_em FROM cliente_excluido WHERE id_rota = ?', [idRota])[0];
         const tempoLocal = [local?.editado_em, lapide?.excluido_em].filter(Boolean).sort().pop();
@@ -1081,6 +1094,7 @@ class AppDatabase {
         let clientesCount = 0;
         let pulados = 0;
         let preservados = 0;
+        const idRotasInvalidos = [];
         data.forEach(row => {
             const idRota = this._getCsvVal(row, 'idRota') || this._getCsvVal(row, 'id Rota');
             const clienteNome = this._getCsvVal(row, 'Cliente');
@@ -1088,7 +1102,8 @@ class AppDatabase {
 
             if (!idRota || !clienteNome) return;
 
-            const idRotaStr = idRota.toString();
+            const idRotaStr = idRota.toString().trim();
+            if (!idRotaValido(idRotaStr)) { idRotasInvalidos.push(idRotaStr.slice(0, 40)); return; }
             if (!sobrescreverEditados && (editados.has(idRotaStr) || excluidos.has(idRotaStr))) { preservados++; return; }
             if (idRotasPendentes.has(idRotaStr)) { pulados++; return; }
 
@@ -1121,6 +1136,7 @@ class AppDatabase {
             clientes: clientesCount,
             pulados,
             preservados,
+            idRotasInvalidos,
             conflitosIdRota: [...idRotasConflitantes]
         };
     }

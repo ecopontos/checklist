@@ -585,7 +585,7 @@
     <script src="vendor/xlsx.full.min.js"></script>
     <script src="vendor/sql-wasm.js"></script>
     <script type="module">
-        import db from './database.js';
+        import db, { idRotaValido } from './database.js';
         import { syncPendingRoteiroChanges, syncPendingClienteChanges, syncCadastro } from './google-sync.js';
 
         const organizerState = {
@@ -713,8 +713,8 @@
                         <td>${esc(row.roteiro_nome)}</td>
                         <td><span class="badge ${row.ativo ? 'badge-active' : 'badge-inactive'}">${row.ativo ? 'Ativo' : 'Inativo'}</span></td>
                         <td class="actions-cell">
-                            <button class="btn-icon" aria-label="Editar" onclick="editItem('${row.id_rota}')">✏️</button>
-                            <button class="btn-icon" aria-label="Alternar status" onclick="toggleStatus('${row.id_rota}', ${row.ativo})">🔄</button>
+                            <button class="btn-icon" aria-label="Editar" data-acao="editar" data-id-rota="${esc(row.id_rota)}">✏️</button>
+                            <button class="btn-icon" aria-label="Alternar status" data-acao="alternar-status" data-id-rota="${esc(row.id_rota)}">🔄</button>
                         </td>
                     `;
                     body.appendChild(tr);
@@ -1235,6 +1235,21 @@
 
         window.exportCsv = () => db.downloadRoteirosCsv();
 
+        // Ações da tabela por delegação: o id_rota vai em data-*, nunca dentro de
+        // código de um atributo onclick, onde o navegador desfaz o escape
+        // do atributo antes de executar.
+        document.getElementById('clientsBody').addEventListener('click', event => {
+            const botao = event.target.closest('button[data-acao]');
+            if (!botao) return;
+            const idRota = botao.dataset.idRota;
+            if (botao.dataset.acao === 'editar') {
+                editItem(idRota);
+            } else if (botao.dataset.acao === 'alternar-status') {
+                const ponto = db.getClienteByIdRota(idRota);
+                if (ponto) toggleStatus(idRota, ponto.ativo);
+            }
+        });
+
         // Filters
         document.getElementById('routeFilter').onchange = renderClients;
         document.getElementById('searchClient').oninput = renderClients;
@@ -1269,7 +1284,8 @@
                 closeModal('importModal');
                 document.getElementById('csvFile').value = '';
                 alert(`Importação concluída: ${result.clientes} ponto(s) atualizado(s)` +
-                    (result.preservados ? `, ${result.preservados} preservado(s) por terem sido editados no app` : '') + '.');
+                    (result.preservados ? `, ${result.preservados} preservado(s) por terem sido editados no app` : '') +
+                    (result.idRotasInvalidos?.length ? `, ${result.idRotasInvalidos.length} ignorado(s) por ID Rota inválido (${result.idRotasInvalidos.slice(0, 5).join(', ')})` : '') + '.');
                 sincronizarCadastro();
             };
             reader.readAsText(file);
@@ -1359,6 +1375,7 @@
 
             // 2. Process Points
             const nameInputs = document.querySelectorAll('.legacy-name-input');
+            const legadosInvalidos = [];
             legacyData.roteiros.forEach((p, i) => {
                 const name = nameInputs[i].value;
                 const idRota = (p.ID_Rota || p.id_rota || p.ID || i).toString();
@@ -1373,6 +1390,7 @@
                     roteiroId = routeMap[rotaNome];
                 }
 
+                if (!idRotaValido(idRota)) { legadosInvalidos.push(idRota.slice(0, 40)); return; }
                 db.upsertCliente({
                     idRota: idRota,
                     Cliente: name,
@@ -1389,6 +1407,9 @@
             closeModal('legacyModal');
             renderRoteiros();
             renderClients();
+            if (legadosInvalidos.length) {
+                alert(`${legadosInvalidos.length} ponto(s) ignorado(s) por ID Rota inválido: ${legadosInvalidos.slice(0, 5).join(', ')}`);
+            }
         };
 
         init();
