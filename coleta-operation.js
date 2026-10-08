@@ -598,6 +598,31 @@ function escapeHTML(value) {
         .replaceAll("'", '&#039;');
 }
 
+// Pré-seleciona o tipo de resíduo cadastrado no roteiro, para a folha não sair
+// com o tipo de outro roteiro. Um tipo que não está na lista vira uma opção
+// extra, para o PDF imprimir exatamente o que o roteiro tem cadastrado.
+function aplicarTipoResiduoDoRoteiro(roteiroId) {
+    const select = document.getElementById('tipoResiduo');
+    const roteiro = db.getRoteiros().find(r => String(r.id) === String(roteiroId));
+    const porNome = roteiro && typeof window.getTipoResiduoPorRoteiro === 'function'
+        ? window.getTipoResiduoPorRoteiro(roteiro.nome) : '';
+    const tipo = String((roteiro && roteiro.tipo_residuo) || porNome || '').trim();
+    select.querySelectorAll('option[data-do-roteiro]').forEach(option => option.remove());
+    if (!tipo) return;
+    const opcoes = [...select.options].map(option => option.value);
+    let escolhido = typeof window.escolherOpcaoTipoResiduo === 'function'
+        ? window.escolherOpcaoTipoResiduo(opcoes, tipo) : '';
+    if (!escolhido) {
+        const extra = document.createElement('option');
+        extra.value = tipo;
+        extra.textContent = tipo;
+        extra.dataset.doRoteiro = '1';
+        select.appendChild(extra);
+        escolhido = tipo;
+    }
+    select.value = escolhido;
+}
+
 function openChecklistModal() {
     const routeSelect = document.getElementById('routeSelect');
     if (!routeSelect.value) {
@@ -605,6 +630,7 @@ function openChecklistModal() {
         return;
     }
     document.getElementById('proxData').value = '';
+    aplicarTipoResiduoDoRoteiro(routeSelect.value);
     document.getElementById('checklistModal').classList.add('open');
     requestAnimationFrame(() => document.getElementById('proxData').focus());
 

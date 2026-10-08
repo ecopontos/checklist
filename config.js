@@ -34,3 +34,24 @@ window.getTipoResiduoPorRoteiro = function (roteiroNome) {
     }
     return '';
 };
+
+// Escolhe, entre as opcoes de tipo de residuo do checklist (ex.: "Vidros",
+// "Organicos"), a que corresponde ao tipo guardado no roteiro (ex.: "Vidro" ou
+// o texto longo do Access "Reciclaveis Organico (Restos de Alimentos)").
+// Ignora acentos e maiusculas e aceita plural/singular. Devolve '' se nenhuma
+// opcao corresponde; quem chama decide o que fazer.
+window.escolherOpcaoTipoResiduo = function (opcoes, tipo) {
+    function norm(texto) {
+        return String(texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    }
+    var alvo = norm(tipo);
+    if (!alvo) return '';
+    for (var i = 0; i < opcoes.length; i++) {
+        if (norm(opcoes[i]) === alvo) return opcoes[i];
+    }
+    for (var j = 0; j < opcoes.length; j++) {
+        var radical = norm(opcoes[j]).replace(/s$/, '');
+        if (radical.length >= 4 && alvo.indexOf(radical) !== -1) return opcoes[j];
+    }
+    return '';
+};

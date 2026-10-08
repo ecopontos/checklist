@@ -61,6 +61,10 @@
             font-size: 9pt;
         }
 
+        /* Uma linha nunca é cortada entre duas páginas; o cabeçalho repete em cada uma. */
+        tr { page-break-inside: avoid; break-inside: avoid; }
+        thead { display: table-header-group; }
+
         th {
             background-color: #f2f2f2;
             border: 1px solid #999;
@@ -98,6 +102,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="SATELITE">
+    <script src="config.js"></script>
     <script src="pwa.js" defer></script>
 </head>
 <body>
@@ -115,7 +120,7 @@
             </div>
             <div class="info-bar">
                 <div class="field-group">Data <div class="empty-box"></div></div>
-                <div class="field-group">Tipo de Resíduo: <strong>Recicláveis Orgânico (Restos de Alimentos)</strong></div>
+                <div class="field-group">Tipo de Resíduo: <strong id="tipo-residuo"></strong></div>
             </div>
         </div>
 
@@ -162,9 +167,14 @@
                 console.log("Buscando dados para o Roteiro ID:", routeId);
 
                 // 1. Get Route Name
-                const routeRes = db.db.exec("SELECT nome FROM roteiros WHERE id = ?", [routeId]);
+                const routeRes = db.db.exec("SELECT nome, tipo_residuo FROM roteiros WHERE id = ?", [routeId]);
                 if (routeRes.length > 0) {
-                    document.getElementById('route-name').textContent = routeRes[0].values[0][0];
+                    const [nome, tipoSalvo] = routeRes[0].values[0];
+                    document.getElementById('route-name').textContent = nome;
+                    // Tipo cadastrado no roteiro; sem ele, a regra por nome do config.js.
+                    // Se nenhum for conhecido, deixa uma linha para preencher a mão.
+                    const tipo = String(tipoSalvo || (window.getTipoResiduoPorRoteiro ? window.getTipoResiduoPorRoteiro(nome) : '') || '').trim();
+                    document.getElementById('tipo-residuo').textContent = tipo || '______________________';
                 }
 
                 // 2. Get Clients (Try by ID and ensure ordering)
@@ -201,17 +211,24 @@
                         ? Math.round(avgRes[0].values[0][0]) 
                         : '';
 
+                    // textContent (nunca innerHTML): nome de cliente e endereço vêm de
+                    // CSV/planilha e podem conter caracteres especiais.
                     const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td class="col-ordem">${c.ordem || ''}</td>
-                        <td class="col-cliente">${c.cliente || '---'}</td>
-                        <td class="col-rua">${[c.logradouro, c.complemento].filter(Boolean).join(' - ')}</td>
-                        <td class="col-num">${c.numero || ''}</td>
-                        <td class="col-id">${c.id_rota}</td>
-                        <td class="col-media">${media}</td>
-                        <td class="col-qtd"></td>
-                        <td class="col-prob"></td>
-                    `;
+                    [
+                        ['col-ordem', c.ordem || ''],
+                        ['col-cliente', c.cliente || '---'],
+                        ['col-rua', [c.logradouro, c.complemento].filter(Boolean).join(' - ')],
+                        ['col-num', c.numero || ''],
+                        ['col-id', c.id_rota],
+                        ['col-media', media],
+                        ['col-qtd', ''],
+                        ['col-prob', '']
+                    ].forEach(([classe, texto]) => {
+                        const td = document.createElement('td');
+                        td.className = classe;
+                        td.textContent = String(texto);
+                        tr.appendChild(td);
+                    });
                     tbody.appendChild(tr);
                 });
 
