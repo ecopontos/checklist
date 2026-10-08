@@ -270,6 +270,8 @@
         import db from './database.js';
         import { syncPendingColetas } from './google-sync.js';
 
+        const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
         async function init() {
             await db.init();
             renderStats();
@@ -343,8 +345,8 @@
                 res[0].values.forEach(v => {
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
-                        <td style="font-weight: 600">${v[0]}</td>
-                        <td style="font-family: 'JetBrains Mono'">${v[1]}</td>
+                        <td style="font-weight: 600">${esc(v[0])}</td>
+                        <td style="font-family: 'JetBrains Mono'">${esc(v[1])}</td>
                         <td>100%</td>
                         <td>0</td>
                     `;

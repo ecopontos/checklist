@@ -707,14 +707,14 @@
                     
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
-                        <td>${row.ordem}</td>
-                        <td style="font-family: 'JetBrains Mono'">${row.id_rota}</td>
-                        <td style="font-weight: 600">${row.cliente}</td>
-                        <td>${row.roteiro_nome}</td>
+                        <td>${esc(row.ordem)}</td>
+                        <td style="font-family: 'JetBrains Mono'">${esc(row.id_rota)}</td>
+                        <td style="font-weight: 600">${esc(row.cliente)}</td>
+                        <td>${esc(row.roteiro_nome)}</td>
                         <td><span class="badge ${row.ativo ? 'badge-active' : 'badge-inactive'}">${row.ativo ? 'Ativo' : 'Inativo'}</span></td>
                         <td class="actions-cell">
-                            <button class="btn-icon" onclick="editItem('${row.id_rota}')">✏️</button>
-                            <button class="btn-icon" onclick="toggleStatus('${row.id_rota}', ${row.ativo})">🔄</button>
+                            <button class="btn-icon" aria-label="Editar" onclick="editItem('${row.id_rota}')">✏️</button>
+                            <button class="btn-icon" aria-label="Alternar status" onclick="toggleStatus('${row.id_rota}', ${row.ativo})">🔄</button>
                         </td>
                     `;
                     body.appendChild(tr);
@@ -1336,9 +1336,9 @@
                 const item = document.createElement('div');
                 item.className = 'point-preview-item';
                 item.innerHTML = `
-                    <div style="font-family: 'JetBrains Mono'; font-size: 0.8rem;">${id}</div>
-                    <div style="color: var(--text-dim); font-size: 0.8rem;">${logr}, ${num}</div>
-                    <input type="text" value="${suggestedName}" data-idx="${i}" class="legacy-name-input">
+                    <div style="font-family: 'JetBrains Mono'; font-size: 0.8rem;">${esc(id)}</div>
+                    <div style="color: var(--text-dim); font-size: 0.8rem;">${esc(logr)}, ${esc(num)}</div>
+                    <input type="text" value="${esc(suggestedName)}" data-idx="${i}" class="legacy-name-input">
                 `;
                 list.appendChild(item);
             });

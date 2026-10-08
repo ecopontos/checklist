@@ -244,7 +244,11 @@
             document.getElementById('print-content').style.display = 'none';
             const ev = document.getElementById('error-view');
             ev.style.display = 'block';
-            ev.innerHTML += `<p style="font-size: 0.8rem; opacity: 0.6;">${msg}</p>`;
+            const p = document.createElement('p');
+            p.style.fontSize = '0.8rem';
+            p.style.opacity = '0.6';
+            p.textContent = msg;
+            ev.appendChild(p);
         }
 
         init();
