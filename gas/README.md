@@ -64,8 +64,10 @@ curl "<URL>?action=roteirosCsv"
 Esperado: JSON com `"ok":true`, `"apiVersion":15`, `"source":"drive-csv"`,
 `"content":"Fonte;idRota;..."`, `"modifiedTime"` e `"encoding":"UTF-16LE"`
 para o arquivo do Access. O GAS escolhe o arquivo mais recente caso existam
-cópias com o mesmo nome. `GET <URL>` e `?action=roteiros` continuam lendo as
-abas do Sheets para consumidores antigos; o app atualizado usa `roteirosCsv`.
+cópias com o mesmo nome. O app usa `roteirosCsv`. `GET <URL>` (sem `action`) e
+`?action=roteiros` devolvem, desde a API 15, o snapshot normalizado
+`roteiros/v1` montado das abas do Sheets (ver "Snapshot de roteiros (API v15)"
+abaixo); o formato achatado antigo (`rows`, `count`) não existe mais.
 
 O CSV deve manter o cabeçalho exportado pelo Access, incluindo `idRota`,
 `Ordem`, `Roteiro`, `Cliente` e `logradouro`. O app aceita tanto
@@ -110,8 +112,9 @@ roteiro:
 curl "<URL>?action=intercorrenciasAtuais"
 ```
 
-O contrato introduzido na API 11 continua disponível na API 12:
-`{"ok":true,"apiVersion":12,"source":"intercorrenciasAtuais","generatedAt":"...","data":[...],"quality":{...}}`.
+O contrato introduzido na API 11 continua disponível nas versões seguintes
+(`apiVersion` traz a versão atual):
+`{"ok":true,"apiVersion":15,"source":"intercorrenciasAtuais","generatedAt":"...","data":[...],"quality":{...}}`.
 O GAS escolhe a última coleta de cada ponto pela maior data civil e, em empate,
 pela última linha gravada. Só então remove os pontos cuja coleta escolhida não
 tem intercorrência; uma coleta com quantidade zero continua válida. A resposta
@@ -320,10 +323,11 @@ Esperado: `{"ok":true,"fotos":[{"nome":"foto_1.jpg","slot":"foto_1"}]}`
 não tiver pasta de fotos, retorna `{"ok":true,"fotos":[]}`.
 
 
-## Cadastro compartilhado (API v14)
+## Cadastro compartilhado (API v14 ou posterior)
 
-A versão 14 adiciona a ação `cadastroSync`, que permite vários aparelhos
-compartilharem os pontos e roteiros criados ou editados no app.
+A versão 14 adicionou a ação `cadastroSync`, que permite vários aparelhos
+compartilharem os pontos e roteiros criados ou editados no app. Ela continua
+igual na versão atual (15); o app exige a 14 ou posterior.
 
 - **Nada novo para configurar:** usa `SPREADSHEET_ID` e o mesmo
   `ROUTE_CHANGES_TOKEN`. As abas `CadastroPontos` e `CadastroRoteiros` são
@@ -354,6 +358,29 @@ curl -X POST "<URL>" -H "Content-Type: text/plain;charset=utf-8" \
 
 Esperado: `"ok":true`, `"apiVersion":15`, `"rev"` e as listas `pontos`/`roteiros`
 (vazias numa planilha nova).
+
+## Snapshot de roteiros (API v15)
+
+Desde a versão 15, `GET <URL>` e `?action=roteiros` devolvem o contrato
+`roteiros/v1`, pensado para o `desktop/logistics` (plano em
+`docs/superpowers/plans/2026-09-15-gas-contrato-logistica-roteiros.md`):
+
+```json
+{"ok":true,"apiVersion":15,"contract":"roteiros/v1","modifiedTime":"...",
+ "counts":{"clientes":0,"roteiros":0,"pontos":0},"skipped":0,
+ "clientes":[{"idUnico":"...","uuid":null,"cliente":"...","logradouro":"...","numero":"...",
+              "cep":"...","complemento":"...","telefone1":"...","telefone2":"..."}],
+ "roteiros":[{"roteiro":"SAT01","pontos":[{"idRota":"3","idUnico":"...","ordem":1,"inativo":0}]}]}
+```
+
+- Lê só as abas do Access (`tblRotas`, `shtClientes`, `tblRoteiros`). **Não
+  inclui o cadastro editado no app** (`CadastroPontos`/`CadastroRoteiros`):
+  pontos `APP-n`, edições, exclusões e roteiros renomeados no app não aparecem.
+- `logradouro` vem da coluna `logradouro` de `shtClientes`, se existir; sem
+  ela, sai vazio.
+- O tipo de resíduo não faz parte do contrato.
+- Mudança incompatível com a API 14: quem lia `rows`/`count` precisa migrar.
+  O app não usa este endereço (usa `roteirosCsv`).
 
 ## Cópia de teste
 

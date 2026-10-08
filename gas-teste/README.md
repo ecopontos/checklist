@@ -1,6 +1,6 @@
 # Cópia de teste do backend (GAS)
 
-Para testar o app (inclusive o cadastro compartilhado, API v14) sem acesso ao
+Para testar o app (inclusive o cadastro compartilhado, API v14 ou posterior; a atual é a 15) sem acesso ao
 GAS e ao banco de produção, crie uma cópia no **seu** Google. Nada aqui toca a
 produção.
 
