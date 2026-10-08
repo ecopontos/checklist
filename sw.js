@@ -2,7 +2,7 @@
 // VERSION acompanha a versão do package.json (tests/pwa.test.cjs confere):
 // cada release gera um cache novo e apaga o anterior. Requisições para o GAS
 // (outra origem) nunca passam por aqui.
-const VERSION = '1.6.8';
+const VERSION = '1.7.0';
 const CACHE = `satelite-app-${VERSION}`;
 const FONT_CACHE = 'satelite-fonts';
 
