@@ -111,3 +111,58 @@ const respDefault = JSON.parse(context.doGet({ parameter: {} }).value);
 assert.strictEqual(respDefault.contract, 'roteiros/v1');
 
 console.log('doGet(action=roteiros): envelope roteiros/v1, counts, apiVersion 15: OK');
+
+// --- Correções da revisão da v15 ---
+{
+  const cab = ['idPJ', 'idUnico2', 'Cliente', 'logradouro', 'Número', 'CEP', 'Complemento', 'Telefone1', 'Telefone2'];
+  const rotasCab = ['idRota', 'idPJ', 'idRoteiro', 'Ordem', 'Inativo'];
+  const rots = [['idRoteiro', 'Roteiro'], ['10', 'SAT01']];
+
+  // Ponto com idRoteiro inexistente: descartado e contado, sem grupo de nome vazio.
+  const semRoteiro = context.buildRoteirosNormalizados_(
+    [rotasCab, ['1', '100', '10', 1, 0], ['2', '101', '99', 2, 0]],
+    [cab, ['100', 'U-1', 'A', 'Rua A', '1', '', '', '', ''], ['101', 'U-2', 'B', 'Rua B', '2', '', '', '', '']],
+    rots);
+  assert.strictEqual(semRoteiro.roteiros.length, 1);
+  assert.ok(!semRoteiro.roteiros.some(r => r.roteiro === ''), 'nenhum grupo de roteiro sem nome');
+  assert.strictEqual(semRoteiro.skipped, 1);
+  assert.strictEqual(semRoteiro.skippedDetalhe.semRoteiro, 1);
+  assert.ok(!semRoteiro.clientes.some(c => c.idUnico === 'U-2'), 'cliente só usado pelo ponto descartado não entra');
+
+  // idUnico2 repetido com dados diferentes: pontos dos dois descartados e reportados.
+  const conflito = context.buildRoteirosNormalizados_(
+    [rotasCab, ['1', '100', '10', 1, 0], ['2', '101', '10', 2, 0], ['3', '102', '10', 3, 0]],
+    [cab, ['100', 'U-1', 'A', 'Rua A', '1', '', '', '', ''], ['101', 'U-1', 'C (outro cliente)', 'Rua C', '3', '', '', '', ''],
+      ['102', 'U-3', 'D', 'Rua D', '4', '', '', '', '']],
+    rots);
+  assert.deepStrictEqual([...conflito.conflitosIdUnico], ['U-1']);
+  assert.strictEqual(conflito.skippedDetalhe.idUnicoConflitante, 2);
+  assert.deepStrictEqual([...conflito.roteiros[0].pontos.map(p => p.idRota)], ['3'], 'só o ponto sem conflito fica');
+  assert.ok(!conflito.clientes.some(c => c.idUnico === 'U-1'), 'cliente em conflito não é emitido com dados de um dos dois');
+
+  // Cópia idêntica do mesmo cliente (idPJ diferentes, mesmos dados): não é conflito.
+  const copia = context.buildRoteirosNormalizados_(
+    [rotasCab, ['1', '100', '10', 1, 0], ['2', '101', '10', 2, 0]],
+    [cab, ['100', 'U-1', 'A', 'Rua A', '1', '', '', '', ''], ['101', 'U-1', 'A', 'Rua A', '1', '', '', '', '']],
+    rots);
+  assert.strictEqual(copia.conflitosIdUnico.length, 0);
+  assert.strictEqual(copia.roteiros[0].pontos.length, 2);
+  assert.strictEqual(copia.clientes.length, 1);
+
+  // Linha de cliente não usada por nenhum ponto não gera conflito.
+  const orfa = context.buildRoteirosNormalizados_(
+    [rotasCab, ['1', '100', '10', 1, 0]],
+    [cab, ['100', 'U-1', 'A', 'Rua A', '1', '', '', '', ''], ['101', 'U-1', 'Outro', 'Rua X', '9', '', '', '', '']],
+    rots);
+  assert.strictEqual(orfa.conflitosIdUnico.length, 0);
+  assert.strictEqual(orfa.roteiros[0].pontos.length, 1);
+
+  console.log('buildRoteirosNormalizados_: roteiro inexistente e idUnico2 conflitante: OK');
+}
+
+{
+  const envelope = JSON.parse(context.doGet({ parameter: { action: 'roteiros' } }).value);
+  assert.deepStrictEqual({ ...envelope.skippedDetalhe }, { semCliente: 1, semRoteiro: 0, idUnicoConflitante: 0 });
+  assert.ok(Array.isArray(envelope.conflitosIdUnico) && envelope.conflitosIdUnico.length === 0);
+  console.log('doGet(action=roteiros): skippedDetalhe e conflitosIdUnico no envelope: OK');
+}

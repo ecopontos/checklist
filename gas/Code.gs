@@ -240,6 +240,8 @@ function getRoteirosNormalizados_() {
             modifiedTime: modifiedTime,
             counts: { clientes: norm.clientes.length, roteiros: norm.roteiros.length, pontos: pontos },
             skipped: norm.skipped,
+            skippedDetalhe: norm.skippedDetalhe,
+            conflitosIdUnico: norm.conflitosIdUnico,
             clientes: norm.clientes,
             roteiros: norm.roteiros
         });
@@ -250,7 +252,8 @@ function getRoteirosNormalizados_() {
 
 // Fun\u00E7\u00E3o pura (sem chamadas ao Sheets), test\u00E1vel: recebe as matrizes de
 // getValues() das 3 abas (tblRotas, shtClientes, tblRoteiros) e devolve a
-// vis\u00E3o normalizada { clientes, roteiros, skipped } do contrato roteiros/v1.
+// vis\u00E3o normalizada { clientes, roteiros, skipped, skippedDetalhe,
+// conflitosIdUnico } do contrato roteiros/v1.
 // Junta tblRotas -> cliente por idPJ e -> roteiro por idRoteiro; emite cliente
 // deduplicado por idUnico (= idUnico2). logradouro \u00E9 lido defensivamente
 // (coluna a confirmar na aba real; "" se ausente). Tipo de Res\u00EDduo N\u00C3O faz
@@ -265,7 +268,10 @@ function parseOrdem_(val) {
 
 function buildRoteirosNormalizados_(rotasValues, clientesValues, roteirosValues) {
     if (!rotasValues || rotasValues.length < 2) {
-        return { clientes: [], roteiros: [], skipped: 0 };
+        return {
+            clientes: [], roteiros: [], skipped: 0,
+            skippedDetalhe: { semCliente: 0, semRoteiro: 0, idUnicoConflitante: 0 }, conflitosIdUnico: []
+        };
     }
 
     function headerMap_(headers) {
@@ -308,19 +314,43 @@ function buildRoteirosNormalizados_(rotasValues, clientesValues, roteirosValues)
         roteirosById[keyRoteiro] = String(rowT[mapRoteiros['Roteiro']] || '').trim();
     }
 
+    // idUnico2 repetido em idPJ diferentes, com dados diferentes, faria pontos
+    // de um cliente mostrarem os dados de outro (o último venceria em silêncio).
+    // Só conta idPJ realmente usados por algum ponto; cópias idênticas são o
+    // mesmo cliente e não conflitam. Pontos de um idUnico em conflito são
+    // descartados e o idUnico vai em conflitosIdUnico para correção na origem.
+    var assinaturasPorIdUnico = {};
+    for (var rr = 1; rr < rotasValues.length; rr++) {
+        var usado = clientesByIdPJ[cleanIntString_(rotasValues[rr][mapRotas['idPJ']])];
+        if (!usado || !usado.idUnico) continue;
+        var assinatura = JSON.stringify([usado.cliente, usado.logradouro, usado.numero, usado.cep,
+            usado.complemento, usado.telefone1, usado.telefone2]);
+        (assinaturasPorIdUnico[usado.idUnico] = assinaturasPorIdUnico[usado.idUnico] || {})[assinatura] = true;
+    }
+    var conflitosIdUnico = Object.keys(assinaturasPorIdUnico).filter(function (idUnico) {
+        return Object.keys(assinaturasPorIdUnico[idUnico]).length > 1;
+    });
+    var emConflito = {};
+    conflitosIdUnico.forEach(function (idUnico) { emConflito[idUnico] = true; });
+
     var clientesByIdUnico = {};
     var gruposByRoteiro = {};
     var ordemGrupos = [];
     var skipped = 0;
+    var skippedDetalhe = { semCliente: 0, semRoteiro: 0, idUnicoConflitante: 0 };
 
     for (var r = 1; r < rotasValues.length; r++) {
         var rowR = rotasValues[r];
         var cliente = clientesByIdPJ[cleanIntString_(rowR[mapRotas['idPJ']])];
 
         // Ponto sem cliente, sem nome, ou sem idUnico (a FK do contrato): descarta.
-        if (!cliente || !cliente.cliente || !cliente.idUnico) { skipped++; continue; }
+        if (!cliente || !cliente.cliente || !cliente.idUnico) { skipped++; skippedDetalhe.semCliente++; continue; }
+        if (emConflito[cliente.idUnico]) { skipped++; skippedDetalhe.idUnicoConflitante++; continue; }
 
+        // Ponto cujo idRoteiro não existe em tblRoteiros: antes virava um grupo
+        // de nome vazio; agora é descartado e contado.
         var nomeRoteiro = roteirosById[cleanIntString_(rowR[mapRotas['idRoteiro']])] || '';
+        if (!nomeRoteiro) { skipped++; skippedDetalhe.semRoteiro++; continue; }
 
         if (!gruposByRoteiro[nomeRoteiro]) {
             gruposByRoteiro[nomeRoteiro] = { roteiro: nomeRoteiro, pontos: [] };
@@ -349,7 +379,13 @@ function buildRoteirosNormalizados_(rotasValues, clientesValues, roteirosValues)
 
     var roteiros = ordemGrupos.map(function (nome) { return gruposByRoteiro[nome]; });
 
-    return { clientes: clientes, roteiros: roteiros, skipped: skipped };
+    return {
+        clientes: clientes,
+        roteiros: roteiros,
+        skipped: skipped,
+        skippedDetalhe: skippedDetalhe,
+        conflitosIdUnico: conflitosIdUnico
+    };
 }
 
 // Remove o ".0" artificial que o Sheets pode anexar a inteiros (o app trata
