@@ -32,6 +32,29 @@ produção.
    acesso: Qualquer pessoa). Copie a URL que termina em `/exec`.
 7. No app, na tela Admin, informe essa URL e o token do passo 4.
 
+## Testar o GAS de uma vez (script)
+
+Depois do passo 6, o script `testar-gas.js` confere o backend pela URL, sem abrir
+o app. Precisa do Node 18 ou mais novo e roda no seu computador:
+
+```bash
+# só leitura: versão, roteiros, CSV, token errado, cadastroSync
+GAS_TOKEN=<token> node gas-teste/testar-gas.js "<URL do /exec>"
+
+# com gravação (SÓ NA CÓPIA DE TESTE): ponto, conflito, exclusão e renomear roteiro
+GAS_TOKEN=<token> node gas-teste/testar-gas.js "<URL do /exec>" --escrever --coletas
+```
+
+- Mostra `OK`, `FALHA` ou `PULOU` para cada teste e termina com código 1 se algo falhar.
+- O token vai na variável `GAS_TOKEN` para não ficar no histórico do terminal.
+- Com `--escrever` ele pede para você digitar `teste` antes de gravar (ou use
+  `--sim`). Os registros ficam como `TESTE-...`: o ponto é marcado como excluído e
+  o roteiro `TESTE-ROT-...` permanece na aba `CadastroRoteiros` (apague as linhas
+  à mão para limpar). `--coletas` também grava uma coleta de teste na aba
+  `Coletas`, e depois disso `prepararTeste` não roda mais nessa planilha.
+- Nunca aponte `--escrever` para a produção: o cadastro é compartilhado entre os
+  aparelhos que usam a mesma URL.
+
 ## Cuidados
 
 - Use um **perfil de navegador separado** para testar. A URL digitada na tela
