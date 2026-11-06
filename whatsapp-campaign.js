@@ -25,11 +25,13 @@ export function buildWhatsappQueue({
     occurrences = [],
     contacts = [],
     confirmedOccurrenceIds = [],
+    dismissedOccurrenceIds = [],
     activeItems = []
 } = {}) {
     const remoteById = new Map(occurrences.map(item => [item.occurrenceId, item]));
     const activeIds = new Set(activeItems.map(item => item.occurrenceId));
     const confirmedIds = new Set(confirmedOccurrenceIds);
+    const dismissedIds = new Set(dismissedOccurrenceIds);
     const contactsByRoute = new Map(contacts.map(contact => [String(contact.idRota), contact]));
 
     const active = activeItems.map(item => {
@@ -48,7 +50,8 @@ export function buildWhatsappQueue({
             const contact = contactsByRoute.get(String(occurrence.idRota));
             const phones = clonePhones(contact && contact.phones);
             const item = { ...occurrence, status: 'pending', phones,
-                residuo: occurrence.residuo || occurrence.tipoResiduo || contact?.tipoResiduo || '' };
+                residuo: occurrence.residuo || occurrence.tipoResiduo || contact?.tipoResiduo || '',
+                dismissed: dismissedIds.has(occurrence.occurrenceId) };
             if (!contact) item.blockedReason = 'Cadastro não localizado';
             else if (!phones.length) item.blockedReason = 'Sem telefone válido';
             return item;
