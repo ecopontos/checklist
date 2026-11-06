@@ -6,7 +6,8 @@ const calls = [];
 const names = ['showWhatsappTab', 'refreshWhatsappQueue', 'toggleWhatsappOccurrence',
   'startWhatsappCampaign', 'selectWhatsappPhone', 'openCurrentWhatsapp',
   'confirmCurrentWhatsapp', 'deferCurrentWhatsapp', 'completeWhatsappCampaign',
-  'exportWhatsappCampaign', 'applyWhatsappFilters'];
+  'exportWhatsappCampaign', 'applyWhatsappFilters', 'resolveWhatsappOccurrence',
+  'restoreWhatsappOccurrence'];
 const window = Object.fromEntries(names.map(name => [name, (...args) => calls.push([name, ...args])]));
 vm.runInNewContext(fs.readFileSync('whatsapp-events.js', 'utf8'), {
   window, document: { addEventListener: (type, listener) => { listeners[type] = listener; } }
@@ -28,6 +29,9 @@ dispatch('click', { action: 'concluir-campanha' });
 dispatch('click', { action: 'exportar-campanha', campaignId: 'campaign-1' });
 dispatch('change', { changeAction: 'filtrar-fila' });
 dispatch('change', { changeAction: 'atualizar-periodo' });
+dispatch('click', { action: 'resolver-ocorrencia', occurrenceId: 'occ-9' });
+dispatch('click', { action: 'desfazer-resolucao', occurrenceId: 'occ-9' });
+dispatch('change', { changeAction: 'alternar-resolvidas' });
 dispatch('input', {}, { id: 'queueSearch' });
 dispatch('click', { action: 'abrir-whatsapp' }, { disabled: true });
 assert.deepEqual(calls, [
@@ -36,6 +40,8 @@ assert.deepEqual(calls, [
   ['startWhatsappCampaign'], ['selectWhatsappPhone', 2], ['openCurrentWhatsapp'],
   ['confirmCurrentWhatsapp'], ['deferCurrentWhatsapp'], ['completeWhatsappCampaign'],
   ['exportWhatsappCampaign', 'campaign-1'], ['applyWhatsappFilters'],
-  ['refreshWhatsappQueue'], ['applyWhatsappFilters']
+  ['refreshWhatsappQueue'],
+  ['resolveWhatsappOccurrence', 'occ-9'], ['restoreWhatsappOccurrence', 'occ-9'],
+  ['applyWhatsappFilters'], ['applyWhatsappFilters']
 ]);
 console.log('whatsapp-events: delegação da fila sem handlers inline: OK');

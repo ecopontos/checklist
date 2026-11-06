@@ -467,3 +467,35 @@ test('seletor de período repassa dias e persiste a escolha no dispositivo', asy
   assert.equal(storage.get('app3_whatsapp_periodo_dias'), '30');
   assert.match(lastUrl(), /&dias=30$/);
 });
+
+test('resolver esconde a ocorrência, toggle revela e desfazer devolve à fila', async () => {
+  const h = await setup({ remote: { ok: true, data: [occurrence, { ...occurrence, occurrenceId: 'occ-2', idRota: '42' }] } });
+  await h.window.initWhatsappSender();
+  assert.equal(h.elements.get('queuePendingCount').textContent, '2');
+
+  await h.window.resolveWhatsappOccurrence('occ-1');
+  assert.deepEqual(Array.from(h.db.getDismissedWhatsappOccurrenceIds()), ['occ-1']);
+  assert.equal(h.elements.get('queuePendingCount').textContent, '1');
+  assert.ok(!h.elements.get('queueList').innerHTML.includes('data-occurrence-id="occ-1"'));
+
+  h.elements.get('showDismissedToggle').checked = true;
+  h.window.applyWhatsappFilters();
+  assert.match(h.elements.get('queueList').innerHTML, /data-occurrence-id="occ-1"/);
+  assert.match(h.elements.get('queueList').innerHTML, /Resolvido/);
+  assert.match(h.elements.get('queueList').innerHTML, /data-action="desfazer-resolucao"/);
+
+  await h.window.restoreWhatsappOccurrence('occ-1');
+  assert.deepEqual(Array.from(h.db.getDismissedWhatsappOccurrenceIds()), []);
+  assert.equal(h.elements.get('queuePendingCount').textContent, '2');
+});
+
+test('nova occurrenceId do mesmo ponto reaparece mesmo após resolver', async () => {
+  const h = await setup({ remote: { ok: true, data: [occurrence] } });
+  await h.window.initWhatsappSender();
+  await h.window.resolveWhatsappOccurrence('occ-1');
+  assert.equal(h.elements.get('queuePendingCount').textContent, '0');
+  h.setRemote({ ok: true, data: [{ ...occurrence, occurrenceId: 'occ-1-novo', data: '2026-11-01' }] });
+  await h.window.refreshWhatsappQueue();
+  assert.equal(h.elements.get('queuePendingCount').textContent, '1');
+  assert.match(h.elements.get('queueList').innerHTML, /data-occurrence-id="occ-1-novo"/);
+});

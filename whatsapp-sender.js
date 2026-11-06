@@ -12,7 +12,7 @@ let ready = false;
 let selectedPhoneSlot = null;
 let displayedItemId = null;
 const selectedOccurrences = new Set();
-const statusLabels = { pending: 'Pendente', opened: 'Aguardando confirmação', confirmed: 'Confirmado', deferred: 'Adiado', blocked: 'Bloqueado' };
+const statusLabels = { pending: 'Pendente', opened: 'Aguardando confirmação', confirmed: 'Confirmado', deferred: 'Adiado', blocked: 'Bloqueado', dismissed: 'Resolvido' };
 const element = id => document.getElementById(id);
 const PERIOD_STORAGE_KEY = 'app3_whatsapp_periodo_dias';
 function currentPeriodDays() {
@@ -41,8 +41,10 @@ function currentItem() {
 
 function reconcileQueue() {
     queue = buildWhatsappQueue({ occurrences: occurrences || [], contacts: contactDirectory,
-        confirmedOccurrenceIds: db.getConfirmedWhatsappOccurrenceIds(), activeItems: activeCampaign?.items || [] });
-    const selectable = new Set(queue.filter(item => !item.itemId && !item.blockedReason).map(item => item.occurrenceId));
+        confirmedOccurrenceIds: db.getConfirmedWhatsappOccurrenceIds(),
+        dismissedOccurrenceIds: db.getDismissedWhatsappOccurrenceIds(),
+        activeItems: activeCampaign?.items || [] });
+    const selectable = new Set(queue.filter(item => !item.itemId && !item.blockedReason && !item.dismissed).map(item => item.occurrenceId));
     for (const id of selectedOccurrences) if (!selectable.has(id)) selectedOccurrences.delete(id);
     const route = element('queueRouteFilter').value;
     const routes = [...new Set(queue.map(item => item.roteiro).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
@@ -53,25 +55,33 @@ function reconcileQueue() {
 }
 
 function renderQueue() {
-    const counts = summarizeWhatsappItems(queue);
+    const counts = summarizeWhatsappItems(queue.filter(item => !item.dismissed));
     const pending = counts.pending + counts.opened + counts.deferred + counts.blocked;
     for (const [id, count] of [['queuePendingCount', pending], ['queueOpenedCount', counts.opened], ['queueConfirmedCount', counts.confirmed]]) {
         element(id).textContent = occurrences === null && !activeCampaign ? '—' : String(count);
     }
     const search = element('queueSearch').value.trim().toLocaleLowerCase('pt-BR');
     const route = element('queueRouteFilter').value;
-    const filtered = queue.filter(item => (!route || item.roteiro === route) &&
+    const showDismissed = !!element('showDismissedToggle').checked;
+    const filtered = queue.filter(item => (showDismissed || !item.dismissed) &&
+        (!route || item.roteiro === route) &&
         `${item.cliente} ${item.intercorrencia} ${item.roteiro}`.toLocaleLowerCase('pt-BR').includes(search));
     element('queueList').innerHTML = filtered.map(item => {
-        const status = item.blockedReason ? 'blocked' : item.status;
-        const disabled = busy || !!activeCampaign || !!item.blockedReason || !!item.itemId;
+        const status = item.dismissed ? 'dismissed' : (item.blockedReason ? 'blocked' : item.status);
+        const disabled = busy || !!activeCampaign || !!item.blockedReason || !!item.itemId || !!item.dismissed;
+        const rowAction = item.dismissed
+            ? `<button class="btn btn-outline" data-action="desfazer-resolucao" data-occurrence-id="${escapeHtml(item.occurrenceId)}" ${busy ? 'disabled' : ''}>Desfazer</button>`
+            : (!item.itemId && !item.blockedReason
+                ? `<button class="btn btn-outline" data-action="resolver-ocorrencia" data-occurrence-id="${escapeHtml(item.occurrenceId)}" ${busy || !!activeCampaign ? 'disabled' : ''}>Resolver</button>`
+                : '');
         return `<article class="queue-row status-${escapeHtml(status)}"><label>
             <input type="checkbox" data-change-action="alternar-ocorrencia" data-occurrence-id="${escapeHtml(item.occurrenceId)}"
                 ${selectedOccurrences.has(item.occurrenceId) ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
             <span><strong>${escapeHtml(item.cliente)}</strong><br>
                 <span class="queue-meta">${escapeHtml(item.roteiro)} · ${escapeHtml(civilDate(item.data))}</span></span>
             </label><p>${escapeHtml(item.intercorrencia)}</p>
-            <p class="queue-meta">${escapeHtml(statusLabels[status] || status)}${item.blockedReason ? `: ${escapeHtml(item.blockedReason)}` : ''}</p></article>`;
+            <p class="queue-meta">${escapeHtml(statusLabels[status] || status)}${item.blockedReason ? `: ${escapeHtml(item.blockedReason)}` : ''}</p>
+            ${rowAction}</article>`;
     }).join('') || `<p class="hint">${occurrences === null ? 'Aguardando consulta à fonte. A campanha local continua disponível.' :
         queue.length ? 'Nenhum item corresponde aos filtros.' : 'Nenhuma pendência na fonte consultada.'}</p>`;
     element('queueSelection').textContent = activeCampaign ? 'Retome a campanha abaixo antes de iniciar outra.' :
@@ -181,6 +191,37 @@ export function toggleWhatsappOccurrence(id, checked) {
     if (checked) selectedOccurrences.add(id);
     else selectedOccurrences.delete(id);
     renderQueue();
+}
+
+export async function resolveWhatsappOccurrence(id) {
+    if (busy || activeCampaign) return;
+    const item = queue.find(entry => entry.occurrenceId === id);
+    if (!item || item.itemId || item.blockedReason || item.dismissed) return;
+    setBusy(true);
+    try {
+        await db.dismissWhatsappOccurrence(id, new Date().toISOString());
+        selectedOccurrences.delete(id);
+        reconcileQueue();
+        setError('queueError');
+    } catch (error) {
+        setError('queueError', `Não foi possível resolver a ocorrência: ${error.message}`);
+    } finally {
+        setBusy(false);
+    }
+}
+
+export async function restoreWhatsappOccurrence(id) {
+    if (busy) return;
+    setBusy(true);
+    try {
+        await db.restoreWhatsappOccurrence(id);
+        reconcileQueue();
+        setError('queueError');
+    } catch (error) {
+        setError('queueError', `Não foi possível desfazer: ${error.message}`);
+    } finally {
+        setBusy(false);
+    }
 }
 
 export function selectWhatsappPhone(slot) {
@@ -321,7 +362,8 @@ export function exportWhatsappCampaign(campaignId) {
 
 Object.assign(window, { initWhatsappSender, refreshWhatsappQueue, startWhatsappCampaign,
     openCurrentWhatsapp, confirmCurrentWhatsapp, deferCurrentWhatsapp, completeWhatsappCampaign,
-    showWhatsappTab, exportWhatsappCampaign, applyWhatsappFilters, toggleWhatsappOccurrence, selectWhatsappPhone });
+    showWhatsappTab, exportWhatsappCampaign, applyWhatsappFilters, toggleWhatsappOccurrence,
+    selectWhatsappPhone, resolveWhatsappOccurrence, restoreWhatsappOccurrence });
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initWhatsappSender, { once: true });
 else initWhatsappSender();

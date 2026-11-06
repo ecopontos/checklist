@@ -26,6 +26,8 @@ document.addEventListener('click', event => {
         case 'adiar-envio': window.deferCurrentWhatsapp(); break;
         case 'concluir-campanha': window.completeWhatsappCampaign(); break;
         case 'exportar-campanha': window.exportWhatsappCampaign(control.dataset.campaignId); break;
+        case 'resolver-ocorrencia': window.resolveWhatsappOccurrence(control.dataset.occurrenceId); break;
+        case 'desfazer-resolucao': window.restoreWhatsappOccurrence(control.dataset.occurrenceId); break;
     }
 });
 
@@ -39,6 +41,7 @@ document.addEventListener('change', event => {
         case 'alternar-ocorrencia':
             window.toggleWhatsappOccurrence(control.dataset.occurrenceId, control.checked);
             break;
+        case 'alternar-resolvidas': window.applyWhatsappFilters(); break;
     }
 });
 
