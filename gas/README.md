@@ -55,13 +55,13 @@ o conteúdo ao aplicativo.
 curl "<URL>?action=status"
 ```
 
-Esperado: `{"ok":true,"service":"satelite-gas","apiVersion":15,"routeChangesConfigured":true,"cadastro":true}`.
+Esperado: `{"ok":true,"service":"satelite-gas","apiVersion":16,"routeChangesConfigured":true,"cadastro":true}`.
 
 ```bash
 curl "<URL>?action=roteirosCsv"
 ```
 
-Esperado: JSON com `"ok":true`, `"apiVersion":15`, `"source":"drive-csv"`,
+Esperado: JSON com `"ok":true`, `"apiVersion":16`, `"source":"drive-csv"`,
 `"content":"Fonte;idRota;..."`, `"modifiedTime"` e `"encoding":"UTF-16LE"`
 para o arquivo do Access. O GAS escolhe o arquivo mais recente caso existam
 cópias com o mesmo nome. O app usa `roteirosCsv`. `GET <URL>` (sem `action`) e
@@ -114,7 +114,7 @@ curl "<URL>?action=intercorrenciasAtuais"
 
 O contrato introduzido na API 11 continua disponível nas versões seguintes
 (`apiVersion` traz a versão atual):
-`{"ok":true,"apiVersion":15,"source":"intercorrenciasAtuais","generatedAt":"...","data":[...],"quality":{...}}`.
+`{"ok":true,"apiVersion":16,"source":"intercorrenciasAtuais","generatedAt":"...","data":[...],"quality":{...}}`.
 O GAS escolhe a última coleta de cada ponto pela maior data civil e, em empate,
 pela última linha gravada. Só então remove os pontos cuja coleta escolhida não
 tem intercorrência; uma coleta com quantidade zero continua válida. A resposta
@@ -356,7 +356,7 @@ curl -X POST "<URL>" -H "Content-Type: text/plain;charset=utf-8" \
   -d '{"action":"cadastroSync","token":"<TOKEN>","since":0,"pontos":[],"roteiros":[]}'
 ```
 
-Esperado: `"ok":true`, `"apiVersion":15`, `"rev"` e as listas `pontos`/`roteiros`
+Esperado: `"ok":true`, `"apiVersion":16`, `"rev"` e as listas `pontos`/`roteiros`
 (vazias numa planilha nova).
 
 ## Snapshot de roteiros (API v15)
@@ -366,7 +366,7 @@ Desde a versão 15, `GET <URL>` e `?action=roteiros` devolvem o contrato
 `docs/superpowers/plans/2026-09-15-gas-contrato-logistica-roteiros.md`):
 
 ```json
-{"ok":true,"apiVersion":15,"contract":"roteiros/v1","modifiedTime":"...",
+{"ok":true,"apiVersion":16,"contract":"roteiros/v1","modifiedTime":"...",
  "counts":{"clientes":0,"roteiros":0,"pontos":0},"skipped":0,
  "skippedDetalhe":{"semCliente":0,"semRoteiro":0,"idUnicoConflitante":0},"conflitosIdUnico":[],
  "clientes":[{"idUnico":"...","uuid":null,"cliente":"...","logradouro":"...","numero":"...",

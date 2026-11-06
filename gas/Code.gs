@@ -832,11 +832,11 @@ function intercorrenciasHoje_() {
     return new Date();
 }
 
-function recencyCutoffCivil_(dias, today) {
+function recencyCutoffCivil_(dias, today, tz) {
     var base = Object.prototype.toString.call(today) === '[object Date]' ? today : intercorrenciasHoje_();
     var cutoff = new Date(base.getTime());
     cutoff.setDate(cutoff.getDate() - dias);
-    return Utilities.formatDate(cutoff, 'GMT', 'yyyy-MM-dd');
+    return Utilities.formatDate(cutoff, tz || 'GMT', 'yyyy-MM-dd');
 }
 
 function filterByRecencyWindow_(data, cutoffCivil) {
@@ -866,6 +866,7 @@ function getIntercorrenciasAtuais_(dias) {
         }
 
         var ss = SpreadsheetApp.openById(config.spreadsheetId);
+        var planilhaTz = (ss.getSpreadsheetTimeZone && ss.getSpreadsheetTimeZone()) || 'GMT';
         var sheet = ss.getSheetByName(COLETAS_SHEET_NAME);
         if (!sheet) {
             return jsonResponse_({ ok: false, error: 'Aba ' + COLETAS_SHEET_NAME + ' não encontrada' });
@@ -890,7 +891,7 @@ function getIntercorrenciasAtuais_(dias) {
                 foldIntercorrenciasRows_(state, sheet.getRange(start, 1, num, lastCol).getValues());
             }
             var built = finalizeIntercorrenciasAtuais_(state);
-            var cutoff = recencyCutoffCivil_(janela, intercorrenciasHoje_());
+            var cutoff = recencyCutoffCivil_(janela, intercorrenciasHoje_(), planilhaTz);
             result.data = filterByRecencyWindow_(built.data, cutoff);
             result.quality = built.quality;
         }

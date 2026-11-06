@@ -136,8 +136,10 @@ function renderHistory() {
 export async function initWhatsappSender() {
     try {
         await db.init();
-        const savedPeriod = localStorage.getItem(PERIOD_STORAGE_KEY);
-        if (['30', '60', '90'].includes(savedPeriod)) element('queuePeriodFilter').value = savedPeriod;
+        try {
+            const savedPeriod = localStorage.getItem(PERIOD_STORAGE_KEY);
+            if (['30', '60', '90'].includes(savedPeriod)) element('queuePeriodFilter').value = savedPeriod;
+        } catch (_) { /* preferência é opcional */ }
         activeCampaign = db.getActiveWhatsappCampaign();
         contactDirectory = db.getWhatsappContactDirectory();
         ready = true;

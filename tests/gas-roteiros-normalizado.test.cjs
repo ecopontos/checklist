@@ -110,7 +110,7 @@ assert.strictEqual(resp.clientes[0].uuid, null);
 const respDefault = JSON.parse(context.doGet({ parameter: {} }).value);
 assert.strictEqual(respDefault.contract, 'roteiros/v1');
 
-console.log('doGet(action=roteiros): envelope roteiros/v1, counts, apiVersion 15: OK');
+console.log('doGet(action=roteiros): envelope roteiros/v1, counts, apiVersion 16: OK');
 
 // --- Correções da revisão da v15 ---
 {
