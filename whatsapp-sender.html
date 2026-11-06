@@ -470,6 +470,11 @@
       <div class="queue-filters">
         <label>Buscar cliente ou intercorrência<input id="queueSearch" type="search" placeholder="Buscar na fila"></label>
         <label>Roteiro<select id="queueRouteFilter" data-change-action="filtrar-fila"><option value="">Todos os roteiros</option></select></label>
+        <label>Período<select id="queuePeriodFilter" data-change-action="atualizar-periodo">
+          <option value="30">Últimos 30 dias</option>
+          <option value="60">Últimos 60 dias</option>
+          <option value="90" selected>Últimos 90 dias</option>
+        </select></label>
       </div>
       <p id="queueSelection" class="queue-meta" aria-live="polite"></p>
       <div id="queueList"></div>

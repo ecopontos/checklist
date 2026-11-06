@@ -35,6 +35,7 @@ document.addEventListener('change', event => {
 
     switch (control.dataset.changeAction) {
         case 'filtrar-fila': window.applyWhatsappFilters(); break;
+        case 'atualizar-periodo': window.refreshWhatsappQueue(); break;
         case 'alternar-ocorrencia':
             window.toggleWhatsappOccurrence(control.dataset.occurrenceId, control.checked);
             break;

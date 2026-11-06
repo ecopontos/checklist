@@ -31,6 +31,7 @@ async function setup({ active = false, remote = { ok: true, data: [occurrence] }
     addEventListener() {}, querySelectorAll: () => [] };
   let failPersistence = false;
   let remoteCalls = 0;
+  let h_lastRemoteUrl;
   let importCalls = 0;
   let dbForDrive;
   const exported = [];
@@ -56,8 +57,9 @@ async function setup({ active = false, remote = { ok: true, data: [occurrence] }
         const reply = await reader();
         return { ok: true, json: async () => reply };
       }
-      assert.match(url, /\?action=intercorrenciasAtuais$/);
+      assert.match(url, /\?action=intercorrenciasAtuais(?:&dias=\d+)?$/);
       remoteCalls++;
+      h_lastRemoteUrl = url;
       const reply = await (typeof remote === 'function' ? remote() : remote);
       return { ok: true, json: async () => ({ apiVersion: 11, source: 'intercorrenciasAtuais', ...reply }) };
     }
@@ -85,7 +87,8 @@ async function setup({ active = false, remote = { ok: true, data: [occurrence] }
   elements.get('campaignMessage').value = 'Olá {nome}: {intercorrencia} em {data} ({residuo})';
   return { window, db, elements, opened, exported, storage, remoteCalls: () => remoteCalls,
     importCalls: () => importCalls, setDriveReader: value => { driveReader = value; },
-    setRemote: value => { remote = value; }, fail: value => { failPersistence = value; } };
+    setRemote: value => { remote = value; }, fail: value => { failPersistence = value; },
+    get lastRemoteUrl() { return h_lastRemoteUrl; } };
 }
 test('estrutura da fila, histórico e delegação externa', () => {
   for (const id of ['queuePendingCount', 'queueOpenedCount', 'queueConfirmedCount', 'queueError',
@@ -453,3 +456,14 @@ for (const invalid of [null, false, 0, '']) {
     assert.doesNotMatch(h.elements.get('queueList').innerHTML, /nao-publicar/);
   });
 }
+
+test('seletor de período repassa dias e persiste a escolha no dispositivo', async () => {
+  const storage = new Map();
+  const h = await setup({ storage });
+  await h.window.initWhatsappSender();
+  const lastUrl = () => h.lastRemoteUrl;
+  h.elements.get('queuePeriodFilter').value = '30';
+  await h.window.refreshWhatsappQueue();
+  assert.equal(storage.get('app3_whatsapp_periodo_dias'), '30');
+  assert.match(lastUrl(), /&dias=30$/);
+});

@@ -14,6 +14,11 @@ let displayedItemId = null;
 const selectedOccurrences = new Set();
 const statusLabels = { pending: 'Pendente', opened: 'Aguardando confirmação', confirmed: 'Confirmado', deferred: 'Adiado', blocked: 'Bloqueado' };
 const element = id => document.getElementById(id);
+const PERIOD_STORAGE_KEY = 'app3_whatsapp_periodo_dias';
+function currentPeriodDays() {
+    const value = Number(element('queuePeriodFilter').value);
+    return [30, 60, 90].includes(value) ? value : 90;
+}
 
 function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -121,6 +126,8 @@ function renderHistory() {
 export async function initWhatsappSender() {
     try {
         await db.init();
+        const savedPeriod = localStorage.getItem(PERIOD_STORAGE_KEY);
+        if (['30', '60', '90'].includes(savedPeriod)) element('queuePeriodFilter').value = savedPeriod;
         activeCampaign = db.getActiveWhatsappCampaign();
         contactDirectory = db.getWhatsappContactDirectory();
         ready = true;
@@ -139,11 +146,13 @@ export function refreshWhatsappQueue() {
     element('refreshQueueButton').disabled = true;
     refreshPromise = (async () => {
         try {
+            const dias = currentPeriodDays();
+            try { localStorage.setItem(PERIOD_STORAGE_KEY, String(dias)); } catch (_) { /* preferência é opcional */ }
             const imported = await checkAndImportRoteiros(db);
             if (imported.error || imported.warning || !imported.checked) {
                 throw new Error(imported.error || imported.warning || 'CSV do Drive não configurado');
             }
-            const result = await getIntercorrenciasAtuais();
+            const result = await getIntercorrenciasAtuais(dias);
             if (!result?.ok || !Array.isArray(result.data)) throw new Error(result?.error || 'Resposta inválida da fonte');
             contactDirectory = db.getWhatsappContactDirectory();
             occurrences = result.data;

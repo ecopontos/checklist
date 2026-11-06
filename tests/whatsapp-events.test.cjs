@@ -27,6 +27,7 @@ dispatch('click', { action: 'adiar-envio' });
 dispatch('click', { action: 'concluir-campanha' });
 dispatch('click', { action: 'exportar-campanha', campaignId: 'campaign-1' });
 dispatch('change', { changeAction: 'filtrar-fila' });
+dispatch('change', { changeAction: 'atualizar-periodo' });
 dispatch('input', {}, { id: 'queueSearch' });
 dispatch('click', { action: 'abrir-whatsapp' }, { disabled: true });
 assert.deepEqual(calls, [
@@ -34,6 +35,7 @@ assert.deepEqual(calls, [
   ['refreshWhatsappQueue'], ['toggleWhatsappOccurrence', 'occ-1', true],
   ['startWhatsappCampaign'], ['selectWhatsappPhone', 2], ['openCurrentWhatsapp'],
   ['confirmCurrentWhatsapp'], ['deferCurrentWhatsapp'], ['completeWhatsappCampaign'],
-  ['exportWhatsappCampaign', 'campaign-1'], ['applyWhatsappFilters'], ['applyWhatsappFilters']
+  ['exportWhatsappCampaign', 'campaign-1'], ['applyWhatsappFilters'],
+  ['refreshWhatsappQueue'], ['applyWhatsappFilters']
 ]);
 console.log('whatsapp-events: delegação da fila sem handlers inline: OK');
