@@ -241,10 +241,11 @@ export async function getIntercorrenciasRoteiro(roteiroNome) {
     );
 }
 
-export async function getIntercorrenciasAtuais() {
+export async function getIntercorrenciasAtuais(dias) {
     const url = getGasUrl();
     if (!url) return { ok: false, error: 'URL do GAS não configurada' };
-    const result = await gasGetJsonWithRetry_(`${url}?action=intercorrenciasAtuais`);
+    const diasParam = [30, 60, 90].includes(Number(dias)) ? `&dias=${Number(dias)}` : '';
+    const result = await gasGetJsonWithRetry_(`${url}?action=intercorrenciasAtuais${diasParam}`);
     if (!result || typeof result !== 'object') {
         return { ok: false, error: 'Resposta vazia do GAS' };
     }
