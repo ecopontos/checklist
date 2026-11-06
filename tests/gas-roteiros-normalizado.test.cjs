@@ -97,7 +97,7 @@ context.ContentService = {
 const resp = JSON.parse(context.doGet({ parameter: { action: 'roteiros' } }).value);
 assert.strictEqual(resp.ok, true);
 assert.strictEqual(resp.contract, 'roteiros/v1');
-assert.strictEqual(resp.apiVersion, 15, 'apiVersion deve ter subido para 15');
+assert.strictEqual(resp.apiVersion, 16, 'apiVersion deve ter subido para 16');
 assert.strictEqual(resp.modifiedTime, '2026-09-15T12:00:00.000Z');
 assert.strictEqual(resp.counts.clientes, 3);
 assert.strictEqual(resp.counts.roteiros, 2);

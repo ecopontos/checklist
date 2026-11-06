@@ -39,8 +39,9 @@ var CLIENT_EDITABLE_FIELDS = ['Cliente', 'Número', 'Complemento', 'CEP', 'Telef
 // tornar o deploy verificável via ?action=status.
 // v14: cadastro compartilhado (action=cadastroSync) e consultas por roteiro que
 // entendem nomes antigos de roteiros renomeados no app.
-var GAS_API_VERSION = 15;
-var INTERCORRENCIAS_ATUAIS_CACHE_KEY = 'intercorrenciasAtuais:v1';
+var GAS_API_VERSION = 16;
+var INTERCORRENCIAS_RECENCIA_DIAS = [30, 60, 90];
+var INTERCORRENCIAS_RECENCIA_PADRAO = 90;
 // Consultas de última coleta varrem apenas as linhas mais recentes da aba
 // Coletas (append-only, cronológica). Varrer a aba inteira chega a ~37s e pode
 // estourar o limite do GAS. Se o roteiro não aparecer na janela, há fallback
@@ -96,7 +97,7 @@ function doGet(e) {
     }
 
     if (params.action === 'intercorrenciasAtuais') {
-        return getIntercorrenciasAtuais_();
+        return getIntercorrenciasAtuais_(params.dias);
     }
 
     if (params.action === 'agendamentos') {
@@ -817,18 +818,48 @@ function buildIntercorrenciasAtuais_(values) {
     return finalizeIntercorrenciasAtuais_(state);
 }
 
-function getIntercorrenciasAtuais_() {
+function normalizeRecencyDays_(value) {
+    var n = parseInt(value, 10);
+    return INTERCORRENCIAS_RECENCIA_DIAS.indexOf(n) >= 0 ? n : INTERCORRENCIAS_RECENCIA_PADRAO;
+}
+
+function intercorrenciasCacheKey_(dias) {
+    return 'intercorrenciasAtuais:v2:dias=' + dias;
+}
+
+// Indireção testável do relógio; testes substituem para resultados determinísticos.
+function intercorrenciasHoje_() {
+    return new Date();
+}
+
+function recencyCutoffCivil_(dias, today) {
+    var base = Object.prototype.toString.call(today) === '[object Date]' ? today : intercorrenciasHoje_();
+    var cutoff = new Date(base.getTime());
+    cutoff.setDate(cutoff.getDate() - dias);
+    return Utilities.formatDate(cutoff, 'GMT', 'yyyy-MM-dd');
+}
+
+function filterByRecencyWindow_(data, cutoffCivil) {
+    if (!cutoffCivil) return data;
+    return data.filter(function (item) {
+        return String(item.data || '') >= cutoffCivil;
+    });
+}
+
+function getIntercorrenciasAtuais_(dias) {
     var config = getConfig_();
     if (!config.spreadsheetId) {
         return jsonResponse_({ ok: false, error: 'SPREADSHEET_ID não configurado' });
     }
+    var janela = normalizeRecencyDays_(dias);
+    var cacheKey = intercorrenciasCacheKey_(janela);
 
     try {
         var cache = null;
         try { cache = CacheService.getScriptCache(); } catch (_) { /* cache é opcional */ }
         var cached = null;
         if (cache) {
-            try { cached = cache.get(INTERCORRENCIAS_ATUAIS_CACHE_KEY); } catch (_) { /* cache é opcional */ }
+            try { cached = cache.get(cacheKey); } catch (_) { /* cache é opcional */ }
         }
         if (cached !== null) {
             try { return jsonResponse_(JSON.parse(cached)); } catch (_) { /* cache inválido equivale a miss */ }
@@ -859,11 +890,12 @@ function getIntercorrenciasAtuais_() {
                 foldIntercorrenciasRows_(state, sheet.getRange(start, 1, num, lastCol).getValues());
             }
             var built = finalizeIntercorrenciasAtuais_(state);
-            result.data = built.data;
+            var cutoff = recencyCutoffCivil_(janela, intercorrenciasHoje_());
+            result.data = filterByRecencyWindow_(built.data, cutoff);
             result.quality = built.quality;
         }
         if (cache) {
-            try { cache.put(INTERCORRENCIAS_ATUAIS_CACHE_KEY, JSON.stringify(result), 300); } catch (_) { /* cache é opcional */ }
+            try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (_) { /* cache é opcional */ }
         }
         return jsonResponse_(result);
     } catch (err) {
@@ -2046,7 +2078,10 @@ function saveColetas_(coletas) {
         }
 
         try {
-            CacheService.getScriptCache().remove(INTERCORRENCIAS_ATUAIS_CACHE_KEY);
+            var cacheColetas = CacheService.getScriptCache();
+            INTERCORRENCIAS_RECENCIA_DIAS.forEach(function (dias) {
+                cacheColetas.remove(intercorrenciasCacheKey_(dias));
+            });
         } catch (_) { /* cache é opcional */ }
 
         return jsonResponse_({ ok: true, count: novos.length, duplicates: duplicados });

@@ -162,6 +162,6 @@ test('consultas de coleta por roteiro entendem o nome antigo e o novo', () => {
 test('status informa a versao 15 e a capacidade de cadastro', () => {
   const h = harness();
   const status = JSON.parse(h.context.doGet({ parameter: { action: 'status' } }).value);
-  assert.equal(status.apiVersion, 15);
+  assert.equal(status.apiVersion, 16);
   assert.equal(status.cadastro, true);
 });
