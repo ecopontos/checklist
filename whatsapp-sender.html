@@ -406,6 +406,7 @@
   .status-confirmed { border-left: 4px solid var(--green); }
   .status-deferred { border-left: 4px solid #f59e0b; }
   .status-blocked { border-left: 4px solid #f87171; }
+  .status-dismissed { border-left: 4px solid #9ca3af; }
   .queue-filters label { flex: 1; min-width: 180px; }
   .queue-filters input, .queue-filters select { display: block; width: 100%; padding: 10px; margin-top: 6px; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; }
   .queue-panel h2 { margin-bottom: 12px; font-size: 18px; }
@@ -470,6 +471,12 @@
       <div class="queue-filters">
         <label>Buscar cliente ou intercorrência<input id="queueSearch" type="search" placeholder="Buscar na fila"></label>
         <label>Roteiro<select id="queueRouteFilter" data-change-action="filtrar-fila"><option value="">Todos os roteiros</option></select></label>
+        <label>Período<select id="queuePeriodFilter" data-change-action="atualizar-periodo">
+          <option value="30">Últimos 30 dias</option>
+          <option value="60">Últimos 60 dias</option>
+          <option value="90" selected>Últimos 90 dias</option>
+        </select></label>
+        <label class="queue-show-dismissed"><input id="showDismissedToggle" type="checkbox" data-change-action="alternar-resolvidas"> Mostrar resolvidas</label>
       </div>
       <p id="queueSelection" class="queue-meta" aria-live="polite"></p>
       <div id="queueList"></div>

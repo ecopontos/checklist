@@ -123,6 +123,7 @@ assert.strictEqual(
 // Endpoint: com CHUNK grande cabe em um bloco; força blocos pequenos para
 // exercitar o laço de leitura real do doGet e comparar contra a função pura.
 context.INTERCORRENCIAS_CHUNK_ROWS = 3;
+context.intercorrenciasHoje_ = () => new Date('2026-09-10T12:00:00Z');
 const sheet = new SheetMock([header, ...dataRows]);
 sheets.set('Coletas', sheet);
 const response = JSON.parse(context.doGet({ parameter: { action: 'intercorrenciasAtuais' } }).value);

@@ -31,6 +31,7 @@ async function setup({ active = false, remote = { ok: true, data: [occurrence] }
     addEventListener() {}, querySelectorAll: () => [] };
   let failPersistence = false;
   let remoteCalls = 0;
+  let h_lastRemoteUrl;
   let importCalls = 0;
   let dbForDrive;
   const exported = [];
@@ -56,8 +57,9 @@ async function setup({ active = false, remote = { ok: true, data: [occurrence] }
         const reply = await reader();
         return { ok: true, json: async () => reply };
       }
-      assert.match(url, /\?action=intercorrenciasAtuais$/);
+      assert.match(url, /\?action=intercorrenciasAtuais(?:&dias=\d+)?$/);
       remoteCalls++;
+      h_lastRemoteUrl = url;
       const reply = await (typeof remote === 'function' ? remote() : remote);
       return { ok: true, json: async () => ({ apiVersion: 11, source: 'intercorrenciasAtuais', ...reply }) };
     }
@@ -85,7 +87,8 @@ async function setup({ active = false, remote = { ok: true, data: [occurrence] }
   elements.get('campaignMessage').value = 'Olá {nome}: {intercorrencia} em {data} ({residuo})';
   return { window, db, elements, opened, exported, storage, remoteCalls: () => remoteCalls,
     importCalls: () => importCalls, setDriveReader: value => { driveReader = value; },
-    setRemote: value => { remote = value; }, fail: value => { failPersistence = value; } };
+    setRemote: value => { remote = value; }, fail: value => { failPersistence = value; },
+    get lastRemoteUrl() { return h_lastRemoteUrl; } };
 }
 test('estrutura da fila, histórico e delegação externa', () => {
   for (const id of ['queuePendingCount', 'queueOpenedCount', 'queueConfirmedCount', 'queueError',
@@ -453,3 +456,46 @@ for (const invalid of [null, false, 0, '']) {
     assert.doesNotMatch(h.elements.get('queueList').innerHTML, /nao-publicar/);
   });
 }
+
+test('seletor de período repassa dias e persiste a escolha no dispositivo', async () => {
+  const storage = new Map();
+  const h = await setup({ storage });
+  await h.window.initWhatsappSender();
+  const lastUrl = () => h.lastRemoteUrl;
+  h.elements.get('queuePeriodFilter').value = '30';
+  await h.window.refreshWhatsappQueue();
+  assert.equal(storage.get('app3_whatsapp_periodo_dias'), '30');
+  assert.match(lastUrl(), /&dias=30$/);
+});
+
+test('resolver esconde a ocorrência, toggle revela e desfazer devolve à fila', async () => {
+  const h = await setup({ remote: { ok: true, data: [occurrence, { ...occurrence, occurrenceId: 'occ-2', idRota: '42' }] } });
+  await h.window.initWhatsappSender();
+  assert.equal(h.elements.get('queuePendingCount').textContent, '2');
+
+  await h.window.resolveWhatsappOccurrence('occ-1');
+  assert.deepEqual(Array.from(h.db.getDismissedWhatsappOccurrenceIds()), ['occ-1']);
+  assert.equal(h.elements.get('queuePendingCount').textContent, '1');
+  assert.ok(!h.elements.get('queueList').innerHTML.includes('data-occurrence-id="occ-1"'));
+
+  h.elements.get('showDismissedToggle').checked = true;
+  h.window.applyWhatsappFilters();
+  assert.match(h.elements.get('queueList').innerHTML, /data-occurrence-id="occ-1"/);
+  assert.match(h.elements.get('queueList').innerHTML, /Resolvido/);
+  assert.match(h.elements.get('queueList').innerHTML, /data-action="desfazer-resolucao"/);
+
+  await h.window.restoreWhatsappOccurrence('occ-1');
+  assert.deepEqual(Array.from(h.db.getDismissedWhatsappOccurrenceIds()), []);
+  assert.equal(h.elements.get('queuePendingCount').textContent, '2');
+});
+
+test('nova occurrenceId do mesmo ponto reaparece mesmo após resolver', async () => {
+  const h = await setup({ remote: { ok: true, data: [occurrence] } });
+  await h.window.initWhatsappSender();
+  await h.window.resolveWhatsappOccurrence('occ-1');
+  assert.equal(h.elements.get('queuePendingCount').textContent, '0');
+  h.setRemote({ ok: true, data: [{ ...occurrence, occurrenceId: 'occ-1-novo', data: '2026-11-01' }] });
+  await h.window.refreshWhatsappQueue();
+  assert.equal(h.elements.get('queuePendingCount').textContent, '1');
+  assert.match(h.elements.get('queueList').innerHTML, /data-occurrence-id="occ-1-novo"/);
+});

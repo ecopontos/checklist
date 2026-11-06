@@ -149,6 +149,36 @@ test('interpola valores literalmente sem reinterpretar cifrões ou tags embutida
   );
 });
 
+test('marca itens resolvidos sem removê-los e nunca afeta campanha ativa', async () => {
+  const { buildWhatsappQueue } = await loadCampaignModule();
+  const occurrences = [
+    { occurrenceId: 'occ-a', idRota: '1', data: '2026-09-18', cliente: 'A', roteiro: 'R1', intercorrencia: 'X' },
+    { occurrenceId: 'occ-b', idRota: '2', data: '2026-09-17', cliente: 'B', roteiro: 'R2', intercorrencia: 'Y' }
+  ];
+  const contacts = [{ idRota: '1', phones: frozenPhones }, { idRota: '2', phones: frozenPhones }];
+  const activeItems = [{ itemId: 'item-a', occurrenceId: 'occ-a', status: 'opened', phones: frozenPhones }];
+
+  const queue = buildWhatsappQueue({
+    occurrences, contacts, confirmedOccurrenceIds: [],
+    dismissedOccurrenceIds: ['occ-a', 'occ-b'], activeItems
+  });
+
+  const active = queue.find(item => item.itemId === 'item-a');
+  assert.equal(active.dismissed, undefined);
+  const fresh = queue.find(item => item.occurrenceId === 'occ-b');
+  assert.equal(fresh.dismissed, true);
+  assert.equal(fresh.status, 'pending');
+});
+
+test('itens não resolvidos recebem dismissed falso', async () => {
+  const { buildWhatsappQueue } = await loadCampaignModule();
+  const [item] = buildWhatsappQueue({
+    occurrences: [occurrenceA], contacts: [{ idRota: '1', phones: frozenPhones }],
+    confirmedOccurrenceIds: [], dismissedOccurrenceIds: [], activeItems: []
+  });
+  assert.equal(item.dismissed, false);
+});
+
 test('resume os itens em seis contadores exclusivos', async () => {
   const { summarizeWhatsappItems } = await loadCampaignModule();
   const summary = summarizeWhatsappItems([

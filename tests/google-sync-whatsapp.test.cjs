@@ -126,3 +126,18 @@ for (const invalid of [null, false, 0, '']) {
     assert.match(result.error, /ocorr.*incompleta/i);
   });
 }
+
+test('anexa o parâmetro dias quando válido e omite quando ausente ou inválido', async () => {
+  const reply = () => ({ ok: true, apiVersion: 11, source: 'intercorrenciasAtuais',
+    generatedAt: '2026-11-05T12:00:00.000Z', data: [occurrence],
+    quality: { invalidDates: 0, missingRouteIds: 0, legacyIds: 0, excludedRecords: 0 } });
+  const { sync, requests } = await loadSyncModule([reply(), reply(), reply()]);
+
+  await sync.getIntercorrenciasAtuais(30);
+  await sync.getIntercorrenciasAtuais(999);
+  await sync.getIntercorrenciasAtuais();
+
+  assert.equal(requests[0], 'https://gas.example/exec?action=intercorrenciasAtuais&dias=30');
+  assert.equal(requests[1], 'https://gas.example/exec?action=intercorrenciasAtuais');
+  assert.equal(requests[2], 'https://gas.example/exec?action=intercorrenciasAtuais');
+});

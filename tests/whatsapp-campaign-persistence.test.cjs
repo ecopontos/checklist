@@ -259,3 +259,27 @@ test('abertura exige correspondência exata com slot e digits do snapshot', asyn
   assert.equal(opened.phoneSlot, 2);
   assert.equal(opened.phone, '554833334444');
 });
+
+test('resolve, restaura e lista ocorrências de forma idempotente e durável', async () => {
+  const h = await setup();
+  assert.deepEqual(Array.from(h.db.getDismissedWhatsappOccurrenceIds()), []);
+
+  h.db.dismissWhatsappOccurrence('occ-1', '2026-11-05T12:00:00.000Z');
+  h.db.dismissWhatsappOccurrence('occ-1', '2026-11-05T13:00:00.000Z'); // idempotente
+  h.db.dismissWhatsappOccurrence('occ-2', '2026-11-05T12:30:00.000Z');
+  assert.deepEqual(Array.from(h.db.getDismissedWhatsappOccurrenceIds()), ['occ-1', 'occ-2']);
+
+  // Persistência sobrevive ao reload do armazenamento
+  const reloaded = await setup(h.storage.get('app3_db'));
+  assert.deepEqual(Array.from(reloaded.db.getDismissedWhatsappOccurrenceIds()), ['occ-1', 'occ-2']);
+
+  reloaded.db.restoreWhatsappOccurrence('occ-1');
+  reloaded.db.restoreWhatsappOccurrence('inexistente'); // idempotente
+  assert.deepEqual(Array.from(reloaded.db.getDismissedWhatsappOccurrenceIds()), ['occ-2']);
+});
+
+test('resolver valida identificador e timestamp', async () => {
+  const { db } = await setup();
+  assert.throws(() => db.dismissWhatsappOccurrence('', '2026-11-05T12:00:00.000Z'), /ocorr|id/i);
+  assert.throws(() => db.dismissWhatsappOccurrence('occ-1', 'nao-e-data'), /data|inválid/i);
+});

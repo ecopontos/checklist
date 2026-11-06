@@ -309,6 +309,11 @@ class AppDatabase {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_one_active
                 ON whatsapp_campaigns(status) WHERE status = 'active';
 
+            CREATE TABLE IF NOT EXISTS whatsapp_dismissed_occurrences (
+                occurrence_id TEXT PRIMARY KEY,
+                dismissed_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS roteiro_change_outbox (
                 change_id TEXT PRIMARY KEY,
                 id_rota TEXT NOT NULL,
@@ -1597,6 +1602,32 @@ class AppDatabase {
         return this._queryRows(`
             SELECT DISTINCT occurrence_id FROM whatsapp_campaign_items
             WHERE status = 'confirmed' ORDER BY occurrence_id
+        `).map(row => row.occurrence_id);
+    }
+
+    dismissWhatsappOccurrence(occurrenceId, at) {
+        const id = this._requireWhatsappId(occurrenceId, 'ID da ocorrência');
+        const dismissedAt = this._requireWhatsappTimestamp(at, 'Data de resolução');
+        return this._persistAtomic(() => {
+            this.db.run(`
+                INSERT OR IGNORE INTO whatsapp_dismissed_occurrences (occurrence_id, dismissed_at)
+                VALUES (?, ?)
+            `, [id, dismissedAt]);
+            return id;
+        });
+    }
+
+    restoreWhatsappOccurrence(occurrenceId) {
+        const id = this._requireWhatsappId(occurrenceId, 'ID da ocorrência');
+        return this._persistAtomic(() => {
+            this.db.run('DELETE FROM whatsapp_dismissed_occurrences WHERE occurrence_id = ?', [id]);
+            return id;
+        });
+    }
+
+    getDismissedWhatsappOccurrenceIds() {
+        return this._queryRows(`
+            SELECT occurrence_id FROM whatsapp_dismissed_occurrences ORDER BY occurrence_id
         `).map(row => row.occurrence_id);
     }
 

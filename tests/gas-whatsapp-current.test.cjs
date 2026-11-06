@@ -117,7 +117,7 @@ assert.strictEqual(
 sheets.set('Coletas', new SheetMock(values));
 const response = JSON.parse(context.doGet({ parameter: { action: 'intercorrenciasAtuais' } }).value);
 assert.strictEqual(response.ok, true);
-assert.strictEqual(response.apiVersion, 15);
+assert.strictEqual(response.apiVersion, 16);
 assert.strictEqual(response.source, 'intercorrenciasAtuais');
 assert.ok(Array.isArray(response.data));
 assert.strictEqual(cachePuts.at(-1).ttl, 300);
@@ -141,7 +141,7 @@ context.CacheService = { getScriptCache: () => ({
 assert.strictEqual(JSON.parse(context.getIntercorrenciasAtuais_().value).ok, true);
 context.CacheService = cacheService;
 
-cache.set('intercorrenciasAtuais:v1', '{invalid-json');
+cache.set('intercorrenciasAtuais:v2:dias=90', '{invalid-json');
 assert.strictEqual(JSON.parse(context.getIntercorrenciasAtuais_().value).ok, true);
 cache.clear();
 
@@ -157,6 +157,6 @@ context.saveColetas_([{
   id_rota: '5', data: '2026-09-18', cliente: 'E', roteiro: 'R5',
   quantidade: 1, intercorrencia: 'Teste', sync_id: 'sync-5'
 }]);
-assert.ok(removedCacheKeys.includes('intercorrenciasAtuais:v1'));
+assert.ok(removedCacheKeys.includes('intercorrenciasAtuais:v2:dias=90'));
 
 console.log('intercorrenciasAtuais: consolida ocorrencias e invalida cache: OK');
