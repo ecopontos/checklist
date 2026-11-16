@@ -40,6 +40,7 @@ var CLIENT_EDITABLE_FIELDS = ['Cliente', 'Número', 'Complemento', 'CEP', 'Telef
 // v14: cadastro compartilhado (action=cadastroSync) e consultas por roteiro que
 // entendem nomes antigos de roteiros renomeados no app.
 var GAS_API_VERSION = 16;
+var INSTANCIAS_SHEET = 'Instancias';
 var INTERCORRENCIAS_RECENCIA_DIAS = [30, 60, 90];
 var INTERCORRENCIAS_RECENCIA_PADRAO = 90;
 // Consultas de última coleta varrem apenas as linhas mais recentes da aba
@@ -67,8 +68,62 @@ function jsonResponse_(obj) {
         .setMimeType(ContentService.MimeType.JSON);
 }
 
+function recordHeartbeat_(source, meta) {
+    try {
+        if (!meta || !meta.iid) { return; }
+        var config = getConfig_();
+        if (!config.spreadsheetId) { return; }
+        var lock = LockService.getScriptLock();
+        try { lock.waitLock(2000); } catch (e) { return; }
+        try {
+            var ss = SpreadsheetApp.openById(config.spreadsheetId);
+            var sh = ss.getSheetByName(INSTANCIAS_SHEET);
+            if (!sh) {
+                sh = ss.insertSheet(INSTANCIAS_SHEET);
+                sh.appendRow(['instanceId', 'apelido', 'appVersion', 'gasUrlConfig',
+                    'gasApiVersion', 'primeiroAcesso', 'ultimoAcesso', 'ultimaAcao',
+                    'totalChamadas', 'userAgent']);
+            }
+            var now = new Date();
+            var data = sh.getDataRange().getValues();
+            var rowIndex = -1;
+            for (var i = 1; i < data.length; i++) {
+                if (String(data[i][0]) === String(meta.iid)) { rowIndex = i + 1; break; }
+            }
+            if (rowIndex === -1) {
+                sh.appendRow([meta.iid, meta.nick || '', meta.av || '', meta.gu || '',
+                    GAS_API_VERSION, now, now, source || '', 1, meta.ua || '']);
+            } else {
+                var prev = data[rowIndex - 1];
+                var total = (Number(prev[8]) || 0) + 1;
+                var primeiro = prev[5] || now;
+                sh.getRange(rowIndex, 1, 1, 10).setValues([[
+                    meta.iid,
+                    meta.nick || prev[1] || '',
+                    meta.av || '',
+                    meta.gu || '',
+                    GAS_API_VERSION,
+                    primeiro,
+                    now,
+                    source || '',
+                    total,
+                    meta.ua || prev[9] || ''
+                ]]);
+            }
+        } finally {
+            lock.releaseLock();
+        }
+    } catch (err) {
+        try { Logger.log('recordHeartbeat falhou: ' + err); } catch (_) { /* ignora */ }
+    }
+}
+
 function doGet(e) {
     var params = (e && e.parameter) || {};
+
+    recordHeartbeat_(params.action || 'get', {
+        iid: params.iid, nick: params.nick, av: params.av, gu: params.gu, ua: params.ua
+    });
 
     if (params.action === 'status') {
         return jsonResponse_({
@@ -907,6 +962,8 @@ function getIntercorrenciasAtuais_(dias) {
 function doPost(e) {
     try {
         var body = JSON.parse(e.postData.contents);
+
+        recordHeartbeat_(body.action || 'post', body.inst || {});
 
         if (body.action === 'routeChanges') {
             return saveRouteChanges_(body.changes || [], body.token || '');
