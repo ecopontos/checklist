@@ -89,3 +89,13 @@ test('doGet registra heartbeat a partir de e.parameter', () => {
   g.doGet({ parameter: { action: 'status', iid: 'Z9', nick: 'PC', av: '1.7.1', gu: 'u', ua: 'UA' } });
   assert.equal(tables.get('Instancias').rows[1][0], 'Z9');
 });
+
+test('recordHeartbeat_ escapa valores do cliente contra injecao de formula', () => {
+  const { context: g, tables } = backend();
+  g.recordHeartbeat_('=cmd', { iid: '=IMPORTXML(1)', nick: '+evil', av: '1.0', gu: 'u', ua: '@x' });
+  const row = tables.get('Instancias').rows[1];
+  assert.equal(row[0].charAt(0), "'");
+  assert.equal(row[1].charAt(0), "'");
+  assert.equal(row[7].charAt(0), "'");
+  assert.equal(row[9].charAt(0), "'");
+});

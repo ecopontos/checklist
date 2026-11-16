@@ -91,23 +91,25 @@ function recordHeartbeat_(source, meta) {
                 if (String(data[i][0]) === String(meta.iid)) { rowIndex = i + 1; break; }
             }
             if (rowIndex === -1) {
-                sh.appendRow([meta.iid, meta.nick || '', meta.av || '', meta.gu || '',
-                    GAS_API_VERSION, now, now, source || '', 1, meta.ua || '']);
+                sh.appendRow([escapeSheetTextValue_(meta.iid), escapeSheetTextValue_(meta.nick || ''),
+                    escapeSheetTextValue_(meta.av || ''), escapeSheetTextValue_(meta.gu || ''),
+                    GAS_API_VERSION, now, now, escapeSheetTextValue_(source || ''), 1,
+                    escapeSheetTextValue_(meta.ua || '')]);
             } else {
                 var prev = data[rowIndex - 1];
                 var total = (Number(prev[8]) || 0) + 1;
                 var primeiro = prev[5] || now;
                 sh.getRange(rowIndex, 1, 1, 10).setValues([[
-                    meta.iid,
-                    meta.nick || prev[1] || '',
-                    meta.av || '',
-                    meta.gu || '',
+                    escapeSheetTextValue_(meta.iid),
+                    escapeSheetTextValue_(meta.nick || prev[1] || ''),
+                    escapeSheetTextValue_(meta.av || ''),
+                    escapeSheetTextValue_(meta.gu || ''),
                     GAS_API_VERSION,
                     primeiro,
                     now,
-                    source || '',
+                    escapeSheetTextValue_(source || ''),
                     total,
-                    meta.ua || prev[9] || ''
+                    escapeSheetTextValue_(meta.ua || prev[9] || '')
                 ]]);
             }
         } finally {
