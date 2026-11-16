@@ -44,3 +44,16 @@ test('GET de status carrega iid na query', async () => {
   assert.ok(capture[0].url.includes('iid='));
   assert.ok(capture[0].url.includes('av=9.9.9'));
 });
+
+test('POST de syncAgendamentos carrega inst no body', async () => {
+  const capture = [];
+  const context = makeContext(capture);
+  const sync = await loadSync(context);
+  await sync.namespace.syncAgendamentos([{ id: 'a1' }]);
+  const post = capture.find(c => c.options && c.options.method === 'POST');
+  assert.ok(post, 'esperado um POST');
+  const body = JSON.parse(post.options.body);
+  assert.equal(body.action, 'syncAgendamentos');
+  assert.ok(body.inst && body.inst.iid, 'esperado inst.iid no body');
+  assert.equal(body.inst.av, '9.9.9');
+});

@@ -59,7 +59,7 @@ export async function pushColetas(coletas) {
             method: 'POST',
             signal: controller.signal,
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ coletas })
+            body: JSON.stringify(withInstanceMeta({ coletas }, url))
         });
         if (!res.ok) {
             return { ok: false, error: `Falha HTTP ${res.status}` };
@@ -298,7 +298,7 @@ export async function syncAgendamentos(ops) {
         const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'syncAgendamentos', ops })
+            body: JSON.stringify(withInstanceMeta({ action: 'syncAgendamentos', ops }, url))
         });
         if (!res.ok) {
             return { ok: false, error: `Falha HTTP ${res.status}` };
@@ -317,12 +317,12 @@ export async function uploadAgendamentoFotos(id, fotos, remover = []) {
         const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
+            body: JSON.stringify(withInstanceMeta({
                 action: 'uploadAgendamentoFotos',
                 id,
                 fotos: fotos || [],
                 remover: remover || []
-            })
+            }, url))
         });
         if (!res.ok) {
             return { ok: false, error: `Falha HTTP ${res.status}` };
@@ -349,7 +349,7 @@ export async function sendChecklistToDrive(filename, pdfBase64) {
         const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ checklist: { filename, pdfBase64 } })
+            body: JSON.stringify(withInstanceMeta({ checklist: { filename, pdfBase64 } }, url))
         });
         if (!res.ok) {
             return { ok: false, error: `Falha HTTP ${res.status}` };
@@ -374,11 +374,11 @@ export async function pushRoteiroChanges(changes) {
         const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
+            body: JSON.stringify(withInstanceMeta({
                 action: 'routeChanges',
                 token,
                 changes
-            })
+            }, url))
         });
         if (!res.ok) {
             return { ok: false, error: `Falha HTTP ${res.status}` };
@@ -456,7 +456,7 @@ export async function pushClienteChanges(changes) {
         const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'clientChanges', token, changes })
+            body: JSON.stringify(withInstanceMeta({ action: 'clientChanges', token, changes }, url))
         });
         if (!res.ok) {
             return { ok: false, error: `Falha HTTP ${res.status}` };
@@ -541,7 +541,7 @@ async function postCadastro_(url, body) {
             method: 'POST',
             signal: controller.signal,
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify(body)
+            body: JSON.stringify(withInstanceMeta(body, url))
         });
         if (!res.ok) return { ok: false, error: `Falha HTTP ${res.status}` };
         return await res.json();
