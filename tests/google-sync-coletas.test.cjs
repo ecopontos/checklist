@@ -21,8 +21,10 @@ test('pendencias sem cadastro sao visiveis e reenvio mantem ID legado apos falha
   });
   const dbMod = new vm.SourceTextModule(fs.readFileSync('database.js', 'utf8'), { context });
   await dbMod.link(() => {}); await dbMod.evaluate();
+  const identityMod = new vm.SourceTextModule(fs.readFileSync('instance-identity.js', 'utf8'), { context, identifier: 'instance-identity.js' });
+  await identityMod.link(() => {}); await identityMod.evaluate();
   const syncMod = new vm.SourceTextModule(fs.readFileSync('google-sync.js', 'utf8'), { context });
-  await syncMod.link(() => dbMod); await syncMod.evaluate();
+  await syncMod.link((specifier) => specifier.includes('instance-identity') ? identityMod : dbMod); await syncMod.evaluate();
   const db = dbMod.namespace.default;
   await db.init();
   db.db.run("INSERT INTO coletas (id_rota, data, quantidade, intercorrencia) VALUES ('99', '2026-09-17', 2, '')");

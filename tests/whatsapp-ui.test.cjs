@@ -47,7 +47,7 @@ async function setup({ active = false, remote = { ok: true, data: [occurrence] }
     XLSX: { utils: { json_to_sheet: rows => rows, book_new: () => ({}),
       book_append_sheet: (_, rows) => exported.push(...rows) }, writeFile() {} },
     fetch: async url => {
-      if (/\?action=roteirosCsv$/.test(url)) {
+      if (/\?action=roteirosCsv(&|$)/.test(url)) {
         importCalls++;
         const reader = driveReader || (() => {
           const client = dbForDrive.getClienteByIdRota('42');
@@ -57,7 +57,7 @@ async function setup({ active = false, remote = { ok: true, data: [occurrence] }
         const reply = await reader();
         return { ok: true, json: async () => reply };
       }
-      assert.match(url, /\?action=intercorrenciasAtuais(?:&dias=\d+)?$/);
+      assert.match(url, /\?action=intercorrenciasAtuais(?:&dias=\d+)?(&|$)/);
       remoteCalls++;
       h_lastRemoteUrl = url;
       const reply = await (typeof remote === 'function' ? remote() : remote);
@@ -79,6 +79,7 @@ async function setup({ active = false, remote = { ok: true, data: [occurrence] }
     Telefone1: phones[0].digits, Telefone2: phones[1].digits });
   if (contactDirectory) db.getWhatsappContactDirectory = () => contactDirectory;
   if (active) db.createWhatsappCampaign(campaign());
+  vm.runInContext(fs.readFileSync('instance-identity.js', 'utf8').replace(/^export /gm, ''), context);
   vm.runInContext(fs.readFileSync('google-sync.js', 'utf8')
     .replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, ''), context);
   vm.runInContext(fs.readFileSync('whatsapp-campaign.js', 'utf8').replace(/export /g, ''), context);
@@ -465,7 +466,7 @@ test('seletor de período repassa dias e persiste a escolha no dispositivo', asy
   h.elements.get('queuePeriodFilter').value = '30';
   await h.window.refreshWhatsappQueue();
   assert.equal(storage.get('app3_whatsapp_periodo_dias'), '30');
-  assert.match(lastUrl(), /&dias=30$/);
+  assert.match(lastUrl(), /&dias=30(&|$)/);
 });
 
 test('resolver esconde a ocorrência, toggle revela e desfazer devolve à fila', async () => {

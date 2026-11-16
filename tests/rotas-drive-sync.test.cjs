@@ -42,6 +42,7 @@ async function harness({ setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeou
     return mod.namespace;
   }
   const database = await load('database.js');
+  await load('instance-identity.js');
   const sync = await load('google-sync.js');
   await database.default.init();
   return {
@@ -64,7 +65,7 @@ test('importa o CSV do Drive mesmo com marcador anterior do Sheets', async () =>
     modifiedTime: '2026-09-25T10:00:00.000Z' });
 
   const result = await h.sync.checkAndImportRoteiros(h.db);
-  assert.equal(h.requests[0], 'https://gas.example/exec?action=roteirosCsv');
+  assert.ok(h.requests[0].startsWith('https://gas.example/exec?action=roteirosCsv&iid='));
   assert.equal(result.updated, true);
   assert.equal(result.clientes, 2);
   assert.equal(h.db.getClienteByIdRota('3').logradouro, 'Rodovia Admar Gonzaga');

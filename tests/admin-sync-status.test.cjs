@@ -48,11 +48,14 @@ function loadAdmin(overrides = {}) {
     syncPendingRoteiroChanges: async () => ({ ok: true, count: 0 }),
     syncCadastro: async () => ({ ok: true, enviados: 0, recebidos: 0 }),
     REQUIRED_GAS_API_VERSION: 12,
+    getApelido: () => '',
+    setApelido() {},
     ...overrides
   });
   const inline = html.match(/<script type="module">([\s\S]*?)<\/script>/);
   const source = inline[1]
     .replace(/^\s*import[\s\S]*?from '.\/google-sync\.js';\s*$/m, '')
+    .replace(/^\s*import[\s\S]*?from '.\/instance-identity\.js';\s*$/m, '')
     .replace(/\n\s*init\(\);\s*$/, '');
   vm.runInContext(source, context);
   return { context, elements, timers };

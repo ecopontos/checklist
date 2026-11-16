@@ -2,6 +2,8 @@
  * Client for the Google Apps Script (GAS) Web App bridge to
  * Google Sheets (push coletas) and Google Drive (pull rotas/pontos CSV via GAS).
  */
+import { appendInstanceParams, withInstanceMeta } from './instance-identity.js';
+
 const GAS_URL_KEY = 'app3_gas_url';
 const LAST_CSV_DRIVE_SYNC_KEY = 'app3_last_roteiros_csv_drive_sync';
 const GAS_ROUTE_TOKEN_KEY = 'app3_gas_route_token';
@@ -57,7 +59,7 @@ export async function pushColetas(coletas) {
             method: 'POST',
             signal: controller.signal,
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ coletas })
+            body: JSON.stringify(withInstanceMeta({ coletas }, url))
         });
         if (!res.ok) {
             return { ok: false, error: `Falha HTTP ${res.status}` };
@@ -118,7 +120,7 @@ export async function checkAndImportRoteiros(db) {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 45000);
         try {
-            res = await fetch(`${url}?action=roteirosCsv`, {
+            res = await fetch(appendInstanceParams(`${url}?action=roteirosCsv`, url), {
                 method: 'GET',
                 signal: controller.signal
             });
@@ -199,6 +201,7 @@ export function getLastRoteirosDriveSyncLabel() {
 // repete em falha de HTTP/rede — uma resposta {ok:false} legítima é devolvida
 // na hora. Timeout por tentativa cobre o fallback de varredura completa do GAS.
 async function gasGetJsonWithRetry_(url, { attempts = 3, timeoutMs = 45000 } = {}) {
+    url = appendInstanceParams(url, getGasUrl());
     let lastError = 'erro desconhecido';
     for (let attempt = 1; attempt <= attempts; attempt++) {
         const controller = new AbortController();
@@ -295,7 +298,7 @@ export async function syncAgendamentos(ops) {
         const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'syncAgendamentos', ops })
+            body: JSON.stringify(withInstanceMeta({ action: 'syncAgendamentos', ops }, url))
         });
         if (!res.ok) {
             return { ok: false, error: `Falha HTTP ${res.status}` };
@@ -314,12 +317,12 @@ export async function uploadAgendamentoFotos(id, fotos, remover = []) {
         const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
+            body: JSON.stringify(withInstanceMeta({
                 action: 'uploadAgendamentoFotos',
                 id,
                 fotos: fotos || [],
                 remover: remover || []
-            })
+            }, url))
         });
         if (!res.ok) {
             return { ok: false, error: `Falha HTTP ${res.status}` };
@@ -346,7 +349,7 @@ export async function sendChecklistToDrive(filename, pdfBase64) {
         const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ checklist: { filename, pdfBase64 } })
+            body: JSON.stringify(withInstanceMeta({ checklist: { filename, pdfBase64 } }, url))
         });
         if (!res.ok) {
             return { ok: false, error: `Falha HTTP ${res.status}` };
@@ -371,11 +374,11 @@ export async function pushRoteiroChanges(changes) {
         const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({
+            body: JSON.stringify(withInstanceMeta({
                 action: 'routeChanges',
                 token,
                 changes
-            })
+            }, url))
         });
         if (!res.ok) {
             return { ok: false, error: `Falha HTTP ${res.status}` };
@@ -453,7 +456,7 @@ export async function pushClienteChanges(changes) {
         const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'clientChanges', token, changes })
+            body: JSON.stringify(withInstanceMeta({ action: 'clientChanges', token, changes }, url))
         });
         if (!res.ok) {
             return { ok: false, error: `Falha HTTP ${res.status}` };
@@ -538,7 +541,7 @@ async function postCadastro_(url, body) {
             method: 'POST',
             signal: controller.signal,
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify(body)
+            body: JSON.stringify(withInstanceMeta(body, url))
         });
         if (!res.ok) return { ok: false, error: `Falha HTTP ${res.status}` };
         return await res.json();

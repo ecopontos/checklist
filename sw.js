@@ -28,6 +28,7 @@ const PRECACHE = [
     'dashboard.js',
     'database.js',
     'google-sync.js',
+    'instance-identity.js',
     'nav-menu.js',
     'pwa.js',
     'theme.js',

@@ -272,6 +272,7 @@
                 <div style="display: flex; flex-direction: column; gap: 10px;">
                     <input type="text" id="gasUrl" placeholder="URL do Web App do Google Apps Script">
                     <input type="password" id="gasRouteToken" placeholder="Token para alterações de roteiros">
+                    <input type="text" id="deviceApelido" placeholder="Apelido deste dispositivo (ex.: Tablet Caminhão 07)">
                     <span class="gas-version-status" id="routeChangesStatus">Alterações de roteiros: verificando...</span>
                     <a href="ajuda-integracao-access.html" target="_blank" style="color: var(--accent); font-size: 0.9rem;">
                         ❓ Como enviar alterações de roteiros para o Access
@@ -347,6 +348,7 @@
             syncCadastro,
             REQUIRED_GAS_API_VERSION
         } from './google-sync.js';
+        import { getApelido, setApelido } from './instance-identity.js';
 
         async function init() {
             await db.init();
@@ -356,6 +358,10 @@
             document.getElementById('gasUrl').onchange = (e) => {
                 setGasUrl(e.target.value.trim());
                 window.checkDriveUpdate();
+            };
+            document.getElementById('deviceApelido').value = getApelido();
+            document.getElementById('deviceApelido').onchange = (e) => {
+                setApelido(e.target.value.trim());
             };
             document.getElementById('gasRouteToken').value = getGasRouteToken();
             document.getElementById('gasRouteToken').onchange = (e) => {

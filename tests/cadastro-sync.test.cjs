@@ -19,12 +19,14 @@ async function device(gas, { token = gas.token, gasVersion } = {}) {
       if (gasVersion === 'antigo') return { ok: true, json: async () => ({ ok: true, count: 0 }) };
       return { ok: true, json: async () => JSON.parse(gas.context.doPost({ postData: { contents: options.body } }).value) };
     } });
-  const load = async name => {
+  const load = async (name, resolver = () => {}) => {
     const mod = new vm.SourceTextModule(fs.readFileSync(name, 'utf8'), { context, identifier: name });
-    await mod.link(() => {}); await mod.evaluate(); return mod.namespace;
+    await mod.link(resolver); await mod.evaluate(); return mod;
   };
-  const db = (await load('database.js')).default; await db.init();
-  const sync = await load('google-sync.js');
+  const db = (await load('database.js')).namespace.default; await db.init();
+  const identityMod = await load('instance-identity.js');
+  const sync = (await load('google-sync.js', specifier =>
+    specifier.includes('instance-identity') ? identityMod : undefined)).namespace;
   return { db, storage, sync: () => sync.syncCadastro(db) };
 }
 

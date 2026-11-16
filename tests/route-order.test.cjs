@@ -71,6 +71,7 @@ async function loadModule(context, filename) {
 (async () => {
   const { context, requests } = createContext();
   const databaseModule = await loadModule(context, 'database.js');
+  await loadModule(context, 'instance-identity.js');
   const syncModule = await loadModule(context, 'google-sync.js');
   const db = databaseModule.default;
   await db.init();

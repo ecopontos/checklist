@@ -82,4 +82,12 @@ for (const entry of rootEntries) {
   }
 }
 
+// Injeta a versao do app no config.js do dist, para a instancia reportar `av`.
+const pkgVersion = require('./package.json').version;
+const distConfig = path.join(DIST, 'config.js');
+if (fs.existsSync(distConfig)) {
+  const extra = `\nwindow.APP_CONFIG = window.APP_CONFIG || {};\nwindow.APP_CONFIG.appVersion = ${JSON.stringify(pkgVersion)};\n`;
+  fs.appendFileSync(distConfig, extra);
+}
+
 console.log('Frontend assets copied to dist/');

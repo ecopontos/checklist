@@ -48,6 +48,7 @@ async function loadModule(context, filename) {
 (async () => {
   const { context, localStorage, requests, setFetchImpl } = createContext();
   await loadModule(context, 'database.js');
+  await loadModule(context, 'instance-identity.js');
   const syncModule = await loadModule(context, 'google-sync.js');
 
   // Sem URL do GAS configurada: nao tenta chamar a rede.
@@ -71,7 +72,10 @@ async function loadModule(context, filename) {
   assert.strictEqual(resultado.data[0].intercorrencia, 'Bombona suja');
   assert.strictEqual(resultado.data[0].data, '2026-09-01');
   assert.strictEqual(requests.length, 1);
-  assert.strictEqual(requests[0], 'https://gas.example/exec?action=intercorrenciasRoteiro&roteiro=ROTA%20CENTRO%20LESTE');
+  // A URL agora carrega metadados da instancia (iid/nick/av/gu/ua) de carona;
+  // validamos o prefixo funcional e a presenca do identificador da instancia.
+  assert.ok(requests[0].startsWith('https://gas.example/exec?action=intercorrenciasRoteiro&roteiro=ROTA%20CENTRO%20LESTE&'));
+  assert.ok(requests[0].includes('iid='));
 
   console.log('getIntercorrenciasRoteiro: sem URL retorna erro sem chamar fetch; com URL monta query e repassa resposta: OK');
 })().catch(error => {
