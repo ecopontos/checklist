@@ -35,12 +35,19 @@ async function loadSyncModule(replies, gasUrl = 'https://gas.example/exec') {
   });
   await database.link(() => { throw new Error('Import inesperado em database.js'); });
   await database.evaluate();
+  const identity = new vm.SourceTextModule(fs.readFileSync('instance-identity.js', 'utf8'), {
+    context,
+    identifier: 'instance-identity.js'
+  });
+  await identity.link(() => { throw new Error('Import inesperado em instance-identity.js'); });
+  await identity.evaluate();
   const sync = new vm.SourceTextModule(fs.readFileSync('google-sync.js', 'utf8'), {
     context,
     identifier: 'google-sync.js'
   });
   await sync.link(specifier => {
     if (specifier === './database.js') return database;
+    if (specifier === './instance-identity.js') return identity;
     throw new Error(`Import inesperado em google-sync.js: ${specifier}`);
   });
   await sync.evaluate();
@@ -72,7 +79,7 @@ test('consulta o endpoint API 11 e preserva o contrato valido', async () => {
   assert.equal(result.ok, true);
   assert.equal(result.data[0].occurrenceId, 'occ-1');
   assert.equal(result.generatedAt, '2026-09-18T15:00:00.000Z');
-  assert.equal(requests[0], 'https://gas.example/exec?action=intercorrenciasAtuais');
+  assert.ok(requests[0].startsWith('https://gas.example/exec?action=intercorrenciasAtuais&iid='));
 });
 
 test('rejeita explicitamente API antiga, fonte errada, data ausente e ocorrencia incompleta', async () => {
@@ -137,7 +144,7 @@ test('anexa o parâmetro dias quando válido e omite quando ausente ou inválido
   await sync.getIntercorrenciasAtuais(999);
   await sync.getIntercorrenciasAtuais();
 
-  assert.equal(requests[0], 'https://gas.example/exec?action=intercorrenciasAtuais&dias=30');
-  assert.equal(requests[1], 'https://gas.example/exec?action=intercorrenciasAtuais');
-  assert.equal(requests[2], 'https://gas.example/exec?action=intercorrenciasAtuais');
+  assert.ok(requests[0].startsWith('https://gas.example/exec?action=intercorrenciasAtuais&dias=30&iid='));
+  assert.ok(requests[1].startsWith('https://gas.example/exec?action=intercorrenciasAtuais&iid='));
+  assert.ok(requests[2].startsWith('https://gas.example/exec?action=intercorrenciasAtuais&iid='));
 });

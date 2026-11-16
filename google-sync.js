@@ -2,6 +2,8 @@
  * Client for the Google Apps Script (GAS) Web App bridge to
  * Google Sheets (push coletas) and Google Drive (pull rotas/pontos CSV via GAS).
  */
+import { appendInstanceParams, withInstanceMeta } from './instance-identity.js';
+
 const GAS_URL_KEY = 'app3_gas_url';
 const LAST_CSV_DRIVE_SYNC_KEY = 'app3_last_roteiros_csv_drive_sync';
 const GAS_ROUTE_TOKEN_KEY = 'app3_gas_route_token';
@@ -118,7 +120,7 @@ export async function checkAndImportRoteiros(db) {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 45000);
         try {
-            res = await fetch(`${url}?action=roteirosCsv`, {
+            res = await fetch(appendInstanceParams(`${url}?action=roteirosCsv`, url), {
                 method: 'GET',
                 signal: controller.signal
             });
@@ -199,6 +201,7 @@ export function getLastRoteirosDriveSyncLabel() {
 // repete em falha de HTTP/rede — uma resposta {ok:false} legítima é devolvida
 // na hora. Timeout por tentativa cobre o fallback de varredura completa do GAS.
 async function gasGetJsonWithRetry_(url, { attempts = 3, timeoutMs = 45000 } = {}) {
+    url = appendInstanceParams(url, getGasUrl());
     let lastError = 'erro desconhecido';
     for (let attempt = 1; attempt <= attempts; attempt++) {
         const controller = new AbortController();
