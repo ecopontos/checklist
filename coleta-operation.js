@@ -730,7 +730,7 @@ function buildChecklistDoc() {
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     const routeSelect = document.getElementById('routeSelect');
     const roteiroNome = routeSelect.options[routeSelect.selectedIndex]?.textContent || '';
-    const clientes = db.getClientesByRoteiro(routeSelect.value).filter(c => c.ativo);
+    const clientes = db.getClientesByRoteiro(routeSelect.value);
     const novidades = listarNovidades(db, routeSelect.value, clientes);
     const novosIds = new Set(novidades.map(n => n.id_rota));
     const dataColeta = ultimaColetaData || '';
