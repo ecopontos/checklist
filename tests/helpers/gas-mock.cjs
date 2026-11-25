@@ -30,6 +30,7 @@ class Range {
 }
 class Sheet {
   constructor() { this.rows = []; this.writes = []; this.formatCalls = []; }
+  appendRow(row) { this.rows.push(row); }
   getRange(r, c, rs = 1, cs = 1) { return new Range(this, r, c, rs, cs); }
   getLastRow() { return this.rows.length; }
   getDataRange() { return new Range(this, 1, 1, this.rows.length || 1, this.getLastColumn() || 1); }

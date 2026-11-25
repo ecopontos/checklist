@@ -39,7 +39,7 @@ var CLIENT_EDITABLE_FIELDS = ['Cliente', 'Número', 'Complemento', 'CEP', 'Telef
 // tornar o deploy verificável via ?action=status.
 // v14: cadastro compartilhado (action=cadastroSync) e consultas por roteiro que
 // entendem nomes antigos de roteiros renomeados no app.
-var GAS_API_VERSION = 16;
+var GAS_API_VERSION = 17;
 var INSTANCIAS_SHEET = 'Instancias';
 var INTERCORRENCIAS_RECENCIA_DIAS = [30, 60, 90];
 var INTERCORRENCIAS_RECENCIA_PADRAO = 90;
@@ -132,6 +132,7 @@ function doGet(e) {
             ok: true,
             service: 'satelite-gas',
             apiVersion: GAS_API_VERSION,
+            novidadesRoteiros: true,
             routeChangesConfigured: Boolean(getConfig_().routeChangesToken),
             cadastro: true
         });
@@ -181,9 +182,13 @@ function doGet(e) {
 // O CSV do Access permanece no Drive. Devolve o texto original para que o
 // importador local use exatamente as mesmas colunas da antiga leitura da LAN.
 function getRoteirosCsv_() {
+    return jsonResponse_(readRoteirosCsv_());
+}
+
+function readRoteirosCsv_() {
     var config = getConfig_();
     if (!config.folderId) {
-        return jsonResponse_({ ok: false, error: 'DRIVE_FOLDER_ID não configurado' });
+        return { ok: false, error: 'DRIVE_FOLDER_ID não configurado' };
     }
 
     try {
@@ -199,20 +204,20 @@ function getRoteirosCsv_() {
             }
         }
         if (!latest) {
-            return jsonResponse_({ ok: false, error: 'Arquivo ' + CSV_FILE_NAME + ' não encontrado na pasta do Drive' });
+            return { ok: false, error: 'Arquivo ' + CSV_FILE_NAME + ' não encontrado na pasta do Drive' };
         }
 
         var decoded = decodeCsvBlob_(latest.getBlob());
-        return jsonResponse_({
+        return {
             ok: true,
             apiVersion: GAS_API_VERSION,
             source: 'drive-csv',
             content: decoded.content,
             encoding: decoded.encoding,
             modifiedTime: modifiedTime.toISOString()
-        });
+        };
     } catch (err) {
-        return jsonResponse_({ ok: false, error: err.message });
+        return { ok: false, error: err.message };
     }
 }
 
@@ -978,6 +983,7 @@ function doPost(e) {
         if (body.action === 'cadastroSync') {
             return cadastroSync_(body);
         }
+        if (body.action === 'novidadesRoteiro') return novidadesRoteiro_(body);
 
         if (body.action === 'getRouteChanges') {
             return getPendingRouteChanges_(body.token || '');
@@ -2095,8 +2101,9 @@ function saveColetas_(coletas) {
         var sheet = ss.getSheetByName(COLETAS_SHEET_NAME);
         if (!sheet) {
             sheet = ss.insertSheet(COLETAS_SHEET_NAME);
-            sheet.appendRow(['ID Rota', 'Data', 'Cliente', 'Roteiro', 'Quantidade', 'Intercorrência', 'Sincronizado Em', 'Sync ID']);
+            sheet.appendRow(['ID Rota', 'Data', 'Cliente', 'Roteiro', 'Quantidade', 'Intercorrência', 'Sincronizado Em', 'Sync ID', 'Inclusao ID', 'Roteiro Chave']);
         }
+        sheet.getRange(1,9,1,2).setValues([['Inclusao ID','Roteiro Chave']]);
 
         // Dedup por Sync ID (8ª coluna). Um reenvio após falha de resposta
         // traz o mesmo sync_id da 1ª tentativa; ignora os que já estão na aba
@@ -2129,12 +2136,13 @@ function saveColetas_(coletas) {
                 c.quantidade,
                 c.intercorrencia || '',
                 now,
-                sid
+                sid,
+                String(c.inclusao_id || ''), String(c.roteiro_chave || '')
             ]);
         });
 
         if (novos.length) {
-            sheet.getRange(sheet.getLastRow() + 1, 1, novos.length, 8).setValues(novos);
+            sheet.getRange(sheet.getLastRow() + 1, 1, novos.length, 10).setValues(novos);
         }
 
         try {
@@ -2197,11 +2205,137 @@ function saveChecklist_(checklist) {
 // maior Origem, para todos os dispositivos chegarem ao mesmo resultado. Cada
 // gravação recebe um número de revisão crescente (Rev) e o dispositivo pede
 // "tudo com Rev maior que X". Excluir um ponto grava Excluido=1 (lápide).
+// Episódios compartilhados: os primeiros oito campos de Coletas permanecem compatíveis.
+var NOVIDADES_HEADERS = ['Inclusao ID','ID Rota','Roteiro Chave','Incluido Em','Baseline','Atual','Atendimento Data','Atendimento Sync ID','Rev'];
+
+function parseInclusao_(value) {
+    try { return value ? JSON.parse(String(value)) : null; } catch (_) { return null; }
+}
+
+function normalizeInclusaoCadastro_(i, id, roteiro, nowMs) {
+    if (!i) return null;
+    if (!/^[A-Za-z0-9._:-]{1,150}$/.test(String(i.inclusao_id || '')) || i.id_rota !== id || i.roteiro_chave !== roteiro) throw Error('Inclusão inválida');
+    return { inclusao_id:i.inclusao_id,id_rota:id,roteiro_chave:roteiro,
+        incluido_em:i.baseline ? null : cadastroTimestamp_(i.incluido_em,nowMs),baseline:!!i.baseline,rev:0,atendimento:null };
+}
+
+function novidadesRead_(ss) {
+    var sh=ss.getSheetByName('NovidadesRoteiros');
+    if (!sh || sh.getLastRow()<2) return [];
+    return sh.getRange(2,1,sh.getLastRow()-1,9).getValues().map(function(r) {
+        return {inclusao_id:String(r[0]),id_rota:String(r[1]),roteiro_chave:String(r[2]),incluido_em:r[3] ? String(r[3]):null,
+            baseline:String(r[4])==='1',atual:String(r[5])==='1',atendimento:r[6]?{data:String(r[6]),sync_id:String(r[7])}:null,rev:Number(r[8])};
+    });
+}
+
+function novidadesWrite_(ss, items) {
+    var sh=getCadastroSheet_('NovidadesRoteiros',NOVIDADES_HEADERS);
+    writeCadastroTable_(sh,items.map(function(i) {return [i.inclusao_id,i.id_rota,i.roteiro_chave,i.incluido_em || '',i.baseline?1:0,i.atual?1:0,
+        i.atendimento?i.atendimento.data:'',i.atendimento?i.atendimento.sync_id:'',i.rev];}),9);
+}
+
+function novidadesSnapshot_(ss) {
+    var csv=readRoteirosCsv_();
+    if (!csv.ok) throw Error(csv.error);
+    if (!isFinite(Date.parse(csv.modifiedTime))) throw Error('Data do CSV inválida');
+    var rows=Utilities.parseCsv(csv.content,';'), headers=rows.shift() || [];
+    function idx(n) {return headers.indexOf(n);}
+    if (idx('idRota')<0 || idx('Roteiro')<0) throw Error('CSV sem identidade de ponto/roteiro');
+    var aliases=Object.create(null), rs=ss.getSheetByName(CADASTRO_ROTEIROS_SHEET_NAME);
+    if(rs) readCadastroRows_(rs,8).map(cadastroRowToRoteiro_).forEach(function(r){
+        [r.chave,r.nome].concat(r.apelidos).forEach(function(n){aliases[n]=r.chave;});
+    });
+    var map=Object.create(null);
+    rows.forEach(function(r){
+        var id=String(r[idx('idRota')] || '').trim(), roteiro=String(r[idx('Roteiro')] || '').trim();
+        if (!id && !roteiro) return;
+        if (!/^[A-Za-z0-9._-]{1,64}$/.test(id) || !roteiro) throw Error('CSV contém vínculo inválido');
+        map[id]={id_rota:id,roteiro_chave:aliases[roteiro] || roteiro,incluido_em:csv.modifiedTime};
+    });
+    var ps=ss.getSheetByName(CADASTRO_PONTOS_SHEET_NAME);
+    if(ps) readCadastroRows_(ps,CADASTRO_PONTOS_HEADERS.length).map(cadastroRowToPonto_).forEach(function(p){
+        if(p.excluido) {delete map[p.idRota];return;}
+        map[p.idRota]={id_rota:p.idRota,roteiro_chave:aliases[p.roteiro] || p.roteiro,
+            incluido_em:p.editadoEm,inclusao:p.inclusao};
+    });
+    return {pontos:Object.keys(map).map(function(k){return map[k];}),version:csv.modifiedTime};
+}
+
+function reconcileNovidades_(ss,snapshot,nowIso) {
+    var props=PropertiesService.getScriptProperties(), initialized=props.getProperty('NOVIDADES_BASELINE_V1');
+    var items=novidadesRead_(ss), current=Object.create(null), changed=false;
+    var rev=items.reduce(function(m,i){return Math.max(m,i.rev);},0)+1;
+    items.forEach(function(i){if(i.atual) current[i.id_rota]=i;});
+    snapshot.pontos.forEach(function(p){
+        var old=current[p.id_rota], explicit=p.inclusao;
+        if(old && old.roteiro_chave===p.roteiro_chave && (!explicit || explicit.inclusao_id===old.inclusao_id)) return;
+        if(old) old.atual=false;
+        // Baseline deterministic: retry of a partially written initialization cannot create duplicates.
+        var baseline=!initialized && !explicit;
+        var id=explicit ? explicit.inclusao_id : baseline ? 'baseline:'+p.id_rota : Utilities.getUuid();
+        var existing=items.filter(function(i){return i.inclusao_id===id;})[0];
+        if(existing) {existing.atual=true;current[p.id_rota]=existing;changed=true;return;}
+        var item={inclusao_id:id,id_rota:p.id_rota,roteiro_chave:p.roteiro_chave,
+            incluido_em:baseline?null:(explicit?explicit.incluido_em:p.incluido_em || nowIso),
+            baseline:explicit?explicit.baseline:baseline,atual:true,atendimento:null,rev:rev};
+        items.push(item);current[p.id_rota]=item;changed=true;
+    });
+    // Missing points are retained as history; reactivation of the same binding is not a new inclusion.
+    if(changed || !initialized) novidadesWrite_(ss,items);
+    if(!initialized) props.setProperty('NOVIDADES_BASELINE_V1',nowIso);
+    return items;
+}
+
+function reconcileAtendimentosNovidades_(ss,roteiroChave) {
+    var items=novidadesRead_(ss), sh=ss.getSheetByName(COLETAS_SHEET_NAME), changed=false;
+    if(!sh) return items;
+    var pending=items.filter(function(i){return i.atual && !i.baseline && !i.atendimento && i.roteiro_chave===roteiroChave;});
+    if(!pending.length) return items;
+    var names=getRoteiroNomesEquivalentes_(ss,roteiroChave), rev=items.reduce(function(m,i){return Math.max(m,i.rev);},0)+1;
+    var byPoint=Object.create(null);
+    pending.forEach(function(i){byPoint[i.id_rota]=i;});
+    for(var start=2;start<=sh.getLastRow();start+=5000){
+        var rows=sh.getRange(start,1,Math.min(5000,sh.getLastRow()-start+1),10).getValues();
+        rows.forEach(function(r,offset){
+            var i=byPoint[String(r[0])]; if(!i || i.atendimento) return;
+            var date=normalizeDateValue_(r[1]);
+            var included=Utilities.formatDate(new Date(i.incluido_em),'America/Sao_Paulo','yyyy-MM-dd');
+            if(!date || date<included || !(Number(r[4])>0 || String(r[5] || '').trim())) return;
+            if(r[8]) {if(String(r[8])!==i.inclusao_id || String(r[9])!==i.roteiro_chave) return;}
+            else {
+                if(names.indexOf(String(r[3]))<0 || !(Date.parse(r[6])>=Date.parse(i.incluido_em))) return;
+                // Without an episode id, repeated transfers to the same route are ambiguous.
+                if(items.filter(function(x){return x.id_rota===i.id_rota && x.roteiro_chave===i.roteiro_chave;}).length>1) return;
+                sh.getRange(start+offset,9,1,2).setValues([[i.inclusao_id,i.roteiro_chave]]);
+            }
+            i.atendimento={data:date,sync_id:String(r[7])};i.rev=rev;changed=true;
+        });
+    }
+    if(changed) novidadesWrite_(ss,items);
+    return items;
+}
+
+function novidadesRoteiro_(body) {
+    var auth=routeChangesAuthError_(body.token); if(auth) return jsonResponse_({ok:false,error:auth});
+    var lock=LockService.getScriptLock();
+    try {
+        var roteiro=cadastroText_(body.roteiro,255,'Roteiro'); if(!roteiro) throw Error('Roteiro obrigatório');
+        lock.waitLock(30000);
+        var ss=SpreadsheetApp.openById(getConfig_().spreadsheetId);
+        reconcileNovidades_(ss,novidadesSnapshot_(ss),new Date().toISOString());
+        var items=reconcileAtendimentosNovidades_(ss,roteiro);
+        return jsonResponse_({ok:true,apiVersion:GAS_API_VERSION,novidadesRoteiros:true,roteiro_chave:roteiro,
+            rev:items.reduce(function(m,i){return Math.max(m,i.rev);},0),
+            inclusoes:items.filter(function(i){return i.atual && i.roteiro_chave===roteiro;})});
+    } catch(e) {return jsonResponse_({ok:false,error:e.message});}
+    finally {lock.releaseLock();}
+}
+
 var CADASTRO_PONTOS_SHEET_NAME = 'CadastroPontos';
 var CADASTRO_PONTOS_HEADERS = [
     'ID Rota', 'Cliente', 'Logradouro', 'Número', 'Complemento', 'CEP',
     'Telefone1', 'Telefone2', 'Roteiro', 'Ordem', 'Ativo', 'Excluido',
-    'Editado Em', 'Origem', 'Rev', 'Atualizado Em'
+    'Editado Em', 'Origem', 'Rev', 'Atualizado Em', 'Inclusao'
 ];
 var CADASTRO_ROTEIROS_SHEET_NAME = 'CadastroRoteiros';
 var CADASTRO_ROTEIROS_HEADERS = [
@@ -2265,7 +2399,8 @@ function normalizeCadastroPonto_(raw, nowMs) {
         ativo: cadastroFlag_(raw.ativo === undefined ? 1 : raw.ativo, 'Ativo'),
         excluido: excluido,
         editadoEm: cadastroTimestamp_(raw.editado_em, nowMs),
-        origem: origem
+        origem: origem,
+        inclusao: normalizeInclusaoCadastro_(raw.inclusao, idRota, roteiro, nowMs)
     };
 }
 
@@ -2340,7 +2475,7 @@ function mergeCadastro_(existingByKey, incoming, keyOf, signatureOf) {
 
 function cadastroPontoToRow_(r, rev, atualizadoEm) {
     return [r.idRota, r.cliente, r.logradouro, r.numero, r.complemento, r.cep, r.telefone1, r.telefone2,
-        r.roteiro, r.ordem, r.ativo, r.excluido, r.editadoEm, r.origem, rev, atualizadoEm];
+        r.roteiro, r.ordem, r.ativo, r.excluido, r.editadoEm, r.origem, rev, atualizadoEm, JSON.stringify(r.inclusao || null)];
 }
 
 function cadastroRowToPonto_(row) {
@@ -2350,7 +2485,8 @@ function cadastroRowToPonto_(row) {
         telefone1: String(row[6]), telefone2: String(row[7]), roteiro: String(row[8]),
         ordem: Number(row[9]) || 0, ativo: Number(row[10]) === 1 ? 1 : 0,
         excluido: Number(row[11]) === 1 ? 1 : 0, editadoEm: String(row[12]),
-        origem: String(row[13]), rev: Number(row[14]) || 0, atualizadoEm: String(row[15] || '')
+        origem: String(row[13]), rev: Number(row[14]) || 0, atualizadoEm: String(row[15] || ''),
+        inclusao: parseInclusao_(row[16])
     };
 }
 
@@ -2380,7 +2516,7 @@ function cadastroPontoToJson_(r) {
         id_rota: r.idRota, cliente: r.cliente, logradouro: r.logradouro, numero: r.numero,
         complemento: r.complemento, cep: r.cep, telefone1: r.telefone1, telefone2: r.telefone2,
         roteiro: r.roteiro, ordem: r.ordem, ativo: r.ativo, excluido: r.excluido,
-        editado_em: r.editadoEm, origem: r.origem
+        editado_em: r.editadoEm, origem: r.origem, inclusao: r.inclusao || null
     };
 }
 
@@ -2404,6 +2540,9 @@ function getCadastroSheet_(name, headers) {
     }
     var header = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
     for (var i = 0; i < headers.length; i++) {
+        if (name === CADASTRO_PONTOS_SHEET_NAME && i === 16 && !header[i]) {
+            sheet.getRange(1,17).setValue('Inclusao'); continue;
+        }
         if (String(header[i]) !== headers[i]) throw new Error('Cabeçalho inválido na aba ' + name);
     }
     return sheet;
@@ -2472,6 +2611,10 @@ function cadastroSync_(body) {
         lock.waitLock(30000);
         try {
             var sheetP = getCadastroSheet_(CADASTRO_PONTOS_SHEET_NAME, CADASTRO_PONTOS_HEADERS);
+            var novidadesWarning = null;
+            var novidadesSs = SpreadsheetApp.openById(getConfig_().spreadsheetId);
+            try { reconcileNovidades_(novidadesSs, novidadesSnapshot_(novidadesSs), new Date(nowMs).toISOString()); }
+            catch (e) { novidadesWarning = e.message; }
             var sheetR = getCadastroSheet_(CADASTRO_ROTEIROS_SHEET_NAME, CADASTRO_ROTEIROS_HEADERS);
             var widthP = CADASTRO_PONTOS_HEADERS.length;
             var widthR = CADASTRO_ROTEIROS_HEADERS.length;
@@ -2500,6 +2643,10 @@ function cadastroSync_(body) {
             orderR.forEach(function (key) { maxRev = Math.max(maxRev, existingR[key].rev); });
 
             var mergedP = mergeCadastro_(existingP, pontos, function (r) { return r.idRota; }, cadastroPontoSignature_);
+            Object.keys(mergedP.changed).forEach(function(key) {
+                var old=existingP[key], next=mergedP.current[key];
+                if (old && old.roteiro === next.roteiro && !next.inclusao) next.inclusao=old.inclusao;
+            });
             var mergedR = mergeCadastro_(existingR, roteiros, function (r) { return r.chave; }, cadastroRoteiroSignature_);
             var wrote = mergedP.accepted.length > 0 || mergedR.accepted.length > 0;
             var rev = wrote ? maxRev + 1 : maxRev;
@@ -2528,6 +2675,11 @@ function cadastroSync_(body) {
                 }
             }
 
+            try {
+                var estadoNovidades = reconcileNovidades_(novidadesSs, novidadesSnapshot_(novidadesSs), new Date(nowMs).toISOString());
+                estadoNovidades.forEach(function(i) { if (i.atual && mergedP.current[i.id_rota]) mergedP.current[i.id_rota].inclusao=i; });
+                novidadesWarning = null;
+            } catch(e) { novidadesWarning=e.message; }
             // Tudo que mudou depois de `since`, menos o que este próprio envio acabou de gravar.
             var pullP = orderP.map(function (key) { return mergedP.current[key]; })
                 .filter(function (r) { return r.rev > since && !(wrote && r.rev === rev); });
@@ -2539,6 +2691,8 @@ function cadastroSync_(body) {
                 ok: true,
                 apiVersion: GAS_API_VERSION,
                 rev: rev,
+                novidadesWarning: novidadesWarning,
+                canonicos: mergedP.accepted.concat(mergedP.unchanged).map(function(key) { return cadastroPontoToJson_(mergedP.current[key]); }),
                 hasMore: page.hasMore,
                 cursor: page.cursor,
                 pontos: page.records.map(cadastroPontoToJson_),

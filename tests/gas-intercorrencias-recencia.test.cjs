@@ -64,7 +64,7 @@ context.intercorrenciasHoje_ = () => new Date('2026-11-05T12:00:00Z');
 
 const r30 = JSON.parse(context.doGet({ parameter: { action: 'intercorrenciasAtuais', dias: '30' } }).value);
 assert.strictEqual(r30.ok, true);
-assert.strictEqual(r30.apiVersion, 16);
+assert.ok(r30.apiVersion >= 17);
 assert.deepStrictEqual(r30.data.map(i => i.idRota), ['2']);
 assert.ok(cachePuts.some(p => p.key === 'intercorrenciasAtuais:v2:dias=30'));
 

@@ -1,5 +1,6 @@
 import db, { newUuid } from './database.js';
-import { sendChecklistToDrive, getUltimaColeta, getUltimasQuantidades, getLastRoteirosDriveSyncLabel } from './google-sync.js';
+import { sendChecklistToDrive, getUltimaColeta, getUltimasQuantidades, getLastRoteirosDriveSyncLabel, syncNovidadesRoteiro } from './google-sync.js';
+import { listarNovidades, desenharResumoNovidades } from './roteiro-novidades.js';
 import { operationalToday, validCivilDate } from './dashboard-metrics.js';
 import { startColetaSync } from './coleta-sync.js';
 
@@ -645,8 +646,13 @@ function openChecklistModal() {
     // que a geração do PDF aguarde ambos antes de montar o documento (senão
     // "Qtd. Ant." sai em branco e "Recipientes Previstos: 0").
     checklistDataReady = (async () => {
+        const novidades = await syncNovidadesRoteiro(db, routeSelect.value);
+        if (requestId !== checklistContext?.requestId) return;
         await loadUltimaColeta(roteiroNome, requestId);
         await loadUltimasQuantidades(roteiroNome, requestId);
+        if (requestId === checklistContext?.requestId && !novidades.ok) {
+            document.getElementById('ultimaColeta').value += ` | Novidades: ${novidades.error || 'sincronização pendente'}`;
+        }
     })();
 }
 
@@ -724,6 +730,9 @@ function buildChecklistDoc() {
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     const routeSelect = document.getElementById('routeSelect');
     const roteiroNome = routeSelect.options[routeSelect.selectedIndex]?.textContent || '';
+    const clientes = db.getClientesByRoteiro(routeSelect.value);
+    const novidades = listarNovidades(db, routeSelect.value, clientes);
+    const novosIds = new Set(novidades.map(n => n.id_rota));
     const dataColeta = ultimaColetaData || '';
     const proxData = document.getElementById('proxData').value;
     const tipoResiduo = document.getElementById('tipoResiduo').value;
@@ -732,7 +741,7 @@ function buildChecklistDoc() {
 
     console.log('buildChecklistDoc ultimasQuantidades:', ultimasQuantidades);
     let totalPrevisto = 0;
-    const rows = currentClients.map((client, index) => {
+    const rows = clientes.map((client, index) => {
         const session = sessionData[clientKey(client)] || {};
         const qtdAnt = ultimasQuantidades[clientKey(client)]
             ?? db.getUltimaQuantidade(client.id_rota)
@@ -741,7 +750,7 @@ function buildChecklistDoc() {
         const logradouroCompleto = [client.logradouro, client.complemento].filter(Boolean).join(' - ');
         return [
             client.ordem || index + 1,
-            client.cliente,
+            novosIds.has(String(client.id_rota)) ? { content: `NOVO - ${client.cliente}`, styles: { fontStyle: 'bold' } } : client.cliente,
             logradouroCompleto,
             client.numero || '',
             client.cep || '',
@@ -756,7 +765,7 @@ function buildChecklistDoc() {
     doc.text(`Checklist Coleta ${roteiroNome}`, 14, 15);
     doc.setFontSize(9);
     doc.text(`Coleta Anterior: ${formatDateBR(dataColeta)}   Data da Coleta: ${formatDateBR(proxData)}`, 14, 22);
-    doc.text(`Tipo de Residuo: ${tipoResiduo}   Total de Pontos: ${currentClients.length}   Recipientes Previstos: ${totalPrevisto}`, 14, 27);
+    doc.text(`Tipo de Residuo: ${tipoResiduo}   Total de Pontos: ${clientes.length}   Recipientes Previstos: ${totalPrevisto}`, 14, 27);
     if (motorista) doc.text(`Motorista: ${motorista}`, 14, 32);
     if (veiculo) doc.text(`Veiculo: ${veiculo}`, 100, 32);
 
@@ -778,7 +787,8 @@ function buildChecklistDoc() {
     const footerReserve = 42;
 
     doc.autoTable({
-        startY: 36,
+        startY: desenharResumoNovidades(doc, novidades, { startY: 36, bottomReserve: footerReserve }),
+        rowPageBreak: 'avoid',
         head: [['Ord.', 'Cliente', 'Logradouro', 'No', 'CEP', 'ID', 'Qtd. Ant.', 'Qtd. Coletada', 'Cód. Problema']],
         body: rows,
         theme: 'grid',

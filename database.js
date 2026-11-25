@@ -125,6 +125,7 @@ class AppDatabase {
         this.migrateSchema();
         this.migrateColetaSchema();
         this.migrateCadastroSchema();
+        this.migrateNovidadesSchema();
         // Importações antigas uniam pontos pelo nome. Força uma nova leitura
         // do cadastro uma única vez depois da correção da identidade por idRota.
         if (localStorage.getItem('app3_rota_identity_version') !== '2') {
@@ -201,6 +202,71 @@ class AppDatabase {
         if (!res.length) return [];
         const nameIdx = res[0].columns.indexOf('name');
         return res[0].values.map(v => v[nameIdx]);
+    }
+
+    migrateNovidadesSchema() {
+        this.db.run(`CREATE TABLE IF NOT EXISTS roteiro_inclusoes (
+            inclusao_id TEXT PRIMARY KEY, id_rota TEXT NOT NULL, roteiro_chave TEXT NOT NULL,
+            incluido_em TEXT, baseline INTEGER DEFAULT 0, rev INTEGER DEFAULT 0,
+            atendimento_data TEXT, atendimento_sync_id TEXT);
+            CREATE TABLE IF NOT EXISTS roteiro_inclusao_atual (id_rota TEXT PRIMARY KEY, inclusao_id TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS novidades_revisoes (roteiro_chave TEXT PRIMARY KEY, rev INTEGER NOT NULL);`);
+        for (const col of ['inclusao_id', 'roteiro_chave']) {
+            if (!this._tableColumns('coletas').includes(col)) this.db.run(`ALTER TABLE coletas ADD COLUMN ${col} TEXT`);
+        }
+        this.save();
+    }
+
+    getInclusaoAtual(idRota) {
+        const row = this._queryRows(`SELECT i.* FROM roteiro_inclusoes i JOIN roteiro_inclusao_atual a
+            ON a.inclusao_id=i.inclusao_id WHERE a.id_rota=?`, [String(idRota)])[0];
+        if (!row) return null;
+        return { ...row, baseline: !!row.baseline,
+            atendimento: row.atendimento_data ? { data: row.atendimento_data, sync_id: row.atendimento_sync_id } : null };
+    }
+
+    _guardarInclusao(i) {
+        this.db.run(`INSERT INTO roteiro_inclusoes
+            (inclusao_id,id_rota,roteiro_chave,incluido_em,baseline,rev,atendimento_data,atendimento_sync_id)
+            VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(inclusao_id) DO UPDATE SET
+            rev=excluded.rev, atendimento_data=excluded.atendimento_data, atendimento_sync_id=excluded.atendimento_sync_id`,
+            [i.inclusao_id,i.id_rota,i.roteiro_chave,i.incluido_em || null,i.baseline ? 1:0,i.rev || 0,
+                i.atendimento?.data || null,i.atendimento?.sync_id || null]);
+        this.db.run('INSERT OR REPLACE INTO roteiro_inclusao_atual VALUES (?,?)',[i.id_rota,i.inclusao_id]);
+    }
+
+    aplicarInclusoesRemotas({ roteiro_chave, rev, inclusoes }) {
+        if (!Number.isSafeInteger(rev) || rev < 0 || !Array.isArray(inclusoes) || !roteiro_chave) throw Error('Novidades inválidas');
+        for (const i of inclusoes) {
+            if (!i.inclusao_id || !idRotaValido(i.id_rota) || i.roteiro_chave !== roteiro_chave ||
+                (!i.baseline && !Number.isFinite(Date.parse(i.incluido_em)))) throw Error('Inclusão inválida');
+        }
+        this._persistAtomic(() => {
+            const previous = this._queryRows('SELECT rev FROM novidades_revisoes WHERE roteiro_chave=?',[roteiro_chave])[0];
+            if (previous && previous.rev > rev) return;
+            for (const i of inclusoes) {
+                const c=this.getClienteByIdRota(i.id_rota);
+                if (!c) continue;
+                const r=this._queryRows('SELECT COALESCE(chave,nome) AS chave FROM roteiros WHERE id=?',[c.roteiro_id])[0];
+                if (r?.chave !== roteiro_chave) continue;
+                const local=this.getInclusaoAtual(i.id_rota);
+                if (c.editado_em && (!c.enviado_em || c.enviado_em < c.editado_em) && local && local.inclusao_id !== i.inclusao_id) continue;
+                this._guardarInclusao(i);
+            }
+            this.db.run('INSERT OR REPLACE INTO novidades_revisoes VALUES (?,?)',[roteiro_chave,rev]);
+        });
+    }
+
+    getNovidadesRoteiro(roteiroId) {
+        const roteiro=this._queryRows('SELECT COALESCE(chave,nome) AS chave FROM roteiros WHERE id=?',[roteiroId])[0];
+        if (!roteiro) return [];
+        return this.getClientesByRoteiro(roteiroId).filter(c => c.ativo).map(c=>this.getInclusaoAtual(c.id_rota)).filter(i=>{
+            if (!i || i.baseline || i.roteiro_chave !== roteiro.chave || i.atendimento) return false;
+            const dia=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo'}).format(new Date(i.incluido_em));
+            return !this._queryRows(`SELECT id FROM coletas WHERE inclusao_id=? AND id_rota=? AND roteiro_chave=?
+                AND data>=? AND (quantidade>0 OR LENGTH(TRIM(COALESCE(intercorrencia,'')))>0) LIMIT 1`,
+                [i.inclusao_id,i.id_rota,i.roteiro_chave,dia]).length;
+        });
     }
 
     migrateColetaSchema() {
@@ -436,6 +502,7 @@ class AppDatabase {
             throw new Error(`ID Rota inválido: "${String(cliente.idRota ?? '').slice(0, 40)}". Use só letras, números, ponto, hífen ou sublinhado (até 64).`);
         }
         cliente = { ...cliente, idRota: String(cliente.idRota).trim() };
+        const anterior = this.getClienteByIdRota(cliente.idRota);
         this.db.run(`
             INSERT INTO clientes (id_rota, id_cliente, cliente, logradouro, numero, complemento, cep, telefone1, telefone2, roteiro_id, ordem, ativo)
             VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), (SELECT logradouro FROM logradouro_legado WHERE id_rota = ?)), ?, ?, ?, ?, ?, ?, ?, ?)
@@ -467,6 +534,11 @@ class AppDatabase {
             cliente.ativo ? 1 : 0
         ]);
         if (origemApp) {
+            if (!anterior || Number(anterior.roteiro_id) !== Number(cliente.roteiro_id)) {
+                const r=this._queryRows('SELECT COALESCE(chave,nome) AS chave FROM roteiros WHERE id=?',[cliente.roteiro_id])[0];
+                if (r) this._guardarInclusao({ inclusao_id:this._newChangeId(),id_rota:cliente.idRota,
+                    roteiro_chave:r.chave,incluido_em:new Date().toISOString(),baseline:false,rev:0 });
+            }
             this.db.run('UPDATE clientes SET editado_em = ? WHERE id_rota = ?',
                 [new Date().toISOString(), String(cliente.idRota)]);
             this.db.run('DELETE FROM cliente_excluido WHERE id_rota = ?', [String(cliente.idRota)]);
@@ -697,7 +769,7 @@ class AppDatabase {
             numero: row.numero || '', complemento: row.complemento || '', cep: row.cep || '',
             telefone1: row.telefone1 || '', telefone2: row.telefone2 || '', roteiro: row.roteiro,
             ordem: this._normalizeOrdem(row.ordem), ativo: row.ativo ? 1 : 0, excluido: 0,
-            editado_em: row.editado_em, origem
+            editado_em: row.editado_em, origem, inclusao: this.getInclusaoAtual(row.id_rota)
         }));
         this._queryRows(`
             SELECT id_rota, excluido_em FROM cliente_excluido
@@ -835,6 +907,7 @@ class AppDatabase {
             remoto.cep || '', remoto.telefone1 || '', remoto.telefone2 || '', roteiroId,
             this._normalizeOrdem(remoto.ordem), remoto.ativo ? 1 : 0, remoto.editado_em, remoto.editado_em]);
         this.db.run('DELETE FROM cliente_excluido WHERE id_rota = ?', [idRota]);
+        if (remoto.inclusao) this._guardarInclusao(remoto.inclusao);
         resumo.pontos++;
     }
 
@@ -1677,16 +1750,19 @@ class AppDatabase {
         this._validateColeta(coleta);
         const syncId = coleta.sync_id || this._newChangeId();
         const context = this.getClienteByIdRota(String(coleta.id_rota));
+        const inclusao = this.getInclusaoAtual(coleta.id_rota);
         this.db.run(`
             INSERT INTO coletas
                 (id_rota, data, quantidade, intercorrencia, sync_id, operation_id,
-                 cliente_snapshot, roteiro_snapshot, context_source)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'event')
+                 cliente_snapshot, roteiro_snapshot, context_source, inclusao_id, roteiro_chave)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'event', ?, ?)
         `, [
             String(coleta.id_rota), coleta.data, coleta.quantidade,
             coleta.intercorrencia || '', syncId, coleta.operation_id || null,
             coleta.cliente ?? context?.cliente ?? '',
-            coleta.roteiro ?? context?.roteiro_nome ?? ''
+            coleta.roteiro ?? context?.roteiro_nome ?? '',
+            coleta.inclusao_id ?? inclusao?.inclusao_id ?? null,
+            coleta.roteiro_chave ?? inclusao?.roteiro_chave ?? null
         ]);
         return this.db.exec('SELECT last_insert_rowid()')[0].values[0][0];
     }
@@ -1794,7 +1870,7 @@ class AppDatabase {
         const res = this.db.exec(`
             SELECT c.id, c.id_rota, c.data, c.quantidade, c.intercorrencia,
                 COALESCE(c.cliente_snapshot, cl.cliente, '') AS cliente,
-                COALESCE(c.roteiro_snapshot, r.nome, '') AS roteiro, c.sync_id
+                COALESCE(c.roteiro_snapshot, r.nome, '') AS roteiro, c.sync_id, c.inclusao_id, c.roteiro_chave
             FROM coletas c
             LEFT JOIN clientes cl ON c.id_rota = cl.id_rota
             LEFT JOIN roteiros r ON cl.roteiro_id = r.id

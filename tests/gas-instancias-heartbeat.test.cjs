@@ -54,7 +54,7 @@ test('recordHeartbeat_ cria a aba e insere a instancia', () => {
   assert.equal(rows[1][0], 'A1');
   assert.equal(rows[1][1], 'Caminhao 7');
   assert.equal(rows[1][2], '1.7.1');
-  assert.equal(rows[1][4], 16);
+  assert.ok(rows[1][4] >= 17);
   assert.equal(rows[1][7], 'status');
   assert.equal(rows[1][8], 1);
 });
