@@ -1,6 +1,6 @@
 import db, { newUuid } from './database.js';
 import { sendChecklistToDrive, getUltimaColeta, getUltimasQuantidades, getLastRoteirosDriveSyncLabel, syncNovidadesRoteiro } from './google-sync.js';
-import { listarNovidades, desenharResumoNovidades } from './roteiro-novidades.js';
+import { listarNovidades, desenharResumoNovidades, tituloNovidades } from './roteiro-novidades.js';
 import { operationalToday, validCivilDate } from './dashboard-metrics.js';
 import { startColetaSync } from './coleta-sync.js';
 
@@ -328,6 +328,11 @@ function renderList() {
 
     const clientsToShow = filterClients(sortClients(currentClients));
     const container = document.getElementById('listContainer');
+    const routeSelect = document.getElementById('routeSelect');
+    // Novidades refletem o roteiro inteiro (igual ao PDF), não a visão filtrada: o aviso
+    // pode contar pontos que o filtro atual esconde.
+    const novidades = listarNovidades(db, routeSelect.value, currentClients);
+    const novosIds = new Set(novidades.map(n => n.id_rota));
     const rows = clientsToShow.map((client, index) => {
         const id = clientKey(client);
         const session = sessionData[id] || {};
@@ -340,7 +345,7 @@ function renderList() {
             <tr data-id="${escapeHTML(id)}" class="${done ? 'done' : ''} ${activeClientId === id ? 'selected' : ''}">
                 <td class="mono">${escapeHTML(client.ordem || index + 1)}</td>
                 <td class="mono">${escapeHTML(id)}</td>
-                <td><span class="client-name" title="${escapeHTML(client.cliente)}">${escapeHTML(client.cliente)}</span></td>
+                <td><div class="client-cell">${novosIds.has(String(client.id_rota)) ? '<span class="novo-badge">NOVO</span>' : ''}<span class="client-name" title="${escapeHTML(client.cliente)}">${escapeHTML(client.cliente)}</span></div></td>
                 <td><span class="address" title="${escapeHTML(formatAddress(client))}">${escapeHTML(formatAddress(client))}</span></td>
                 <td><input type="number" min="0" class="table-input table-qty" data-role="qty" value="${session.qty > 0 ? session.qty : ''}" ${disabled}></td>
                 <td><input type="text" class="table-input" data-role="issue" value="${escapeHTML(session.issue || '')}" placeholder="Sem intercorrência" ${disabled}></td>
@@ -359,7 +364,11 @@ function renderList() {
         </tr>
     `;
 
+    const aviso = novidades.length
+        ? `<div class="novidades-aviso" role="status">${escapeHTML(tituloNovidades(novidades.length))}</div>`
+        : '';
     container.innerHTML = `
+        ${aviso}
         <div class="table-toolbar">
             <h2>Pontos do roteiro</h2>
             <div class="filter-group" aria-label="Filtrar pontos">
