@@ -329,6 +329,8 @@ function renderList() {
     const clientsToShow = filterClients(sortClients(currentClients));
     const container = document.getElementById('listContainer');
     const routeSelect = document.getElementById('routeSelect');
+    // Novidades refletem o roteiro inteiro (igual ao PDF), não a visão filtrada: o aviso
+    // pode contar pontos que o filtro atual esconde.
     const novidades = listarNovidades(db, routeSelect.value, currentClients);
     const novosIds = new Set(novidades.map(n => n.id_rota));
     const rows = clientsToShow.map((client, index) => {
