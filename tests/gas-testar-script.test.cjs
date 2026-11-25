@@ -1,8 +1,12 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { ambiente } = require('./helpers/gas-ambiente.cjs');
+
+// Acompanha a versão atual do GAS em vez de fixar um número que envelhece.
+const API_VERSION = Number(fs.readFileSync('gas/Code.gs', 'utf8').match(/GAS_API_VERSION\s*=\s*(\d+)/)[1]);
 
 // Servidor que imita o Web App do Apps Script, inclusive o redirecionamento 302:
 // o resultado de cada chamada (GET ou POST) é entregue numa segunda requisição GET.
@@ -63,7 +67,7 @@ test('somente leitura: passa numa copia preparada e nao grava nada', async () =>
   const r = await rodarScript(servidor.url, [], { GAS_TOKEN: token });
   servidor.fechar();
   assert.equal(r.codigo, 0, r.saida);
-  assert.match(r.saida, /OK\s+GAS responde e informa a versão — API v15/);
+  assert.match(r.saida, new RegExp(`OK\\s+GAS responde e informa a versão — API v${API_VERSION}`));
   assert.match(r.saida, /roteiros\/v1: 5 clientes, 2 roteiros, 6 pontos/);
   assert.match(r.saida, /OK\s+cadastroSync recusa token errado/);
   assert.match(r.saida, /PULOU grava um ponto/);
