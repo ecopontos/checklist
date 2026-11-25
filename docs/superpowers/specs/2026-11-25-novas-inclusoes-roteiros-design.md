@@ -1,7 +1,7 @@
 # Novas inclusões nos roteiros
 
 Data: 2026-11-25
-Status: proposta para aprovação; abordagem escolhida pelo usuário.
+Status: aprovado pelo usuário em 2026-11-25; implementação pendente.
 
 ## Objetivo e rotina confirmada
 
