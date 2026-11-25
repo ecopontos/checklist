@@ -522,6 +522,33 @@ export async function syncPendingClienteChanges(db) {
 export const CADASTRO_MIN_GAS_API_VERSION = 14;
 const CADASTRO_MAX_ROUNDS = 100;
 const cadastroSyncs = new WeakMap();
+const novidadesSyncs = new WeakMap();
+
+export function syncNovidadesRoteiro(db, roteiroId) {
+    let pending=novidadesSyncs.get(db);
+    if (!pending) { pending=new Map(); novidadesSyncs.set(db,pending); }
+    const key=String(roteiroId);
+    if (pending.has(key)) return pending.get(key);
+    const task=(async()=>{
+        try {
+            const cadastro=await syncCadastro(db);
+            if (!cadastro.ok) return cadastro;
+            const roteiro=db.getRoteiros().find(r=>String(r.id)===key);
+            if (!roteiro) return {ok:false,error:'Roteiro não encontrado'};
+            const chave=roteiro.chave || roteiro.nome;
+            const result=await postCadastro_(getGasUrl(),{action:'novidadesRoteiro',token:getGasRouteToken(),roteiro:chave});
+            if (!result.ok) return result;
+            if (Number(result.apiVersion)<17 || result.novidadesRoteiros!==true || result.roteiro_chave!==chave || !Array.isArray(result.inclusoes)) {
+                return {ok:false,error:'Novidades indisponíveis: atualize o GAS para API 17.'};
+            }
+            db.aplicarInclusoesRemotas(result);
+            await db.flush();
+            return {ok:true,rev:result.rev};
+        } catch(e) {return {ok:false,error:e.message};}
+    })().finally(()=>pending.delete(key));
+    pending.set(key,task);
+    return task;
+}
 
 export function syncCadastro(db) {
     const current = cadastroSyncs.get(db);
@@ -590,6 +617,7 @@ async function runCadastroSync_(db) {
 
         const conflitos = db.aplicarCadastroRemoto(result.conflitos, { forcar: true });
         const recebidos = db.aplicarCadastroRemoto({ pontos: result.pontos || [], roteiros: result.roteiros || [] });
+        if (Array.isArray(result.canonicos)) db.aplicarCadastroRemoto({ pontos: result.canonicos });
         total.recebidos += recebidos.pontos + recebidos.roteiros + conflitos.pontos + conflitos.roteiros;
         total.excluidos += recebidos.excluidos + conflitos.excluidos;
         total.avisos.push(...recebidos.avisos, ...conflitos.avisos);
