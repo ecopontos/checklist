@@ -1,5 +1,38 @@
 # Deploy do Web App (Code.gs)
 
+## Novas inclusões — app 1.8.0 / API 17
+
+Esta versão acrescenta a capacidade `novidadesRoteiros` no status e a ação POST
+`novidadesRoteiro` (token de alterações e chave do roteiro). A aba automática
+`NovidadesRoteiros` registra o vínculo e o atendimento de cada inclusão. A coluna
+`Inclusao` é acrescentada ao fim de `CadastroPontos`; `Inclusao ID` e `Roteiro Chave`
+ocupam as colunas 9 e 10 de `Coletas`. As primeiras oito colunas permanecem iguais.
+
+Na implantação futura, atualizar o GAS antes de distribuir o app. Com o CSV
+acessível, realizar uma consulta autenticada de novidades para um roteiro e
+confirmar resposta `ok:true`, `apiVersion:17` e `novidadesRoteiros:true`. Isso
+estabelece uma única base inicial, compartilhada por todos os aparelhos, registrada
+na propriedade `NOVIDADES_BASELINE_V1`. A base inicial não recebe o destaque NOVO.
+Não apagar essa propriedade nem a aba para reinicializar um aparelho.
+
+O cadastro efetivo vem do CSV mais recente do Drive com sobreposição de
+`CadastroPontos` e dos aliases de `CadastroRoteiros`. A data de inclusão pelo CSV
+é a modificação da versão que primeiro apresentou o vínculo, pois o arquivo não
+informa a hora real do cadastro. Inclusões feitas no app têm identidade e data
+próprias. A importação da mesma lista em um aparelho novo não cria novidades.
+
+O destaque termina após retorno salvo com quantidade positiva ou intercorrência,
+na data da inclusão ou depois, para o mesmo episódio e roteiro. Coletas de apps
+antigos sem identidade de episódio só são associadas quando o contexto é inequívoco;
+após transferências repetidas ao mesmo roteiro, esses registros não encerram o
+destaque automaticamente. Reimprimir não registra ciência.
+
+Falha na fonte ou GAS antigo preserva o estado local e informa indisponibilidade
+das novidades. As funções anteriores de cadastro/coleta continuam disponíveis.
+O código preparado no repositório não atualiza automaticamente o deploy remoto.
+
+## Configuração inicial
+
 1. Crie uma planilha Google Sheets (vazia, qualquer nome) — copie o ID dela
    da URL: `https://docs.google.com/spreadsheets/d/<SPREADSHEET_ID>/edit`.
 2. Crie uma pasta no Google Drive onde o arquivo `cstExportaCheckList.csv`
