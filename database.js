@@ -128,7 +128,10 @@ class AppDatabase {
         this.migrateNovidadesSchema();
         // Importações antigas uniam pontos pelo nome. Força uma nova leitura
         // do cadastro uma única vez depois da correção da identidade por idRota.
-        if (localStorage.getItem('app3_rota_identity_version') !== '2') {
+        // Uma base sem pontos também precisa receber o CSV, inclusive quando
+        // já foi salva vazia após uma limpeza que deixou a data de importação.
+        if (localStorage.getItem('app3_rota_identity_version') !== '2' ||
+            !this.db.exec('SELECT 1 FROM clientes LIMIT 1').length) {
             if (typeof localStorage.removeItem === 'function') {
                 localStorage.removeItem('app3_last_drive_sync');
                 localStorage.removeItem('app3_last_roteiros_csv_drive_sync');
@@ -462,6 +465,8 @@ class AppDatabase {
         await this.flush();
         if (this._idb) await idbRun(this._idb, 'readwrite', store => store.delete(DB_KEY));
         localStorage.removeItem(DB_KEY);
+        localStorage.removeItem('app3_last_drive_sync');
+        localStorage.removeItem('app3_last_roteiros_csv_drive_sync');
     }
 
     _persistAtomic(action) {

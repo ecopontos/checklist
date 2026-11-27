@@ -4,8 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-async function harness({ setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout } = {}) {
-  const storage = new Map();
+async function harness({ setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout, storage = new Map() } = {}) {
   const requests = [];
   let response = null;
   let httpResponse = null;
@@ -79,6 +78,66 @@ test('importa o CSV do Drive mesmo com marcador anterior do Sheets', async () =>
   h.db.db.run("UPDATE clientes SET cliente = 'Edição local' WHERE id_rota = '3'");
   assert.equal((await h.sync.checkAndImportRoteiros(h.db)).updated, false);
   assert.equal(h.db.getClienteByIdRota('3').cliente, 'Edição local');
+
+  h.db.save();
+  const reloaded = await harness({ storage: h.storage });
+  reloaded.respond({ ok: true, apiVersion: 12, source: 'drive-csv', content: csv,
+    modifiedTime: '2026-09-25T10:00:00.000Z' });
+  assert.equal((await reloaded.sync.checkAndImportRoteiros(reloaded.db)).updated, false);
+  assert.equal(reloaded.db.getClienteByIdRota('3').cliente, 'Edição local');
+});
+
+test('recupera a base ja apagada mesmo com o marcador antigo do Drive', async () => {
+  const storage = new Map([
+    ['app3_rota_identity_version', '2'],
+    ['app3_last_roteiros_csv_drive_sync', '2026-09-25T10:00:00.000Z'],
+    ['app3_gas_url', 'https://gas.example/exec'],
+    ['app3_gas_route_token', 'token-preservado']
+  ]);
+  const h = await harness({ storage });
+  h.respond({ ok: true, apiVersion: 17, source: 'drive-csv', content: csv,
+    modifiedTime: '2026-09-25T10:00:00.000Z' });
+
+  const result = await h.sync.checkAndImportRoteiros(h.db);
+
+  assert.equal(result.updated, true);
+  assert.equal(result.clientes, 2);
+  assert.equal(h.db.getClienteByIdRota('3').logradouro, 'Rodovia Admar Gonzaga');
+  assert.equal(h.sync.getGasUrl(), 'https://gas.example/exec');
+  assert.equal(h.sync.getGasRouteToken(), 'token-preservado');
+});
+
+test('reimporta o mesmo CSV depois de resetar e recarregar o app', async () => {
+  const h = await harness();
+  const response = { ok: true, apiVersion: 17, source: 'drive-csv', content: csv,
+    modifiedTime: '2026-09-25T10:00:00.000Z' };
+  h.respond(response);
+  await h.sync.checkAndImportRoteiros(h.db);
+  await h.db.resetStorage();
+
+  const reloaded = await harness({ storage: h.storage });
+  reloaded.respond(response);
+  const result = await reloaded.sync.checkAndImportRoteiros(reloaded.db);
+
+  assert.equal(result.updated, true);
+  assert.equal(result.clientes, 2);
+  assert.equal(reloaded.db.getClienteByIdRota('13').ativo, 0);
+});
+
+test('recupera a base vazia que ja foi salva depois da limpeza', async () => {
+  const h = await harness();
+  h.db.addRoteiro('LOCAL');
+  h.storage.set('app3_last_roteiros_csv_drive_sync', '2026-09-25T10:00:00.000Z');
+
+  const reloaded = await harness({ storage: h.storage });
+  reloaded.respond({ ok: true, apiVersion: 17, source: 'drive-csv', content: csv,
+    modifiedTime: '2026-09-25T10:00:00.000Z' });
+  const result = await reloaded.sync.checkAndImportRoteiros(reloaded.db);
+
+  assert.equal(result.updated, true);
+  assert.equal(result.clientes, 2);
+  assert.equal(reloaded.db.getClienteByIdRota('3').logradouro, 'Rodovia Admar Gonzaga');
+  assert.ok(reloaded.db.getRoteiros().some(route => route.nome === 'LOCAL'));
 });
 
 test('recusa resposta de roteiros do Sheets ou GAS antigo e preserva o cadastro', async () => {

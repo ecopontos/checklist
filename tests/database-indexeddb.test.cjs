@@ -112,3 +112,21 @@ test('resetStorage apaga o banco e ignora saves posteriores', async () => {
   const reloaded = await setup({ idb: h.idb, storage: h.storage });
   assert.equal(nomes(reloaded.db).length, 0);
 });
+
+for (const indexedDb of [true, false]) {
+  test(`resetStorage remove os marcadores do Drive (${indexedDb ? 'IndexedDB' : 'localStorage'})`, async () => {
+    const h = await setup({ idb: indexedDb ? fakeIndexedDB() : null });
+    h.db.addRoteiro('SAT01');
+    h.storage.set('app3_last_drive_sync', '2026-09-25T10:00:00Z');
+    h.storage.set('app3_last_roteiros_csv_drive_sync', '2026-09-25T10:00:00Z');
+    h.storage.set('app3_gas_url', 'https://gas.example/exec');
+    h.storage.set('app3_gas_route_token', 'token-preservado');
+
+    await h.db.resetStorage();
+
+    assert.equal(h.storage.has('app3_last_drive_sync'), false);
+    assert.equal(h.storage.has('app3_last_roteiros_csv_drive_sync'), false);
+    assert.equal(h.storage.get('app3_gas_url'), 'https://gas.example/exec');
+    assert.equal(h.storage.get('app3_gas_route_token'), 'token-preservado');
+  });
+}
